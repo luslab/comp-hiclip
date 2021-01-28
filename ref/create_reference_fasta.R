@@ -49,17 +49,19 @@ names(trna.ds) <- gsub("^Homo_sapiens_", "", sapply(strsplit(names(trna.ds), " "
 # Get genes
 # =========
 
-if(!file.exists("gencode.v36.annotation.gff3.gz")) {
+ref.gff <- "gencode.v33.annotation.gff3.gz"
 
-    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_36/gencode.v36.annotation.gff3.gz", 
-                destfile = "gencode.v36.annotation.gff3.gz",
+if(!file.exists(ref.gff)) {
+
+    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/gencode.v33.annotation.gff3.gz", 
+                destfile = ref.gff,
                 method = "wget",
                 quiet = TRUE)
 
 }
 
 # Load annotation
-genes.gr <- import.gff3("gencode.v36.annotation.gff3.gz")
+genes.gr <- import.gff3(ref.gff)
 genes.gr <- keepStandardChromosomes(genes.gr, pruning.mode = "coarse")
 genes.gr <- dropSeqlevels(genes.gr, "chrY", pruning.mode = "coarse")
 genes.gr <- genes.gr[genes.gr$type == "gene"]
@@ -90,7 +92,7 @@ multi.reduced.sel.genes.gr$revmap <- NULL
 reduced.sel.genes.gr <- sort(c(unique.sel.genes.gr, multi.reduced.sel.genes.gr))
 reduced.sel.genes.gr$name <- paste0(reduced.sel.genes.gr$gene_name, ":", reduced.sel.genes.gr$gene_id)
 
-invisible(file.remove("gencode.v36.annotation.gff3.gz"))
+invisible(file.remove(ref.gff))
 
 # =========
 # Mask snRNAs, rRNA and tRNA
@@ -131,7 +133,7 @@ export.bed(mask.gr, mask.bed)
 ref.fasta <- "GRCh38.primary_assembly.genome.fa"
 if(!file.exists(ref.fasta)) {
 
-    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_36/GRCh38.primary_assembly.genome.fa.gz", 
+    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/GRCh38.primary_assembly.genome.fa.gz", 
                 destfile = "GRCh38.primary_assembly.genome.fa.gz",
                 method = "wget",
                 quiet = TRUE)
