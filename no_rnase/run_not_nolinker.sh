@@ -23,4 +23,5 @@ nextflow run nf-core/clipseq -r dev \
 --smrna_org human \
 --fasta $REFDIR/GRCh38.primary_assembly.genome.fa.gz \
 --gtf $REFDIR/gencode.v33.annotation.gtf.gz \
+--umi_separator _ \
 --save_index true
