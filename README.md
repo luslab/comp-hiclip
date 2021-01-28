@@ -2,6 +2,12 @@
 
 The repo contains code for the computational STAU1 hiCLIP project.
 
+## Overview
+
+Our starting point is that hybrids remain either unidentified or mis-identified as non-hybrids in the published hiCLIP analysis:
+
+![hiclip_alternatives](img/hiclip_alternatives.pdf)
+
 ## Structure
 
 * `linker` contains code for the linker hybrids
