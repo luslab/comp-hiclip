@@ -19,6 +19,7 @@ nextflow pull amchakra/tosca
 nextflow run amchakra/tosca \
 -resume \
 -profile crick,conda \
+-N anob.chakrabarti@crick.ac.uk \
 --org comp_hiclip \
 --input nolinker.csv \
 --outdir /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/nolinker \

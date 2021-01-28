@@ -1,3 +1,5 @@
+#/bin/bash
+
 # Preprocess data from Sugimoto et al., 2015
 # A. M. Chakrabarti
 # 12th June 2020, updated 16th September 2020, updated 28th January 2021
