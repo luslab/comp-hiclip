@@ -37,3 +37,6 @@ dependencies:
   - bioconda::bioconductor-rtracklayer
   - bioconda::bioconductor-rbgl
   - bioconda::bioconductor-graph
+
+  - bioconda::bioconductor-shortread
+  - conda-forge::r-rentrez
