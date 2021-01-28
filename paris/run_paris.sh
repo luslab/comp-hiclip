@@ -24,4 +24,4 @@ nextflow run amchakra/tosca -r star_options \
 --input paris.csv \
 --outdir /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris \
 --umi_separator _ \
---star_args '--limitOutSJcollapsed 2000000'
+--star_args '--limitOutSJcollapsed 5000000'
