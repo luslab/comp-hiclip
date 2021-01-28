@@ -13,4 +13,5 @@ Our starting point is that hybrids remain either unidentified or mis-identified 
 * `linker` contains code for the linker hybrids
 * `no_linker` contains code for the no-linker hybrids
 * `no_rnase` contains code for the no RNase hybrids (short-range structures)
+* `paris` contains code for the PARIS hybrids
 * `ref` contains code to generate the reference files
