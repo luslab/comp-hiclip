@@ -15,6 +15,17 @@ REFDIR=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/ref
 
 nextflow pull nf-core/clipseq -r dev
 
+# nextflow run nf-core/clipseq -r dev \
+# -resume \
+# -profile crick \
+# --input not_nolinker.csv \
+# --outdir /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/nornase \
+# --smrna_org human \
+# --fasta $REFDIR/GRCh38.primary_assembly.genome.fa.gz \
+# --gtf $REFDIR/gencode.v33.annotation.gtf.gz \
+# --umi_separator _ \
+# --save_index true
+
 nextflow run nf-core/clipseq -r dev \
 -resume \
 -profile crick \
@@ -24,4 +35,4 @@ nextflow run nf-core/clipseq -r dev \
 --fasta $REFDIR/GRCh38.primary_assembly.genome.fa.gz \
 --gtf $REFDIR/gencode.v33.annotation.gtf.gz \
 --umi_separator _ \
---save_index true
+--star_index /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/nornase/STAR_index
