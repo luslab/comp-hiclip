@@ -8,7 +8,7 @@
 cd /camp/lab/luscomben/home/users/iosubi/projects/comp_hiclip/linker
 
 # DATADIR=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/preprocessed
-# WORKDIR=/camp/lab/luscomben/home/users/iosubi/projects/comp_hiclip/linker
+WORKDIR=/camp/lab/luscomben/home/users/iosubi/projects/comp_hiclip/linker
 
 
 # generate STAR index
@@ -17,18 +17,18 @@ cd /camp/lab/luscomben/home/users/iosubi/projects/comp_hiclip/linker
 # --genomeFastaFiles /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/ref/human.fa
 
 
-# mapping (to be changed to bash for loop!)
+for i in LigPlusHigh.linker.fastq.gz LigPlusLow.linker.fastq.gz; do
 
-STAR --runThreadN 8 --runMode alignReads --genomeDir STAR_GRCh38_GencodeV33_masked \
---readFilesIn /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/preprocessed/LigPlusHigh.linker.fastq.gz \
---readFilesCommand gunzip -c --genomeLoad NoSharedMemory --outFileNamePrefix LigPlusHigh.linker. \
---outSAMattributes All --outSAMtype BAM SortedByCoordinate --outSAMunmapped Within --alignSJoverhangMin 8 --alignSJDBoverhangMin 1 \
---outFilterType BySJout --alignIntronMin 20 --alignIntronMax 100000 --limitBAMsortRAM 60000000000 \
---twopassMode Basic --outFilterMultimapNmax 1 --outFilterMultimapScoreRange 1 --outFilterScoreMin 10
+    echo ${i%%.*}
 
-STAR --runThreadN 8 --runMode alignReads --genomeDir STAR_GRCh38_GencodeV33_masked \
---readFilesIn /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/preprocessed/LigPlusLow.linker.fastq.gz \
---readFilesCommand gunzip -c --genomeLoad NoSharedMemory --outFileNamePrefix LigPlusLow.linker. \
---outSAMattributes All --outSAMtype BAM SortedByCoordinate --outSAMunmapped Within --alignSJoverhangMin 8 --alignSJDBoverhangMin 1 \
---outFilterType BySJout --alignIntronMin 20 --alignIntronMax 100000 --limitBAMsortRAM 60000000000 \
---twopassMode Basic --outFilterMultimapNmax 1 --outFilterMultimapScoreRange 1 --outFilterScoreMin 10
+    # Map
+    STAR --runThreadN 8 --runMode alignReads --genomeDir STAR_GRCh38_GencodeV33_masked \
+	--readFilesIn $i \
+	--readFilesCommand gunzip -c --genomeLoad NoSharedMemory --outFileNamePrefix ${i%%.*} \
+	--outSAMattributes All --outSAMtype BAM SortedByCoordinate --outSAMunmapped Within --alignSJoverhangMin 8 --alignSJDBoverhangMin 1 \
+	--outFilterType BySJout --alignIntronMin 20 --alignIntronMax 100000 --limitBAMsortRAM 60000000000 \
+	--twopassMode Basic --outFilterMultimapNmax 1 --outFilterMultimapScoreRange 1 --outFilterScoreMin 10
+	
+	# Get hybrid table
+	Rscript --vanilla $WORKDIR/bam_to_dataframe.R ${i%%.*}Aligned.sortedByCoord.out.bam ${i%%.*}
+done

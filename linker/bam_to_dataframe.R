@@ -5,7 +5,7 @@ library(stringr)
 
 args <- commandArgs(trailingOnly = TRUE)
 if(length(args) != 2) stop("Run command: bam_to_dataframe.R <input bam> <output prefix>")
-if(!file.exists(args[1])) stop("Please provide and input bam file.")
+if(!file.exists(args[1])) stop("Please provide an input bam file.")
 
 
 bam_to_dataframe <- function(bam.file) {
@@ -77,8 +77,8 @@ reorient_hybrids <- function(hybrids.dt) {
 
 
 hybrids.df <- bam_to_dataframe(args[1])
-hybrids.dt <- data.table(high_hybrids.df)
-hybrids_reoriented.dt <- reorient_hybrids(high_hybrids.dt)
+hybrids.dt <- data.table(hybrids.df)
+hybrids_reoriented.dt <- reorient_hybrids(hybrids.dt)
 
 write.csv(hybrids_reoriented.dt, sep = "\t", paste0(args[2],"_hybrids.txt"))
 
