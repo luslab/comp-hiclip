@@ -3,6 +3,11 @@ library(data.table)
 library(tidyverse)
 library(stringr)
 
+args <- commandArgs(trailingOnly = TRUE)
+if(length(args) != 2) stop("Run command: bam_to_dataframe.R <input bam> <output prefix>")
+if(!file.exists(args[1])) stop("Please provide and input bam file.")
+
+
 bam_to_dataframe <- function(bam.file) {
   bam <- readGAlignments(bam.file,
                          use.names = TRUE)
@@ -70,9 +75,6 @@ reorient_hybrids <- function(hybrids.dt) {
   
 }
 
-args <- commandArgs(trailingOnly = TRUE)
-if(length(args) != 2) stop("Run command: bam_to_dataframe.R <input bam> <output prefix>")
-if(!file.exists(args[1])) stop("Please provide and input bam file.")
 
 hybrids.df <- bam_to_dataframe(args[1])
 hybrids.dt <- data.table(high_hybrids.df)
