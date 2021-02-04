@@ -9,6 +9,11 @@
 #SBATCH --nodes=1
 #SBATCH --output=comp_not_nolinker-%A.out
 
+ml purge
+ml Nextflow/20.10.0
+ml Singularity/3.6.4
+ml Graphviz/2.38.0-foss-2016b
+
 export NXF_SINGULARITY_CACHEDIR=/camp/lab/luscomben/home/shared/singularity
 
 REFDIR=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/ref
