@@ -1,0 +1,281 @@
+---
+title: "Comparison of STAU1 hiCLIP hybrids with PARIS hybrids"
+author: "Ira Iosub"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: show
+---
+
+#### Libraries
+```{r}
+library(data.table)
+library(primavera)
+library(tidyverse)
+library(stringr)
+library(paletteer)
+library(ggpubr)
+theme_set(theme_bw() +
+            theme(legend.position = "top"))
+```
+
+#### Functions
+```{r}
+plot_stacked_barchart <- function(data.df, column, group) {
+  data_counts.df <- data.df %>%
+    select(name, {{group}}, {{column}}) %>%
+    group_by({{group}}, {{column}}) %>%
+    summarise(counts = n()) %>%
+    arrange(desc({{column}})) %>%
+    mutate(percentage = counts*100 / sum(counts)) %>%
+    mutate(pos = cumsum(percentage) - percentage/2)
+  bar = ggplot() + geom_bar(aes(y = percentage, x = "", fill = {{column}}), alpha = 0.8, data = data_counts.df,
+                            stat="identity", width = 0.5) +
+    geom_text(data = data_counts.df, aes(x = "", y = pos, label = paste0(round(percentage,1),"%")), size=3) +
+    facet_grid(cols = vars({{group}})) +
+    #facet_wrap(. ~ Experiment, scales = "free") +
+    scale_fill_paletteer_d("rcartocolor::Earth", direction = -1) +
+    theme(legend.position="right", legend.direction="vertical",
+          legend.title = element_blank()) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Percentage") +
+    xlab("Experiment")
+  return(bar)
+}
+```
+
+# Get genomic coordinates and annotate STAU1 hybrids
+
+#### This step was necessary because a bug in Tosca is not getting genomic coordinates or annotating most hybrids. The bug can be fixed if you reformat names of hybrids seqnames so they match the annotation gtf:
+```{r eval=FALSE, echo=TRUE}
+hybrids.dt[, c("L_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+hybrids.dt[, c("R_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+```
+#### before calling the 'convert_coordinates' function.
+
+
+```{r, warning = FALSE}
+genes.gr <- rtracklayer::import.gff2("/Users/iosubi/Documents/projects/computational_hiCLIP/files/human_GencodeV33.gtf.gz")
+regions.gr <- import.gff2("~/Documents/Genomes/human/regions.gtf.gz")
+hybrids.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/files/all.clusters.tsv.gz")
+
+hybrids.dt <- hybrids.dt[grep("^rRNA", L_seqnames, invert = TRUE)] # Remove rRNA
+hybrids.dt <- hybrids.dt[grep("Mt", L_seqnames, invert = TRUE)]
+
+# Reformat names of hybrids seqnames so they match the annotation gtf
+hybrids.dt[, c("L_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+hybrids.dt[, c("R_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+
+# Convert to genomic coordinates
+hybrids.dt <- convert_coordinates(hybrids.dt, genes.gr)
+#fwrite(hybrids.dt, "clusters.gc.tsv.gz", sep = "\t")
+
+# Annotate hybrids
+hybrids.dt <- annotate_hybrids(hybrids.dt, regions.gr)
+#fwrite(hybrids.dt, "annotated_clusters.gc.tsv.gz", sep = "\t")
+
+hybrids.dt$Experiment <- "STAU1 - No linker"
+```
+
+# PARIS data: Get genomic coordinates and annotate hybrids
+
+```{r, warning = FALSE}
+paris.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/files/paris/all.clusters.tsv.gz")
+paris.dt <- paris.dt[grep("^rRNA", L_seqnames, invert = TRUE)] # Remove rRNA
+paris.dt <- paris.dt[grep("Mt", L_seqnames, invert = TRUE)]
+
+paris.dt[, c("L_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+paris.dt[, c("R_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+
+# Convert to genomic coordinates
+paris.dt <- convert_coordinates(paris.dt, genes.gr)
+#fwrite(paris.dt, "paris_clusters.gc.tsv.gz", sep = "\t")
+
+# Annotate hybrids
+paris.dt <- annotate_hybrids(paris.dt, regions.gr)
+#fwrite(paris.dt, "paris_annotated_clusters.gc.tsv.gz", sep = "\t")
+paris.dt$Experiment <- "PARIS"
+
+```
+
+#### Merge experiments
+
+```{r}
+all_exp.df <- as.data.frame(rbind(hybrids.dt, paris.dt))
+# intramolecular only
+all_exp.df <- all_exp.df %>% dplyr::filter(L_gene_name == R_gene_name)
+
+```
+
+
+# Transcript biotypes
+```{r}
+biotype_counts.df <- all_exp.df %>%
+  select(name, Experiment, L_biotype, R_biotype) %>%
+  pivot_longer(c(L_biotype, R_biotype), names_to = "arm", values_to = "biotype")
+
+biotype_counts.df <- biotype_counts.df %>%
+  group_by(Experiment, biotype) %>%
+  summarise(counts = n()) %>%
+  arrange(desc(biotype)) %>%
+  mutate(percentage = counts*100 / sum(counts)) %>%
+  ungroup()
+biotype_counts.df <- biotype_counts.df %>%
+  mutate(RNA_biotype = case_when((percentage < 0.05) ~ "Other",
+                                 (percentage >= 0.05) ~ biotype))
+
+biotype_counts.df <- biotype_counts.df %>%
+  group_by(Experiment, RNA_biotype) %>%
+  mutate(biotype_percentage = sum(percentage)) %>%
+  ungroup()
+  
+# Simple bar-chart
+ggplot(distinct(biotype_counts.df, across(c(Experiment, RNA_biotype, biotype_percentage))),
+       aes(RNA_biotype, biotype_percentage)) + 
+  geom_bar(position="dodge", stat = "identity", aes(fill = Experiment), alpha = 0.8) +
+  scale_fill_brewer(palette="Dark2") +
+  #scale_fill_paletteer_d("rcartocolor::Earth", direction = -1) +
+  theme(legend.position="right", legend.direction="vertical",
+        legend.title = element_blank()) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  ylab("Percentage") +
+  xlab("RNA biotype")
+```
+
+# mRNA transcript regions
+
+```{r}
+all_exp_mRNA.df <- all_exp.df %>% dplyr::filter(R_biotype  == "mRNA" & L_biotype == "mRNA")
+
+all_exp_mRNA.df <- all_exp_mRNA.df %>%
+  mutate(hybrid_type = case_when((L_region == "UTR3" & R_region == "UTR3") ~ "3'UTR-3'UTR",
+                                 (L_region == "CDS" & R_region == "CDS") ~ "CDS-CDS",
+                                 (L_region == "UTR3" & R_region == "CDS") ~ "3'UTR-CDS",
+                                 (L_region == "CDS" & R_region == "UTR3") ~ "3'UTR-CDS",
+                                 (L_region == "UTR5" & R_region == "UTR5") ~ "5'UTR-5'UTR",
+                                 (L_region == "UTR3" & R_region == "UTR5") ~ "3'UTR-5'UTR",
+                                 (L_region == "UTR5" & R_region == "UTR3") ~ "3'UTR-5'UTR",
+                                 (L_region == "UTR5" & R_region == "CDS") ~ "5'UTR-CDS",
+                                 (L_region == "CDS" & R_region == "UTR5") ~ "5'UTR-CDS"))
+
+
+plot_stacked_barchart(all_exp_mRNA.df, hybrid_type, Experiment)
+
+```
+
+
+# 3'UTR hybrids
+
+```{r}
+# Get hybrid spans
+# Get hybrid arm widths
+
+threeutr.df <- all_exp_mRNA.df %>%
+  dplyr::filter(L_region == "UTR3" & R_region == "UTR3")
+
+threeutr.df <-threeutr.df %>%
+  rowwise() %>%
+  mutate(hybrid_span = R_start - L_end + 1, 
+         L_arm_width = L_end - L_start + 1,
+         R_arm_width = R_end - R_start + 1)
+```
+
+## Hybrid spans
+
+```{r}
+ggplot(threeutr.df, aes(x = hybrid_span, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Dark2") +
+  scale_x_log10() + annotation_logticks() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("Hybrid span")
+```
+
+## Arm width
+
+```{r}
+# convert to long format
+threeutr_long.df <- threeutr.df %>%
+  pivot_longer(c(R_arm_width, L_arm_width), names_to = "arm", values_to = "arm_width")
+
+ggplot(threeutr_long.df, aes(x = arm, y = arm_width, fill = Experiment)) +
+  geom_boxplot(alpha = 0.7) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_brewer(palette="Dark2") +
+  theme(legend.position="right", legend.direction="vertical") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Hybrid arm width") +
+  xlab("Arm")
+```
+
+# Binding energy
+
+```{r}
+# Load data that contains MFE information for the hybrids
+
+hybrids_mfe.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/files/all.mfe.clusters.tsv.gz")
+
+hybrids_mfe.dt <- hybrids_mfe.dt[grep("^rRNA", L_seqnames, invert = TRUE)] # Remove rRNA
+hybrids_mfe.dt <- hybrids_mfe.dt[grep("Mt", L_seqnames, invert = TRUE)]
+
+hybrids_mfe.dt <- hybrids_mfe.dt %>%
+  select(-umi) %>%
+  mutate(Experiment = "STAU1 - No linker")
+
+paris_mfe.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/files/paris/all.mfe.clusters.tsv.gz")
+paris_mfe.dt$Experiment = "PARIS"
+
+paris_mfe.dt <- paris_mfe.dt[grep("^rRNA", L_seqnames, invert = TRUE)] # Remove rRNA
+paris_mfe.dt <- paris_mfe.dt[grep("Mt", L_seqnames, invert = TRUE)]
+
+all_exp_mfe.dt <- rbind(hybrids_mfe.dt, paris_mfe.dt)
+```
+
+## All intramolecular hybrids MFE
+
+```{r}
+all_exp_mfe.dt$mfe <- as.numeric(all_exp_mfe.dt$mfe)
+
+ggplot(all_exp_mfe.dt, aes(x = mfe, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Dark2") +
+  facet_grid(cols = vars(Experiment)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)")
+
+```
+
+## 3'UTR hybrids MFE
+
+```{r, warning = FALSE}
+# Annotate hybrids
+all_exp_mfe.dt[, c("L_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+all_exp_mfe.dt[, c("R_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
+
+all_exp_mfe.dt <- convert_coordinates(all_exp_mfe.dt, genes.gr)
+all_exp_mfe.dt <- annotate_hybrids(all_exp_mfe.dt, regions.gr)
+
+mfe_3utr.df <- all_exp_mfe.dt %>%
+  dplyr::filter(L_region == "UTR3" & R_region == "UTR3")
+
+ggplot(mfe_3utr.df, aes(x = mfe, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Dark2") +
+  facet_grid(cols = vars(Experiment)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)") +
+  ggtitle("3'UTR hybrids")
+
+```
+
+
