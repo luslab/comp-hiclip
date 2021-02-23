@@ -21,6 +21,7 @@ library(tidyverse)
 library(stringr)
 library(paletteer)
 library(ggpubr)
+library(Biostrings)
 theme_set(theme_bw() +
             theme(legend.position = "top"))
 ```
@@ -49,6 +50,86 @@ plot_stacked_barchart <- function(data.df, column, group) {
   return(bar)
 }
 ```
+
+
+```{r}
+get_nucleotide_frequency <- function(duplexes.df) {
+  
+  L_seq <- DNAStringSet(duplexes.df$L_sequence)
+  R_seq <- DNAStringSet(duplexes.df$R_sequence)
+  L_freq <- as.data.frame(oligonucleotideFrequency(L_seq, width = 1, as.prob=TRUE))
+  R_freq <- as.data.frame(oligonucleotideFrequency(R_seq, width = 1, as.prob=TRUE))
+  duplexes.df <- dplyr::bind_cols(duplexes.df, L_freq, R_freq)
+  colnames(duplexes.df) = gsub("...25|...26|...27|...28", "_L", colnames(duplexes.df)) # rename columns
+  colnames(duplexes.df) = gsub("...29|...30|...31|...32", "_R", colnames(duplexes.df))
+  
+  # Pur content - calculate max pur L vs. R arm 
+  duplexes.df <- duplexes.df %>%
+    rowwise() %>% 
+    mutate(L_pur = sum(c(A_L, G_L)), # purine total per hybrid
+           R_pur = sum(c(A_R, G_R))) %>%
+    mutate(max_pur = max(L_pur, R_pur)) %>%
+    mutate(arm = case_when((max_pur == L_pur) ~ "L", # assign maximal purine arm
+                           TRUE ~ "R")) %>%
+    ungroup() 
+  
+  # reorient duplex frequencies based on maximal purine content (column "arm")
+  nuc_freq_max_pur_arm.df <- duplexes.df %>%
+    dplyr::filter(arm == "L") %>%
+    mutate(A_freq_max_pur_arm = A_L, A_freq_min_pur_arm = A_R,
+           G_freq_max_pur_arm = G_L, G_freq_min_pur_arm = G_R,
+           C_freq_max_pur_arm = C_L, C_freq_min_pur_arm = C_R,
+           U_freq_max_pur_arm = T_L, U_freq_min_pur_arm = T_R)
+
+  nuc_freq_min_pur_arm.df <- duplexes.df %>%
+    dplyr::filter(arm == "R") %>%
+    mutate(A_freq_max_pur_arm = A_R, A_freq_min_pur_arm = A_L,
+           G_freq_max_pur_arm = G_R, G_freq_min_pur_arm = G_L,
+           C_freq_max_pur_arm = C_R, C_freq_min_pur_arm = C_L,
+           U_freq_max_pur_arm = T_R, U_freq_min_pur_arm = T_L)
+
+  nuc_freq_reordered.df <- rbind(nuc_freq_max_pur_arm.df, nuc_freq_min_pur_arm.df)
+  nuc_freq_reordered.df <- nuc_freq_reordered.df %>% arrange(desc(max_pur))
+  return(nuc_freq_reordered.df)
+}
+
+```
+
+
+```{r}
+plot_nucleotide_frequency <- function(data) {
+  # Prep for plotting
+  high_pur.df <- data %>% 
+    select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm) %>%
+    dplyr::arrange(G_freq_max_pur_arm)
+  
+  high_pur.df <- rowid_to_column(high_pur.df)
+  long_high_pur.df <- high_pur.df %>% 
+    gather(residue, frequency, A_freq_max_pur_arm:U_freq_max_pur_arm)
+  long_high_pur.df$arm = "High purine arm"
+  
+  low_pur.df <- data %>% 
+    select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm) %>%
+    dplyr::arrange(desc(U_freq_min_pur_arm))
+  low_pur.df <- rowid_to_column(low_pur.df)
+  long_low_pur.df <- low_pur.df %>% 
+    gather(residue, frequency, A_freq_min_pur_arm:U_freq_min_pur_arm)
+  long_low_pur.df$arm = "Low purine arm"
+  
+  nuc_freq.df <- rbind(long_high_pur.df, long_low_pur.df)
+  nuc_freq.df$residue <- str_sub(nuc_freq.df$residue, 1,1) #trim string to get nucleotide (first) letter
+  
+  # Plot individual nucleotide frequencies
+  nuc_freq.gg <- ggplot(nuc_freq.df, aes(x=rowid, y=frequency, color = residue)) +
+    geom_smooth(se=F) + coord_flip() +
+    facet_grid(cols = vars(arm)) +
+    ylab("Frequency") +
+    xlab("ID") +
+    scale_color_manual(values = c("darkgreen","dodgerblue4","goldenrod3","firebrick"))
+  return(nuc_freq.gg)
+}
+```
+
 
 # Get genomic coordinates and annotate STAU1 hybrids
 
@@ -321,6 +402,29 @@ paris.dt %>% arrange(name)
 # Sequence content
 
 ```{r}
-
+#hybrids.dt
+hybrids_mfe.dt <- hybrids_mfe.dt %>% dplyr::filter(str_detect(cluster, "C")) #keep hybrids within clusters
 ```
+
+
+```{r}
+test <- get_nucleotide_frequency(hybrids_mfe.dt)
+plot_nucleotide_frequency(test)
+```
+
+# Hybrid clusters with mega-long arms
+
+
+
+```{r}
+long_arm_clusters.df <- threeutr.df %>% dplyr::filter(L_arm_width > 90 | R_arm_width > 90)
+long_arm_hybrids.dt <- semi_join(hybrids_mfe.dt, long_arm_clusters.df, by = c("cluster" = "name"))
+long_arm_clusters.df
+long_arm_hybrids.dt
+```
+
+
+
+
+
 
