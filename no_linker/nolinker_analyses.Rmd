@@ -101,8 +101,8 @@ paris.dt <- convert_coordinates(paris.dt, genes.gr)
 paris.dt <- annotate_hybrids(paris.dt, regions.gr)
 #fwrite(paris.dt, "paris_annotated_clusters.gc.tsv.gz", sep = "\t")
 paris.dt$Experiment <- "PARIS"
-
 ```
+
 
 #### Merge experiments
 
@@ -110,7 +110,6 @@ paris.dt$Experiment <- "PARIS"
 all_exp.df <- as.data.frame(rbind(hybrids.dt, paris.dt))
 # intramolecular only
 all_exp.df <- all_exp.df %>% dplyr::filter(L_gene_name == R_gene_name)
-
 ```
 
 
@@ -122,6 +121,8 @@ biotype_counts.df <- all_exp.df %>%
 
 biotype_counts.df <- biotype_counts.df %>%
   group_by(Experiment, biotype) %>%
+  mutate(biotype = case_when(str_detect(biotype, "lncRNA") ~ "lncRNA",
+                             TRUE ~ biotype)) %>%
   summarise(counts = n()) %>%
   arrange(desc(biotype)) %>%
   mutate(percentage = counts*100 / sum(counts)) %>%
@@ -134,7 +135,14 @@ biotype_counts.df <- biotype_counts.df %>%
   group_by(Experiment, RNA_biotype) %>%
   mutate(biotype_percentage = sum(percentage)) %>%
   ungroup()
-  
+
+```
+
+```{r echo=FALSE}
+biotype_counts.df
+```
+
+```{r}
 # Simple bar-chart
 ggplot(distinct(biotype_counts.df, across(c(Experiment, RNA_biotype, biotype_percentage))),
        aes(RNA_biotype, biotype_percentage)) + 
@@ -239,18 +247,19 @@ paris_mfe.dt <- paris_mfe.dt[grep("Mt", L_seqnames, invert = TRUE)]
 all_exp_mfe.dt <- rbind(hybrids_mfe.dt, paris_mfe.dt)
 ```
 
+
+
+```{r echo=FALSE}
 ## All intramolecular hybrids MFE
-
-```{r}
-all_exp_mfe.dt$mfe <- as.numeric(all_exp_mfe.dt$mfe)
-
-ggplot(all_exp_mfe.dt, aes(x = mfe, color = Experiment)) + 
-  geom_density(alpha = 0.8) +
-  scale_colour_brewer(palette="Dark2") +
-  facet_grid(cols = vars(Experiment)) +
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-  ylab("Density") +
-  xlab("MFE (kcal/mol)")
+# all_exp_mfe.dt$mfe <- as.numeric(all_exp_mfe.dt$mfe)
+# 
+# ggplot(all_exp_mfe.dt, aes(x = mfe, color = Experiment)) + 
+#   geom_density(alpha = 0.8) +
+#   scale_colour_brewer(palette="Dark2") +
+#   facet_grid(cols = vars(Experiment)) +
+#   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+#   ylab("Density") +
+#   xlab("MFE (kcal/mol)")
 
 ```
 
@@ -264,10 +273,10 @@ all_exp_mfe.dt[, c("R_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
 all_exp_mfe.dt <- convert_coordinates(all_exp_mfe.dt, genes.gr)
 all_exp_mfe.dt <- annotate_hybrids(all_exp_mfe.dt, regions.gr)
 
-mfe_3utr.df <- all_exp_mfe.dt %>%
+mfe_3utr.dt <- all_exp_mfe.dt %>%
   dplyr::filter(L_region == "UTR3" & R_region == "UTR3")
 
-ggplot(mfe_3utr.df, aes(x = mfe, color = Experiment)) + 
+ggplot(mfe_3utr.dt, aes(x = mfe, color = Experiment)) + 
   geom_density(alpha = 0.8) +
   scale_colour_brewer(palette="Dark2") +
   facet_grid(cols = vars(Experiment)) +
@@ -278,4 +287,40 @@ ggplot(mfe_3utr.df, aes(x = mfe, color = Experiment)) +
 
 ```
 
+## 3'UTR clusters MFE
+
+
+```{r, warning = FALSE}
+# obtain minimum mfe per cluster per experiment
+mfe_3utr.dt <- mfe_3utr.dt %>%
+  dplyr::filter(str_detect(cluster, "C")) %>%
+  group_by(Experiment, cluster, L_gene_id, R_gene_id) %>%  #had to group also by gene id because redundant cluster names in PARIS data
+  mutate(min_mfe = min(mfe)) %>%
+  ungroup() %>%
+  select(Experiment, cluster, min_mfe) %>%
+  distinct()
+```
+
+```{r, warning = FALSE}
+# fuse min_mfe information to the clusters
+# threeutr.df <- left_join(threeutr.df, mfe_3utr.dt, by = c("name" = "cluster"))
+ggplot(mfe_3utr.dt, aes(x = min_mfe, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Dark2") +
+  facet_grid(cols = vars(Experiment)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)") +
+  ggtitle("3'UTR clusters")
+
+```
+
+```{r}
+paris.dt %>% arrange(name)
+```
+# Sequence content
+
+```{r}
+
+```
 
