@@ -10,18 +10,19 @@ library(rio)
 # ==========
 
 # Load data (mapped to hg19) and get gene ids from (Mukherjee et al. 2017)
+work.dir <- "/camp/home/iosubi/home/users/iosubi/projects/comp_hiclip/gene_id_mapping/"
+genomes.dir <- "/camp/lab/luscomben/home/users/chakraa2/projects/flora/ref/human/icount/"
 
-data_list <- import_list("41594_2017_BFnsmb3325_MOESM3_ESM.xlsx", which = c("3b","3c","3d"))
-
+data_list <- import_list(paste0(work.dir,"41594_2017_BFnsmb3325_MOESM3_ESM.xlsx"), which = c("3b","3c","3d"))
 data.df <- data_list %>% reduce(inner_join, by = c("Gene", "Simple"))
 
 # hg19 annotation from (Mukherjee et al. 2017)
-hg19.gr <- import.gff2("gencode.v19.chr_patch_hapl_scaff.annotation.gtf.gz")
+hg19.gr <- import.gff2(paste0(work.dir,"gencode.v19.chr_patch_hapl_scaff.annotation.gtf.gz"))
 hg19.df <- as.data.frame(hg19.gr)
 hg19.df <- hg19.df %>% filter(type == "gene")
 
 # hg38, gencode v33 used in STAU1 hiCLIP annotation 
-regions.gr <- import.gff2("~/Documents/Genomes/human/regions.gtf.gz")
+regions.gr <- import.gff2(paste0(genomes.dir,"regions.gtf.gz"))
 regions.df <- as.data.frame(regions.gr)
 
 
@@ -29,7 +30,7 @@ regions.df <- as.data.frame(regions.gr)
 # Mapping: based on matching ensembl IDs and gene names
 # ==========
 
-hg19.df <- semi_join(hg19.df, data.df, by = c("gene_id" = "Gene")) # filter hg19 for genes present in the metabolic data
+hg19.df <- semi_join(hg19.df, data.df, by = c("gene_id" = "Gene")) # filter hg19 for genes present in the Mukherjee et al. 2017 data
 
 hg19.map <- hg19.df %>%
   select(gene_id, gene_name) %>%
@@ -63,7 +64,7 @@ hg19to38map_name.df <- hg19to38map_name.df %>%
 hg19to38map.df <- rbind(hg19to38map_id.df, hg19to38map_name.df)
 
 # ==========
-# Unmapped hg19 IDs
+# Unmatched hg19 IDs
 # ==========
 
 # Extract ids & names of the umapped
@@ -77,4 +78,4 @@ hg19.unmapped <- hg19.unmapped %>%
 # Append the ids & names of the unmapped
 hg19to38map.df <- rbind(hg19to38map.df, hg19.unmapped)
 
-fwrite(hg19to38map.df, sep = "\t", "hg19_to_hg38_map.tsv")
+fwrite(hg19to38map.df, sep = "\t", paste0(genomes.dir,"hg19_to_hg38_map.tsv"))
