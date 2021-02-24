@@ -78,4 +78,4 @@ hg19.unmapped <- hg19.unmapped %>%
 # Append the ids & names of the unmapped
 hg19to38map.df <- rbind(hg19to38map.df, hg19.unmapped)
 
-fwrite(hg19to38map.df, sep = "\t", paste0(genomes.dir,"hg19_to_hg38_map.tsv"))
+fwrite(hg19to38map.df, sep = "\t", paste0(work.dir,"hg19_to_hg38_map.tsv"))
