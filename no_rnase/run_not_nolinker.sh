@@ -9,7 +9,13 @@
 #SBATCH --nodes=1
 #SBATCH --output=comp_not_nolinker-%A.out
 
+ml purge
+ml Nextflow/20.10.0
+ml Singularity/3.6.4
+ml Graphviz/2.38.0-foss-2016b
+
 export NXF_SINGULARITY_CACHEDIR=/camp/lab/luscomben/home/shared/singularity
+export ICOUNT_TMP_ROOT=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/nornase/tmp
 
 REFDIR=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/ref
 
@@ -35,4 +41,6 @@ nextflow run nf-core/clipseq -r dev \
 --fasta $REFDIR/GRCh38.primary_assembly.genome.fa.gz \
 --gtf $REFDIR/gencode.v33.annotation.gtf.gz \
 --umi_separator _ \
---star_index /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/nornase/STAR_index
+--peakcaller icount \
+--half_window 10 \
+--merge_window 10
