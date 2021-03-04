@@ -1,4 +1,5 @@
 #!/usr/bin/env Rscript
+
 library(ggplot2)
 library(ggrepel)
 library(forcats)
@@ -175,7 +176,7 @@ extract_paired_sequences <- function(forgi.df, rnafold.df) {
   
   duplexes.df <- left_join(duplexes.df, rnafold.df, by = "id") # add the sequence and structure to the forgi.df
   
-  # Extract sequence corresponding to the left and right arms of the stem, respectively
+  # Extract sequences corresponding to the left and right arms of the stem, respectively
   duplexes.df <- duplexes.df %>%
     mutate(stem_L_seq = substr(sequence, L_start, L_end),
            stem_R_seq = substr(sequence, R_start, R_end))
@@ -184,12 +185,14 @@ extract_paired_sequences <- function(forgi.df, rnafold.df) {
   stem_R_seqs <- RNAStringSet(duplexes.df$stem_R_seq)
   stem_L_freq <- as.data.frame(oligonucleotideFrequency(stem_L_seqs, width = 1, as.prob=TRUE))
   stem_R_freq <- as.data.frame(oligonucleotideFrequency(stem_R_seqs, width = 1, as.prob=TRUE))
+  
   duplexes.df <- dplyr::bind_cols(duplexes.df, stem_L_freq, stem_R_freq)
   colnames(duplexes.df) = gsub("...15|...16|...17|...18", "_L", colnames(duplexes.df)) # rename columns
   colnames(duplexes.df) = gsub("...19|...20|...21|...22", "_R", colnames(duplexes.df))
   duplexes.df <- duplexes.df %>%
     dplyr::select(-sequence, -mea_structure)
   return(duplexes.df)
+  
 }
 
 
@@ -201,6 +204,7 @@ get_nuc_frequencies <- function(forgi.df, rnafold.df) {
     rowwise() %>% 
     mutate(L_pur = sum(c(A_L, G_L)), # purine total per stem segment
            R_pur = sum(c(A_R, G_R)))
+  
   duplexes.df <- duplexes.df %>%
     group_by(id) %>%
     mutate(L_pur_mean = mean(L_pur), # purine mean per arm 
@@ -253,7 +257,9 @@ get_nuc_frequencies <- function(forgi.df, rnafold.df) {
                                A_freq_min_pur_arm, G_freq_min_pur_arm,U_freq_max_pur_arm, C_freq_max_pur_arm,
                                U_freq_min_pur_arm, C_freq_min_pur_arm),
                         by = c("id", "element"))
+  
   return(forgi.df)
+  
 }
 
 get_gc_content <- function(data.df) {
@@ -280,7 +286,9 @@ get_gc_content <- function(data.df) {
     select(id, GC_percentage) %>%
     distinct()
   data.df <- left_join(data.df, gc.df, by = "id") 
+  
   return(data.df)
+  
 }
 
 
@@ -317,31 +325,40 @@ plot_nuc_frequencies <- function(forgi.df) {
     ylab("Frequency") +
     xlab("ID") +
     scale_color_manual(values = c("darkgreen","dodgerblue4","goldenrod3","firebrick"))
+  
   return(nuc_freq.gg)
+  
 }
 
 
 run_rnaeval <- function(fasta.file, args =  c("-i", paste0(fasta.file,">temp.fa"))) {
+  
   rnaeval.out <- system2(command = "RNAeval", args = args, stdout = TRUE)
   rnaeval.df <- as.data.frame(readBStringSet("temp.fa"))
   rnaeval.df <- rnaeval.df %>% rownames_to_column(var = "id")
+  
   rnaeval.df <- rnaeval.df %>%
     rowwise() %>%
-    mutate(stem_loop_mfe = as.numeric(str_sub(x, -7,-2))) %>%
+    mutate(eval_mfe = as.numeric(str_sub(x, -7,-2))) %>%
     ungroup() %>%
-    select(id, stem_loop_mfe)
+    select(id, eval_mfe)
+  
   file.remove("temp.fa")
   return(rnaeval.df)
+  
 }
 
 get_mfe <- function(forgi, rnafold, prefix) {
+  
   data.df <- forgi %>%
+    dplyr::filter(element_type == "s") %>%
     group_by(id) %>%
     mutate(L_limit = min(L_start),
            R_limit = max(R_end)) %>%
     select(id, L_limit, R_limit) %>%
     distinct() %>%
     ungroup()
+  
   data.df <- left_join(data.df , rnafold, by = "id") # add the sequence and structure to the forgi
   data.df <- data.df %>%
     mutate(stem_loop_seq = substr(sequence, L_limit, R_limit),
@@ -352,12 +369,54 @@ get_mfe <- function(forgi, rnafold, prefix) {
   fasta[c(TRUE, FALSE, FALSE)] <- paste0(">", data.df$id)
   fasta[c(FALSE, TRUE, FALSE)] <- data.df$stem_loop_seq
   fasta[c(FALSE, FALSE, TRUE)] <- data.df$stem_loop_db
+  
   writeLines(fasta, paste0(prefix,"_rnaeval.fasta"))
   mfe.df <- run_rnaeval(paste0(prefix,"_rnaeval.fasta"))
   data.df <- left_join(data.df, mfe.df, by = "id")
-  first_stem_loop.df <- left_join(forgi, data.df, by = "id")
+  forgi <- left_join(forgi, data.df, by = "id")
   return(forgi)
+  
 }
+
+
+get_cofold_mfe <- function(forgi, rnafold, prefix) {
+  
+  data.df <- forgi %>%
+    dplyr::filter(element_type == "s") %>%
+    group_by(id) %>%
+    mutate(L_min = min(L_start), L_max = max(L_end),
+           R_min = min(R_start), R_max = max(R_end)) %>%
+    select(id, L_min, L_max, R_min, R_max) %>%
+    distinct() %>%
+    ungroup()
+  
+  data.df <- left_join(data.df , rnafold, by = "id") # add the sequence and structure
+  
+  data.df <- data.df %>%
+    mutate(L_seq = substr(sequence, L_min, L_max), R_seq = substr(sequence, R_min, R_max),
+           L_db = substr(mea_structure, L_min, L_max), R_db = substr(mea_structure, R_min, R_max)) %>%
+    select(-sequence, -mea_structure)
+  
+  # fuse the sequences using "&" separator
+  data.df <- data.df %>%
+    unite("duplex_seq", L_seq:R_seq, remove = FALSE, sep = "&") %>%
+    unite("duplex_db", L_db:R_db, remove = FALSE, sep = "&")
+  
+  # write multi-fasta with seq and db
+  fasta <- character(nrow(data.df) * 3) # empty file
+  fasta[c(TRUE, FALSE, FALSE)] <- paste0(">", data.df$id)
+  fasta[c(FALSE, TRUE, FALSE)] <- data.df$duplex_seq
+  fasta[c(FALSE, FALSE, TRUE)] <- data.df$duplex_db
+  
+  writeLines(fasta, paste0(prefix,"_duplex_rnaeval.fasta"))
+  mfe.df <- run_rnaeval(paste0(prefix,"_duplex_rnaeval.fasta"))
+  data.df <- left_join(data.df, mfe.df, by = "id")
+  forgi <- left_join(forgi, data.df, by = "id")
+  return(forgi)
+  
+}
+
+
 # ==========
 # Start the analysis
 # ==========
@@ -386,13 +445,27 @@ if ( !is.na(opt$d )) {
 }
 
 
+forgi.df <- read.csv("/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1.10nt_10nt.peaks.forgi.tsv.gz", sep = "\t")
+# rnafold.df <- read.csv("/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1.10nt_10nt.peaks.rnafold.tsv.gz", sep = "\t")
+# rnafold.df <- rowid_to_column(rnafold.df, "id")
+# rnafold.df$id <- paste0("ID", rnafold.df$id, sep="")
+# rnafold.df <- dplyr::select(rnafold.df, c(id, sequence, mea_structure))
+
+
 xl <- 1
 #d = 15
 prefix <- str_c(str_split(forgi.file, "\\.")[[1]][1:3], collapse = ".")
 
+#prefix = "test"
+
 message(paste0("Analysing ", prefix, " data"))
 
 tic()
+
+# ==========
+# Process the forgi file
+# ==========
+
 # Classify structures based on their distance from xl site, whether they span multi-loops 
 # and whether the first stem-loop is fused to another stem-loop
 
@@ -461,16 +534,25 @@ first_stem_loop.df <- get_nuc_frequencies(first_stem_loop.df, rnafold.df)
 first_stem_loop.df <- get_gc_content(first_stem_loop.df)
 
 # get mea of the first stem-loop
-first_stem_loop.df <- get_mfe(first_stem_loop.df, rnafold.df, prefix)
+#first_stem_loop.df <- get_mfe(first_stem_loop.df, rnafold.df, prefix)
+
+
+nrow(first_stem_loop.df)
+# get binding energy between the 2 arms of the first stem-loop
+# MFE (arms of the first stem loop)
+first_stem_loop.df <- get_cofold_mfe(first_stem_loop.df, rnafold.df, prefix)
 
 write_tsv(first_stem_loop.df, "forgi_analyses.df.txt", quote = F)
 
-##############
+# ==========
 # Plotting
-##############
+# ==========
 
 # Plot features
+
+
 id_features.df <- get_id_features(first_stem_loop.df)
+
 id_features.df$stem_type <- as.factor(id_features.df$stem_type)
 id_features.df <- rowid_to_column(id_features.df)
 id_features.df <- id_features.df %>% 
@@ -499,11 +581,66 @@ nuc_freq.gg <- plot_nuc_frequencies(first_stem_loop.df)
 ggsave(paste0(prefix, "_nuc_freq.pdf"), nuc_freq.gg, height = 11, width = 7, dpi = 300)
 
 # MFE of the first stem loop
-mfe.gg <- ggplot(first_stem_loop.df, aes(stem_loop_mfe)) + stat_ecdf(geom = "step") +
-  labs(title=paste0(prefix, "MFE"),
-       y = "F(MFE)", x="MFE (kcal/mol")
-ggsave(paste0(prefix, "_mfe.pdf"), nuc_freq.gg, height = 11, width = 7, dpi = 300)
+
+mfe.df <- first_stem_loop.df %>% dplyr::select(id, eval_mfe) %>% distinct()
+
+# mfe.gg <- ggplot(mfe.df, aes(eval_mfe)) + stat_ecdf(geom = "step") +
+#   labs(title=paste0(prefix, "MFE"),
+#        y = "F(MFE)", x="MFE (kcal/mol")
+# ggsave(paste0(prefix, "_mfe.pdf"), nuc_freq.gg, height = 11, width = 7, dpi = 300)
+
+# assign positive values to 0
+mfe.df$Experiment = "Non-hybrids"
+mfe.df$eval_mfe[mfe.df$eval_mfe > 0] <- 0
+
+mfe_dens.gg <- ggplot(mfe.df, aes(x = eval_mfe, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Spectral") +
+  facet_grid(cols = vars(Experiment)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)") +
+  xlim(-87.5, 0) +
+  ggtitle("Non-hybrids")
+mfe_dens.gg
+ggsave(paste0(prefix, "_mfe_dens.pdf"), mfe_dens.gg, height = 4, width = 4, dpi = 300)
 
 toc()
-message("Analysis completed")
+message("Analysis completed!")
+
+
+### Many structures have high mfe; attempt filtering by the length of the stem + paired segment
+colnames(first_stem_loop.df)
+
+median(unique(first_stem_loop.df$stem_length_L))
+
+quantile(unique(first_stem_loop.df$stem_length_L), 0.95)
+
+
+# filter for structures at least 6 nt long and max 36 nt long
+test <- first_stem_loop.df %>%
+  dplyr::filter(between(stem_length_L, 8, 44) | between(stem_length_R, 8, 44)) %>%
+  dplyr::filter(sum_paired > 5 & max_duplex > 3 & max_duplex < 16)
+
+mfe.df <- test %>% dplyr::select(id, eval_mfe) %>% distinct()
+
+mfe.df$Experiment = "Non-hybrids"
+mfe.df$eval_mfe[mfe.df$eval_mfe > 0] <- 0
+
+mfe_dens.gg <- ggplot(mfe.df, aes(x = eval_mfe, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Spectral") +
+  facet_grid(cols = vars(Experiment)) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)") +
+  xlim(-87.5, 0) +
+  ggtitle("Non-hybrids")
+
+mfe_dens.gg
+
+median(unique(test$stem_length_L))
+median(unique(test$eval_mfe))
+mean(unique(test$eval_mfe))
+median(first_stem_loop.df$stem_length_R)
 

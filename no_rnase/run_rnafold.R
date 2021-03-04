@@ -7,7 +7,7 @@ library(data.table)
 library(pbapply)
 library(rslurm)
 library(optparse)
-library(dplyr,warn.conflicts = FALSE)
+library(dplyr, warn.conflicts = FALSE)
 
 run_rnafold <- function(sequence, args =  c("-p", "--noLP", "--noPS", "--MEA", paste0("< ",sequence))) {
   
@@ -73,7 +73,7 @@ get_forgi <- function(db, script_path = ".") {
 # Options and paths
 # =========
 
-option_list <- list(make_option(c("-b", "--bed"), action = "store", type = "character", default=NA, help = "Space separated bed file list"),
+option_list <- list(make_option(c("-b", "--bed"), action = "store", type = "character", default=NA, help = "Comma separated bed file list"),
                     make_option(c("-p", "--prefix"), action = "store", type = "character", default=NA, help = "Prefix for output files"),
                     make_option(c("-n", "--nodes"), action = "store", type = "integer", default = 100, help = "Number of nodes to allocate [default: %default]"))
 opt_parser = OptionParser(option_list = option_list)
@@ -85,26 +85,23 @@ get_elementstring.py_path <- getwd()
 # Load crosslinks bed file and get sequence
 # =========
 
-bed_list <-c("~/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1_low.10nt_10nt.peaks.bed.gz",
-                "~/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1_high.10nt_10nt.peaks.bed.gz")
-
-bed_list <- strsplit(opt$filelist, " ")
+bed_list <- unlist(strsplit(opt$bed, ","))
 bed.grl <- GRangesList(lapply(bed_list, import.bed))
 bed <- unlist(bed.grl)
 bed <- keepStandardChromosomes(bed, pruning.mode = "coarse")
-
-# mcols(bed) = NULL
+mcols(bed) = NULL
 
 # get start of peaks  +100
 bed <- resize(bed, width = 1, fix = "start") # resize the peaks, start of peak = 1
 # keep unique positions
 bed <- unique(bed)
-bed$id <- paste0("ID", 1:length(bed))
+bed$name <- paste0("ID", 1:length(bed))
 bed <- resize(bed, width = 100+1, fix = "start") # add + flank
+
 
 fasta <- getSeq(Hsapiens, bed)
 
-names(fasta) <- bed$id
+names(fasta) <- bed$name
 fasta.df <- data.frame(id = names(fasta), sequence = as.character(fasta))
 
 
@@ -146,6 +143,8 @@ tic()
 sjob <- slurm_apply(get_forgi, forgi_input.df, jobname = paste0("forgi_", paste0(sample(c(LETTERS, letters, 0:9), 10), collapse = "")),
                     nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"), submit = TRUE)
 
+message("forgi is running..")
+
 status <- FALSE
 while(status == FALSE) {
   squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
@@ -160,3 +159,6 @@ toc()
 
 forgi.dt$id <- rep(bed$name, elementNROWS(forgi))
 fwrite(forgi.dt, file = paste0(opt$prefix, ".forgi.tsv.gz"), sep = "\t")
+
+message("Analysis completed!")
+
