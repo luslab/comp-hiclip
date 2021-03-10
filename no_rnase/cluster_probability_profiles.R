@@ -154,9 +154,6 @@ ggsave("stau1_rnaplfold_metaprofile.pdf", profile.gg)
 # K-means clustering
 ###########
 
-# Plotting settings
-col_pal <- brewer.pal(5, "Dark2")
-
 ### Focus on the -50 to +75 nt relative to peak starts:
 prob.df <- prob.df %>% dplyr::select(51:176)
 ### Focus on the +10 to +75 nt relative to peak starts:
@@ -166,7 +163,9 @@ prob_downstream.df <- prob.df %>% dplyr::select(61:126)
 # K-means clustering - "euclidean" dist, 5 clusters
 set.seed(123)
 five_kmeans.df <- run_kmeans(prob_downstream.df, 5)
-plot_cluster_heatmap(five_kmeans.df, "STAU1 unpaired probability", plot.name ="stau1_rnaplfold_kmeans.pdf" )
+
+col_pal <- brewer.pal(5, "Dark2")
+plot_cluster_heatmap(five_kmeans.df, "STAU1 unpaired probability", plot.name ="stau1_rnaplfold_kmeans.pdf")
 
 # join cluster information to the data containing the -50: +75 nt positions 
 stopifnot(rownames(five_kmeans.df) == rownames(prob.df))
@@ -176,8 +175,9 @@ prob.df$cluster_size <- five_kmeans.df$cluster_size
 clusters.gg <- plot_cluster_mean(prob.df, 51)
 ggsave("stau1_rnaplfold_cluster_profiles.pdf", clusters.gg)
 
-# prob.df <- prob.df %>%
-#   rename(.cluster = cluster)
+prob.df <- prob.df %>%
+  rename(.cluster = cluster)
+plot_cluster_heatmap(prob.df, "STAU1 unpaired probability", plot.name ="stau1_rnaplfold_kmeans_minus50.pdf")
 
 # Export clusters data
 prob.df <- rownames_to_column(prob.df, var = "id")
