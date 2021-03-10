@@ -18,7 +18,7 @@ theme_set(theme_bw() +
 
 std <- function(x) sd(x)/sqrt(length(x))
 
-read_data <- function(filename) {
+get_metaprofile_mean <- function(filename) {
   
   prob.df <- read.csv(filename, sep="\t")
   colnames(prob.df) <- seq(1:ncol(prob.df)) - (ncol(prob.df)+1)/2
@@ -39,7 +39,7 @@ read_data <- function(filename) {
 }
 
 
-plot_single_profile <- function(data.df) {
+plot_metaprofile <- function(data.df) {
   
   profile.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample)) +
     geom_line(aes(linetype = Sample)) +
@@ -123,7 +123,7 @@ plot_cluster_mean <- function(cl, left_flank) {
 }
 
 ###########
-# Load  metaprofile dataframes (df output from get_structure_metaprolfile.R)
+# Load  metaprofile dataframes (df output from get_structure_metaprofile.R)
 ###########
 
 prob.filename <- "stau1_threeutrs.rnaplfold_prob.df.txt"
@@ -138,15 +138,15 @@ plot_heatmap(prob.df, "STAU1 unpaired probability", "stau1_rnaplfold_heatmap.pdf
 
 
 # calculate the mean probability and standard error of the mean
-prob.mean.df <- read_data(prob.filename)
-shuff.mean.df <- read_data(shuff.filename)
+prob.mean.df <- get_metaprofile_mean(prob.filename)
+shuff.mean.df <- get_metaprofile_mean(shuff.filename)
 prob.mean.df$Sample <- "STAU1"
 shuff.mean.df$Sample <- "Shuffled control"
 data.df <- rbind(prob.mean.df, shuff.mean.df)
 data.df$peaks_count <- nrow(prob.mean.df)
 
 # plot the mean probability and standard error of the mean
-profile.gg <- plot_single_profile(data.df)
+profile.gg <- plot_metaprofile(data.df)
 profile.gg <- profile.gg+geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), linetype=2, alpha=0.3)
 ggsave("stau1_rnaplfold_metaprofile.pdf", profile.gg)
 
