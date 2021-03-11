@@ -1,6 +1,7 @@
 #!/usr/bin/env Rscript
 
 library(rematch)
+library(stringr)
 library(ggplot2)
 library(pheatmap)
 library(reshape2)
@@ -10,11 +11,15 @@ library(ggpubr)
 library(grid)
 library(RColorBrewer)
 library(cluster)
+library(optparse)
 library(gridExtra)
 library(factoextra)
 theme_set(theme_bw() +
             theme(legend.position = "top"))
 
+# ==========
+# Define functions
+# ==========
 
 std <- function(x) sd(x)/sqrt(length(x))
 
@@ -122,50 +127,77 @@ plot_cluster_mean <- function(cl, left_flank) {
   return(clust.mean.profiles)
 }
 
-###########
+# ==========
+# Define options and params
+# ==========
+
+option_list <- list(make_option(c("-p", "--profile"), action = "store", type = "character", default=NA, help = "tab-separated file containing nucleotide positions as columns and IDs as rows"),
+                    make_option(c("-s", "--shuffled"), action = "store", type = "character", default=NULL, help = "tab-separated file containing nucleotide positions as columns and IDs as rows"),
+                    make_option(c("-c", "--clusters"), action = "store", type = "integer", default = 5, help = "Number of kmeans clusters to ask for [default: %default]"))
+
+opt_parser = OptionParser(option_list = option_list)
+opt <- parse_args(opt_parser)
+
+prob.file <- opt$prob
+
+if (opt$shuffled) {
+  shuff.file <- opt$shuffled
+}
+
+# prob.file <- "stau1_threeutrs.rnaplfold_prob.df.txt"
+# shuff.file <- "stau1_threeutrs.rnaplfold.shuffled_prob.df.txt"
+
+prefix <- str_split(prob.file, pattern = ".df")[[1]][1]
+prob.name <- str_to_upper(str_split(prob.file, pattern = "_")[[1]][1]) #RBP name
+
+
+# ==========
 # Load  metaprofile dataframes (df output from get_structure_metaprofile.R)
-###########
+# ==========
 
-prob.filename <- "stau1_threeutrs.rnaplfold_prob.df.txt"
-shuff.filename <- "stau1_threeutrs.rnaplfold.shuffled_prob.df.txt"
-
-prob.df <- read.csv(prob.filename, sep="\t")
+prob.df <- read.csv(prob.file, sep="\t")
 colnames(prob.df) <- seq(1:ncol(prob.df)) - (ncol(prob.df)+1)/2
 prob.df <- drop_na(prob.df, 0)
 
-# draw pheatmap before clustering
-plot_heatmap(prob.df, "STAU1 unpaired probability", "stau1_rnaplfold_heatmap.pdf")
-
+# draw heatmap before clustering
+plot_heatmap(prob.df, plot.title =prob.name, plot.name = paste0(prefix,"_heatmap.pdf"))
 
 # calculate the mean probability and standard error of the mean
-prob.mean.df <- get_metaprofile_mean(prob.filename)
-shuff.mean.df <- get_metaprofile_mean(shuff.filename)
-prob.mean.df$Sample <- "STAU1"
-shuff.mean.df$Sample <- "Shuffled control"
-data.df <- rbind(prob.mean.df, shuff.mean.df)
-data.df$peaks_count <- nrow(prob.mean.df)
+prob.mean.df <- get_metaprofile_mean(prob.file)
+prob.mean.df$Sample <- prob.name
+
+if (opt$shuffled) {
+  shuff.file <- opt$shuffled
+  shuff.mean.df <- get_metaprofile_mean(shuff.file)
+  shuff.mean.df$Sample <- "Shuffled control"
+  data.df <- rbind(prob.mean.df, shuff.mean.df)
+  data.df$peaks_count <- nrow(prob.mean.df)
+} else {
+  data.df <- prob.mean.df
+}
 
 # plot the mean probability and standard error of the mean
 profile.gg <- plot_metaprofile(data.df)
 profile.gg <- profile.gg+geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), linetype=2, alpha=0.3)
-ggsave("stau1_rnaplfold_metaprofile.pdf", profile.gg)
+ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
 
-###########
+
+# ==========
 # K-means clustering
-###########
+# ==========
 
-### Focus on the -50 to +75 nt relative to peak starts:
+# Focus on the -50 to +75 nt relative to peak starts:
 prob.df <- prob.df %>% dplyr::select(51:176)
-### Focus on the +10 to +75 nt relative to peak starts:
+# Focus on the +10 to +75 nt relative to peak starts:
 prob_downstream.df <- prob.df %>% dplyr::select(61:126)
 
 
 # K-means clustering - "euclidean" dist, 5 clusters
 set.seed(123)
-five_kmeans.df <- run_kmeans(prob_downstream.df, 5)
+five_kmeans.df <- run_kmeans(prob_downstream.df, opt$clusters)
 
 col_pal <- brewer.pal(5, "Dark2")
-plot_cluster_heatmap(five_kmeans.df, "STAU1 unpaired probability", plot.name ="stau1_rnaplfold_kmeans.pdf")
+plot_cluster_heatmap(five_kmeans.df, plot.title = prob.name, plot.name = paste0(prefix,"_kmeans.pdf"))
 
 # join cluster information to the data containing the -50: +75 nt positions 
 stopifnot(rownames(five_kmeans.df) == rownames(prob.df))
@@ -173,14 +205,14 @@ prob.df$cluster <- five_kmeans.df$.cluster # match cluster assignment to the pro
 prob.df$cluster_size <- five_kmeans.df$cluster_size
 
 clusters.gg <- plot_cluster_mean(prob.df, 51)
-ggsave("stau1_rnaplfold_cluster_profiles.pdf", clusters.gg)
+ggsave(paste0(prefix,"_cluster_profiles.pdf"), clusters.gg)
 
 prob.df <- prob.df %>%
   rename(.cluster = cluster)
-plot_cluster_heatmap(prob.df, "STAU1 unpaired probability", plot.name ="stau1_rnaplfold_kmeans_minus50.pdf")
+plot_cluster_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,"_kmeans_minus50.pdf"))
 
 # Export clusters data
 prob.df <- rownames_to_column(prob.df, var = "id")
-write.table(prob.df, "stau1_threeutrs.rnaplfold_clusters.df.txt", quote = F, row.names = F, sep = "\t")
+write.table(prob.df, paste0(prefix,"_clusters.df.txt"), quote = F, row.names = F, sep = "\t")
 
 
