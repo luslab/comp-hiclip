@@ -194,15 +194,15 @@ prob_downstream.df <- prob.df %>% dplyr::select(61:126)
 
 # K-means clustering - "euclidean" dist, 5 clusters
 set.seed(123)
-five_kmeans.df <- run_kmeans(prob_downstream.df, opt$clusters)
+kmeans.df <- run_kmeans(prob_downstream.df, opt$clusters)
 
 col_pal <- brewer.pal(5, "Dark2")
-plot_cluster_heatmap(five_kmeans.df, plot.title = prob.name, plot.name = paste0(prefix,"_kmeans.pdf"))
+plot_cluster_heatmap(kmeans.df, plot.title = prob.name, plot.name = paste0(prefix,"_kmeans.pdf"))
 
 # join cluster information to the data containing the -50: +75 nt positions 
-stopifnot(rownames(five_kmeans.df) == rownames(prob.df))
-prob.df$cluster <- five_kmeans.df$.cluster # match cluster assignment to the prob.df
-prob.df$cluster_size <- five_kmeans.df$cluster_size
+stopifnot(rownames(kmeans.df) == rownames(prob.df))
+prob.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
+prob.df$cluster_size <- kmeans.df$cluster_size
 
 clusters.gg <- plot_cluster_mean(prob.df, 51)
 ggsave(paste0(prefix,"_cluster_profiles.pdf"), clusters.gg)
