@@ -201,8 +201,8 @@ if (!file.exists(threeutr.plfold.db)) {
   
 } else {
   
+  # filter 3UTR db for transcripts of interest
   rnaplfold.gr <- import.bed(threeutr.plfold.db)
-  rnaplfold.gr <- rnaplfold.gr[transcript.ls]
   rnaplfold.gr <- rnaplfold.gr[rnaplfold.gr$name %in% transcript.ls]
   export.bed(rnaplfold.gr, paste0(prefix, "_threeutrs.rnaplfold.bed"), format = "BED")
   
