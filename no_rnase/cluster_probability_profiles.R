@@ -13,7 +13,6 @@ library(RColorBrewer)
 library(cluster)
 library(optparse)
 library(gridExtra)
-library(factoextra)
 theme_set(theme_bw() +
             theme(legend.position = "top"))
 
@@ -132,19 +131,19 @@ plot_cluster_mean <- function(cl, left_flank) {
 # ==========
 
 option_list <- list(make_option(c("-p", "--profile"), action = "store", type = "character", default=NA, help = "tab-separated file containing nucleotide positions as columns and IDs as rows"),
-                    make_option(c("-s", "--shuffled"), action = "store", type = "character", default=NULL, help = "tab-separated file containing nucleotide positions as columns and IDs as rows"),
+                    make_option(c("-s", "--shuffled"), action = "store", type = "character", default=NA, help = "tab-separated file containing nucleotide positions as columns and IDs as rows"),
                     make_option(c("-c", "--clusters"), action = "store", type = "integer", default = 5, help = "Number of kmeans clusters to ask for [default: %default]"))
 
 opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
-prob.file <- opt$prob
+prob.file <- opt$profile
 
-if (opt$shuffled) {
+if (!is.na(opt$shuffled)) {
   shuff.file <- opt$shuffled
 }
 
-# prob.file <- "stau1_threeutrs.rnaplfold_prob.df.txt"
+
 # shuff.file <- "stau1_threeutrs.rnaplfold.shuffled_prob.df.txt"
 
 prefix <- str_split(prob.file, pattern = ".df")[[1]][1]
@@ -166,7 +165,7 @@ plot_heatmap(prob.df, plot.title =prob.name, plot.name = paste0(prefix,"_heatmap
 prob.mean.df <- get_metaprofile_mean(prob.file)
 prob.mean.df$Sample <- prob.name
 
-if (opt$shuffled) {
+if (!is.na(opt$shuffled)) {
   shuff.file <- opt$shuffled
   shuff.mean.df <- get_metaprofile_mean(shuff.file)
   shuff.mean.df$Sample <- "Shuffled control"

@@ -12,7 +12,7 @@ library(optparse)
 # Define functions
 # ==========
 
-resize_peaks <- function(bedfiles.list, left = 100, right = 100, prefix = prefix) {
+resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
   
   w <- left + right +1  # width of interval: xl site + flanks
   
@@ -20,7 +20,7 @@ resize_peaks <- function(bedfiles.list, left = 100, right = 100, prefix = prefix
   gr <- unlist(grl)
   gr <- keepStandardChromosomes(gr, pruning.mode = "coarse")
   gr <- dropSeqlevels(gr, c("chrM", "chrY"), pruning.mode = "coarse")
-  gr$peak_id <- paste0("peak", seq(1,length(gr)))
+  gr$peak_id <- seq(1,length(gr))
   gr.df <- as.data.frame(gr)
 
   gr <- resize(gr, width = 1, fix = "start") # resize the peaks, start of peak = 1
@@ -36,7 +36,7 @@ resize_peaks <- function(bedfiles.list, left = 100, right = 100, prefix = prefix
   
 }
 
-get_overlaps <- function(gr, element.gr, left = 100, right = 100, prefix = prefix) {
+get_overlaps <- function(gr, element.gr, left = 100, right = 100) {
   
   w <- left + right + 1  # width of interval: xl site + flanks
   
@@ -46,7 +46,7 @@ get_overlaps <- function(gr, element.gr, left = 100, right = 100, prefix = prefi
   gr.nt[queryHits(overlap)]$structure_prob <- element.gr[subjectHits(overlap)]$score
   
   overlap.df <- as.data.frame(gr.nt)
-  overlap.df$id <- 1 + seq(0, nrow(overlap.df) - 1) %/% w  # add peak ids #one ID every w
+  overlap.df$id <- 1 + seq(0, nrow(overlap.df) - 1) %/% w  # add peak ids #one ID every w nt
   overlap.df$id <- paste0("ID",overlap.df$id)
   
   stopifnot(unique(unique(overlap.df$id) == unique(gr$id)) == TRUE)
@@ -59,7 +59,7 @@ get_overlaps <- function(gr, element.gr, left = 100, right = 100, prefix = prefi
   minus$pos <- rev(seq(1:w))
   overlap.df <- rbind(plus, minus) %>% arrange(nt_id) %>% dplyr::select(-nt_id) # order by nt_id and remove the nt_id col
   
-  write.table(overlap.df, paste0(prefix,"_overlap.df.txt"), quote = FALSE, sep = "\t")
+  # write.table(overlap.df, paste0(prefix,"_overlap.df.txt"), quote = FALSE, sep = "\t")
   
   pos.df <- unstack(overlap.df, structure_prob ~ pos) #reshape df and keep only the nt positions and scores
   pos.df <- rowid_to_column(pos.df, var = "id")
@@ -93,7 +93,7 @@ get_metaprofile <- function(gr, element.gr) {
 # Define options and params
 # ==========
 
-option_list <- list(make_option(c("", "--peaks"), action = "store", type = "character", default=NA, help = "Comma separated transcript (ENST)-annotated peaks/xlink bed files"),
+option_list <- list(make_option(c("-b", "--bed"), action = "store", type = "character", default=NA, help = "Comma separated transcript (ENST)-annotated peaks/xlink bed files"),
                     make_option(c("", "--prob"), action = "store", type = "character", default=NA, help = "Comma separated structure probability bed files"),
                     make_option(c("", "--prefix"), action = "store", type = "character", default=NA, help = "Prefix for output files"),
                     make_option(c("-l", "--left"), action = "store", type = "integer", default = 100, help = "Number of nt upstream [default: %default]"),
@@ -105,7 +105,7 @@ opt <- parse_args(opt_parser)
 prefix <- opt$prefix
 
 # ==========
-# Obtain structure  metaprofiles
+# Obtain structure metaprofiles
 # ==========
 
 # Load the peak/xl bed files; they need to be annotated with ENST in a 'name' metadata column

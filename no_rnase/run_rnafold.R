@@ -89,16 +89,16 @@ bed_list <- unlist(strsplit(opt$bed, ","))
 bed.grl <- GRangesList(lapply(bed_list, import.bed))
 bed <- unlist(bed.grl)
 bed <- keepStandardChromosomes(bed, pruning.mode = "coarse")
+bed <- dropSeqlevels(bed, c("chrM", "chrY"), pruning.mode = "coarse")
 mcols(bed) = NULL
 
 # get start of peaks  +100
 bed <- resize(bed, width = 1, fix = "start") # resize the peaks, start of peak = 1
-# keep unique positions
 bed <- unique(bed)
 bed$name <- paste0("ID", 1:length(bed))
 bed <- resize(bed, width = 100+1, fix = "start") # add + flank
 
-
+# extract sequence
 fasta <- getSeq(Hsapiens, bed)
 
 names(fasta) <- bed$name

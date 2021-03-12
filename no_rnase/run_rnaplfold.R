@@ -98,9 +98,9 @@ get_rnaplfold_shuffled <- function(id, sequence) {
 
 option_list <- list(make_option(c("-b", "--bed"), action = "store", type = "character", default=NA, help = "Comma separated trancript(ENST) annotated bed files list"),
                     make_option(c("-p", "--prefix"), action = "store", type = "character", default=NA, help = "Prefix for output files"),
-                    make_option(c("-t", "--txdb"), action = "store", type = "character", default=NULL, help = "TxDb (optional, but required if --threeutrs not provided)"),
+                    make_option(c("-t", "--txdb"), action = "store", type = "character", default=NA, help = "TxDb (optional, but required if --threeutrs not provided)"),
                     make_option(c("", "--threeutrs"), action = "store", type = "character", default="threeutrs.grl.rds", help = "RDS of 3'UTRs GRangesList (optional)"),
-                    make_option(c("-s", "--shuffle"), action = "store_true",  type = "character", help = "Generate shuffled control"),
+                    make_option(c("-s", "--shuffle"), action = "store_true",  default=FALSE, type = "character", help = "Generate shuffled control"),
                     make_option(c("-n", "--nodes"), action = "store", type = "integer", default = 100, help = "Number of nodes to allocate [default: %default]"))
 
 opt_parser = OptionParser(option_list = option_list)
@@ -202,6 +202,7 @@ if (!file.exists(threeutr.plfold.db)) {
 } else {
   
   # filter 3UTR db for transcripts of interest
+  message("Filtering 3UTR db for transcripts of interest...")
   rnaplfold.gr <- import.bed(threeutr.plfold.db)
   rnaplfold.gr <- rnaplfold.gr[rnaplfold.gr$name %in% transcript.ls]
   export.bed(rnaplfold.gr, paste0(prefix, "_threeutrs.rnaplfold.bed"), format = "BED")
@@ -241,6 +242,8 @@ if (opt$shuffle) {
   rnaplfold.shuffled.grl <- GRangesList(rnaplfold.shuffled.ls)
   export.bed(unlist(rnaplfold.shuffled.grl), paste0(prefix, "_threeutrs.rnaplfold.shuffled.bed"), format = "BED")
   message("Probability scores for shuffled control (BED) exported.")
+} else {
+  message("A shuffled control was not generated.")
 }
 
 toc()
