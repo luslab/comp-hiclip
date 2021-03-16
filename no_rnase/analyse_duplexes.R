@@ -14,26 +14,14 @@ theme_set(theme_bw() +
             theme(legend.position = "top"))
 library(optparse)
 
-option_list <- list(
-  make_option(c("-f", "--forgi"), type="character", action="store",
-              help="Provide an input forgi file"), 
-  make_option(c("-r", "--rnafold"), type="character", action="store",
-              help="Provide an input rnafold file"),
-  make_option(c("-d", "--distance"), action="store", type="numeric", default=15,
-              help="Distance from peak start position")
-)
-
-opt <- parse_args(OptionParser(option_list=option_list))
-print(opt)
+library(rtracklayer)
+library(GenomicFeatures)
 
 
-#' A function to count all occurrences of a structure annotation type residue within a structure/ID
-#'
-#' @description 
-#' This function will count the structure element "structure_type" within a structure annotation dataframe "data.df"
-#' 
-#' @param data.df the dataframe you would like to search and count from
-#' @param structure_type the string that denotes the structure element type
+# ==========
+# Define functions
+# ==========
+
 draw_pie_chart <- function(data.df, column) {
   data_counts.df <- data.df %>%
     select(id, {{column}}) %>%
@@ -49,18 +37,12 @@ draw_pie_chart <- function(data.df, column) {
     scale_fill_brewer(palette = "Set3", direction = -4) +
     geom_label_repel(aes(label = percentage), size=3.5, show.legend = F, position = position_stack(vjust = .5)) +
     guides(fill = guide_legend(title = "Type of stems near the xl sites")) +
-    ggtitle(paste0("Stem types within", d," nt from crosslink sites\n(", sum(data_counts.df$counts)," cross-link sites)")) +
+    ggtitle(paste0("Stem types within", d," nt from peak starts\n(", sum(data_counts.df$counts)," peaks)")) +
     theme_void() # remove background, grid, numeric labels
   return(pie)
 }
 
-#' A function to calculate the length of a stem structure, including the bulges and internal loops, but not hairpins
-#'
-#' @description 
-#' This function will calculate stem-loop lengths per ID on the left and right sides, respectively, from a structure annotation dataframe 
-#' "data.df" and add them as new columns
-#' 
-#' @param data.df the dataframe you would like to analyse
+
 get_stem_length <- function(data.df) {
   data_sh.df <- data.df %>%
     group_by(id) %>%
@@ -85,25 +67,6 @@ get_hairpin_length <- function(data.df) {
 }
 
 
-# get_iloop_length_sum <- function(data.df) {
-#   data_h.df <- data.df %>% 
-#     group_by(id) %>%
-#     dplyr::filter(element_type == "i") %>%
-#     mutate(iloop_length_L = sum(L_width),
-#            iloop_length_R = sum(R_width)) %>%
-#     select(id, iloop_length_L, iloop_length_R)
-#   data.df <- left_join(data.df, data_h.df, by = "id")
-#   return(data.df)
-# }
-
-
-#' A function to calculate the longest duplex per ID
-#'
-#' @description 
-#' This function will calculate the maximum continuous duplex stretch in each structure/ID
-#' from a structure annotation dataframe "data.df" and add it as a new column
-#' 
-#' @param data.df the dataframe you would like to analyse
 get_paired_regions <- function(data.df) {
   duplex_max.df <- data.df %>%
     group_by(id) %>%
@@ -116,13 +79,6 @@ get_paired_regions <- function(data.df) {
 }
 
 
-#' A function to count all occurences of a structure annotation type residue within a structure/ID
-#'
-#' @description 
-#' This function will count the structure element "structure_type" within a structure annotation dataframe "data.df"
-#' 
-#' @param data.df the dataframe you would like to search and count from
-#' @param structure_type the string that denotes the structure element type
 count_element <- function(data.df, structure_type) {
   counter <- data.df %>% 
     group_by(id) %>% 
@@ -154,13 +110,7 @@ get_id_features <- function(data.df) {
   return(id_features.df)
 }
 
-#' A function to find all locations of a specific residue within a sequence
-#'
-#' @description 
-#' This function will find and locate the letter "residue" within a string sequence "x"
-#' 
-#' @param residue one letter you'd like to find
-#' @param x the string you would like to find it in
+
 find_residue <- function(residue, x) {
   pos <- str_locate_all(x, residue)
   return(unique(unlist(pos)))
@@ -348,6 +298,7 @@ run_rnaeval <- function(fasta.file, args =  c("-i", paste0(fasta.file,">temp.fa"
   
 }
 
+
 get_mfe <- function(forgi, rnafold, prefix) {
   
   data.df <- forgi %>%
@@ -378,8 +329,39 @@ get_mfe <- function(forgi, rnafold, prefix) {
   
 }
 
+shuffle_sequence <- function(sequence, number = 1, klet = 2, seed = 42) {
+  
+  system(paste0("ushuffle -seed ", seed, " -k ", klet, " -n ", number, " -s ", sequence), intern = TRUE)
+}
 
-get_cofold_mfe <- function(forgi, rnafold, prefix) {
+
+
+resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
+  
+  w <- left + right +1  # width of interval: xl site + flanks
+  
+  grl <- GRangesList(lapply(bedfiles.list, import.bed))
+  gr <- unlist(grl)
+  gr <- keepStandardChromosomes(gr, pruning.mode = "coarse")
+  gr <- dropSeqlevels(gr, c("chrM", "chrY"), pruning.mode = "coarse")
+  # gr$peak_id <- seq(1,length(gr))
+  gr.df <- as.data.frame(gr)
+  
+  gr <- resize(gr, width = 1, fix = "start") # resize the peaks, start of peak = 1
+  gr <- unique(gr)  # keep unique xl positions
+  gr <- resize(resize(gr, width = right+1, fix = "start"), width = w, fix = "end") # add +/- flanks
+  gr$id <- paste0("ID", seq(1,length(gr)))
+  
+  resized.gr.df <- as.data.frame(gr)
+  peaks.df <- left_join(gr.df,resized.gr.df, by="peak_id", suffix = c("", ".unique_resized"))
+  
+  # write.table(peaks.df, paste0(prefix, "_gr.df.txt"), quote = FALSE, sep = "\t") # save this to be able to map processed data to the original peaks later on
+  return(gr)
+  
+}
+
+
+get_duplex_arms <- function(forgi, rnafold) {
   
   data.df <- forgi %>%
     dplyr::filter(element_type == "s") %>%
@@ -397,24 +379,46 @@ get_cofold_mfe <- function(forgi, rnafold, prefix) {
            L_db = substr(mea_structure, L_min, L_max), R_db = substr(mea_structure, R_min, R_max)) %>%
     select(-sequence, -mea_structure)
   
-  # fuse the sequences using "&" separator
-  data.df <- data.df %>%
-    unite("duplex_seq", L_seq:R_seq, remove = FALSE, sep = "&") %>%
-    unite("duplex_db", L_db:R_db, remove = FALSE, sep = "&")
-  
-  # write multi-fasta with seq and db
-  fasta <- character(nrow(data.df) * 3) # empty file
-  fasta[c(TRUE, FALSE, FALSE)] <- paste0(">", data.df$id)
-  fasta[c(FALSE, TRUE, FALSE)] <- data.df$duplex_seq
-  fasta[c(FALSE, FALSE, TRUE)] <- data.df$duplex_db
-  
-  writeLines(fasta, paste0(prefix,"_duplex_rnaeval.fasta"))
-  mfe.df <- run_rnaeval(paste0(prefix,"_duplex_rnaeval.fasta"))
-  data.df <- left_join(data.df, mfe.df, by = "id")
   forgi <- left_join(forgi, data.df, by = "id")
   return(forgi)
-  
 }
+
+
+# gr needs to have a "name" metadata column with transcript names
+convert_to_transcriptomic_coordinates <- function(gr, txdb.sqlite) {
+  txdb <- loadDb(txdb.sqlite)
+  transcripts.gr <- transcripts(txdb)
+  names(transcripts.gr) <- id2name(txdb, feature.type = "tx")
+  transcripts.gr <- transcripts.gr[transcripts.gr$tx_name %in% gr$name]
+  mapped.gr <- mapToTranscripts(x=gr, transcripts=transcripts.gr)
+  return(mapped.gr)
+}
+
+merge_by_partial_string <- function(df1, df2) {
+  df1$matchID = row.names(df1)
+  df2$matchID = sapply(df2$gene_name, function(x) grep(x, df1$fasta_id)) # not very fast but ok
+  
+  df_merge = merge(df1, df2, by = "matchID")[-1]
+  return(df_merge)
+}
+
+
+# ==========
+# Define options
+# ==========
+
+option_list <- list(
+  make_option(c("-f", "--forgi"), type="character", action="store",
+              help="Provide an input forgi file"), 
+  make_option(c("-r", "--rnafold"), type="character", action="store",
+              help="Provide an input rnafold file"),
+  make_option(c("-d", "--distance"), action="store", type="numeric", default=15,
+              help="Distance from peak start position")
+)
+
+opt <- parse_args(OptionParser(option_list=option_list))
+print(opt)
+
 
 
 # ==========
@@ -444,23 +448,43 @@ if ( !is.na(opt$d )) {
   cat("No distance provided, the default of 15 nt will be used\n", file = stderr())
 }
 
+# ==========
+# Load data
+# ==========
 
-forgi.df <- read.csv("/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1.10nt_10nt.peaks.forgi.tsv.gz", sep = "\t")
-# rnafold.df <- read.csv("/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1.10nt_10nt.peaks.rnafold.tsv.gz", sep = "\t")
-# rnafold.df <- rowid_to_column(rnafold.df, "id")
-# rnafold.df$id <- paste0("ID", rnafold.df$id, sep="")
-# rnafold.df <- dplyr::select(rnafold.df, c(id, sequence, mea_structure))
+forgi.df <- read.csv("/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1.forgi.tsv.gz", sep = "\t")
+rnafold.df <- read.csv("/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt/stau1.rnafold.tsv.gz", sep = "\t")
+rnafold.df <- rowid_to_column(rnafold.df, "id")
+rnafold.df$id <- paste0("ID", rnafold.df$id, sep="")
+rnafold.df <- dplyr::select(rnafold.df, c(id, sequence, mea_structure))
+d = 15
 
 
+txdb <- paste0(data.dir,"/gencode_V33_txdb.sqlite")
+
+gencode.txdb <- loadDb(txdb)
+
+human.gtf <- paste0(data.dir, "/human_GencodeV33.gtf")
+data.dir <- "/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt"
+rnaplfold.clusters.df <- read.csv(paste0(data.dir,"/stau1_threeutrs.rnaplfold_prob_clusters.df.txt"), sep = "\t")
 xl <- 1
-#d = 15
+
 prefix <- str_c(str_split(forgi.file, "\\.")[[1]][1:3], collapse = ".")
 
-#prefix = "test"
+prefix = "stau1.peaks.10nt_10nt_"
 
 message(paste0("Analysing ", prefix, " data"))
 
 tic()
+
+# ==========
+# Filter the forgi & rnafold files on IDs from clusters 1 and 3 from the cluster_probability_profiles.R output
+# ==========
+
+rnaplfold.clusters.df <- rnaplfold.clusters.df %>% dplyr::filter(.cluster == 1 | .cluster == 3 | .cluster == 5)
+
+forgi.df <- semi_join(forgi.df, rnaplfold.clusters.df, by = "id")
+rnafold.df <- semi_join(rnafold.df, rnaplfold.clusters.df, by = "id")
 
 # ==========
 # Process the forgi file
@@ -522,7 +546,6 @@ first_stem_loop.df <- first_stem_loop.df %>%
 
 pie2.gg <- draw_pie_chart(first_stem_loop.df, stem_type)
 ggsave(paste0(prefix, "_pie2.pdf"), pie2.gg, height = 11, width = 7, dpi = 300)
-#draw_stacked_barchart(first_stem_loop.df, stem_type)
 
 # First stem loop properties
 first_stem_loop.df <- analyse_duplexes(first_stem_loop.df)
@@ -534,22 +557,15 @@ first_stem_loop.df <- get_nuc_frequencies(first_stem_loop.df, rnafold.df)
 first_stem_loop.df <- get_gc_content(first_stem_loop.df)
 
 # get mea of the first stem-loop
-#first_stem_loop.df <- get_mfe(first_stem_loop.df, rnafold.df, prefix)
+first_stem_loop.df <- get_mfe(first_stem_loop.df, rnafold.df, prefix)
 
-
-nrow(first_stem_loop.df)
-# get binding energy between the 2 arms of the first stem-loop
-# MFE (arms of the first stem loop)
-first_stem_loop.df <- get_cofold_mfe(first_stem_loop.df, rnafold.df, prefix)
-
-write_tsv(first_stem_loop.df, "forgi_analyses.df.txt", quote = F)
+# write_tsv(first_stem_loop.df, paste0(prefix, "_forgi_analyses.df.txt"), quote = F)
 
 # ==========
 # Plotting
 # ==========
 
 # Plot features
-
 
 id_features.df <- get_id_features(first_stem_loop.df)
 
@@ -584,11 +600,6 @@ ggsave(paste0(prefix, "_nuc_freq.pdf"), nuc_freq.gg, height = 11, width = 7, dpi
 
 mfe.df <- first_stem_loop.df %>% dplyr::select(id, eval_mfe) %>% distinct()
 
-# mfe.gg <- ggplot(mfe.df, aes(eval_mfe)) + stat_ecdf(geom = "step") +
-#   labs(title=paste0(prefix, "MFE"),
-#        y = "F(MFE)", x="MFE (kcal/mol")
-# ggsave(paste0(prefix, "_mfe.pdf"), nuc_freq.gg, height = 11, width = 7, dpi = 300)
-
 # assign positive values to 0
 mfe.df$Experiment = "Non-hybrids"
 mfe.df$eval_mfe[mfe.df$eval_mfe > 0] <- 0
@@ -609,15 +620,20 @@ toc()
 message("Analysis completed!")
 
 
-### Many structures have high mfe; attempt filtering by the length of the stem + paired segment
-colnames(first_stem_loop.df)
 
-median(unique(first_stem_loop.df$stem_length_L))
+# ==========
+# Code below is in testing phase
+# ==========
 
-quantile(unique(first_stem_loop.df$stem_length_L), 0.95)
+# ==========
+# Filter for stem-loop strucures that have similar properties to the ones originating from hybrid reads
+# ==========
 
+### Many structures have high mfe; attempt filtering by the length of the stem + paired segment?
 
-# filter for structures at least 6 nt long and max 36 nt long
+# quantile(unique(first_stem_loop.df$stem_length_L), 0.95)
+
+# filter for structures at least x nt long and max y nt long, and also based on number of paired residues
 test <- first_stem_loop.df %>%
   dplyr::filter(between(stem_length_L, 8, 44) | between(stem_length_R, 8, 44)) %>%
   dplyr::filter(sum_paired > 5 & max_duplex > 3 & max_duplex < 16)
@@ -637,10 +653,100 @@ mfe_dens.gg <- ggplot(mfe.df, aes(x = eval_mfe, color = Experiment)) +
   xlim(-87.5, 0) +
   ggtitle("Non-hybrids")
 
-mfe_dens.gg
 
-median(unique(test$stem_length_L))
-median(unique(test$eval_mfe))
-mean(unique(test$eval_mfe))
-median(first_stem_loop.df$stem_length_R)
+# ==========
+# Convert forgi stem-loops data to a format that is similar to the hybrids table from Tosca
+# ==========
+
+# load peaks data, resize exactly as for rnafold annotationsu sed to predict structures
+
+peaks.gc.gr <- resize_peaks(bed.files, left = 0, right = 100)
+
+# add a new column containing gene ids by mapping the trancript ids
+keys = peaks.gc.gr$name
+mapped.ids <- select(gencode.txdb, keys = keys, columns="GENEID", keytype="CDSNAME")
+peaks.gc.gr$gene_name <- mapped.ids$GENEID
+genes.ls <- unique(peaks.gc.gr$gene_name)
+
+# add fasta_id from annotation used for Tosca as a new column
+human.gr <- import.gff2(human.gtf)
+human.gr <- keepStandardChromosomes(human.gr, pruning.mode = "coarse")
+human.gr <- dropSeqlevels(human.gr, c("chrM", "chrY"), pruning.mode = "coarse")
+human.df <- as.data.frame(human.gr)
+
+human.df <- human.df %>%
+  filter(str_detect(fasta_id, paste(genes.ls, collapse = "|"))) #filter for gene names in the peak gr
+human.df$row <- row.names(human.df)
+human.df <- as.data.frame(human.df[,c("row", "fasta_id")])
+peaks.gc.df <- as.data.frame(peaks.gc.gr)
+
+peaks.gc.df <- merge_by_partial_string(human.df, peaks.gc.df)
+peaks.gc.df <- peaks.gc.df %>%
+  dplyr::select(-row)
+  
+# Get transcriptomic coordinates; Convert genomic coordinates to transcriptomic coordinates
+peaks.tx.gr <- convert_to_transcriptomic_coordinates(peaks.gc.gr, txdb)
+peaks.tx.gr$id <- paste0("ID",peaks.tx.gr$xHits)
+peaks.tx.gr$name <- seqnames(peaks.tx.gr)
+
+# make df containing the peaks starts + 100 in genomic and transcriptomic coordinates
+peaks.df <- left_join(peaks.gc.df, as.data.frame(peaks.tx.gr), by = c("id", "name"), suffix=c("",".tx"))
+
+# get the start and end position of the stem-loop individually for each arm
+first_stem_loop.df <- get_duplex_arms(first_stem_loop.df, rnafold.df)
+
+arms.df <- first_stem_loop.df %>% 
+  distinct(id, L_min, L_max, R_min, R_max, L_seq, R_seq, L_db, R_db)
+
+# merge GRanges info to forgi data frame
+arms.df <- as.data.frame(left_join(arms.df, peaks.df, by = "id"))
+
+# Calculate genomic coordinates, remember that xl = 1
+arms.df <- arms.df %>%
+  mutate(L_genomic_start = case_when((strand == "+") ~ start + L_min - xl,
+                               (strand == "-") ~ end - L_max + xl),
+         L_genomic_end = case_when((strand == "+") ~ start + L_max - xl,
+                                     (strand == "-") ~ end - L_min + xl),
+         R_genomic_start = case_when((strand == "+") ~ start + R_min - xl,
+                               (strand == "-") ~ end - R_max + xl),
+         R_genomic_end = case_when((strand == "+") ~ start + R_max - xl,
+                                     (strand == "-") ~ end - R_min + xl))
+
+# Calculate transcriptomic coordinates
+arms.df <- arms.df %>%
+  mutate(L_tx_start = start.tx + L_min - xl,
+         L_tx_end = start.tx + L_max - xl,
+         R_tx_start = start.tx + R_min - xl,
+         R_tx_end = start.tx + R_max - xl)
+
+
+# transcriptomic:
+forgi.reformated.tx.df <- data.frame(id=arms.df$id, name=arms.df$name, orientation=NA, type = "intragenic", hybrid_selection = NA, L_seqnames = arms.df$fasta_id,
+                L_read_start = arms.df$L_min, L_read_end = arms.df$L_max, L_start = arms.df$L_tx_start, L_end = arms.df$L_tx_end, L_width = NA, L_strand = "+", 
+                R_seqnames = arms.df$fasta_id, R_read_start = arms.df$R_min, R_read_end = arms.df$R_max, R_start = arms.df$R_tx_start, R_end = arms.df$R_tx_end, R_width = NA, R_strand = "+",
+                umi=NA, L_sequence=arms.df$L_seq, R_sequence=arms.df$R_seq, mfe = NA)
+
+forgi.reformated.tx.df <- forgi.reformated.tx.df %>%
+  rowwise() %>%
+  mutate(L_width = L_end - L_start + 1,
+         R_width = R_end - R_start +1,
+         L_sequence = str_replace_all(L_sequence, "U", "T"), # replace Us with Ts
+         R_sequence = str_replace_all(R_sequence, "U", "T")) %>%
+  ungroup()
+
+
+# genomic:
+forgi.reformated.gc.df <- data.frame(name = arms.df$id, count = arms.df$score, L_seqnames=arms.df$fasta_id,	
+                               L_start=arms.df$L_tx_start, L_end=arms.df$L_tx_end, L_strand="+", L_genomic_seqnames=arms.df$seqnames,
+                               L_genomic_start=arms.df$L_genomic_start, L_genomic_end= arms.df$L_genomic_end,
+                               L_genomic_strand=arms.df$strand, R_seqnames=arms.df$fasta_id, R_start=arms.df$R_tx_start, R_end=arms.df$L_tx_end,
+                               R_strand="+", R_genomic_seqnames=arms.df$seqnames,
+                               R_genomic_start=arms.df$R_genomic_start,  R_genomic_end= arms.df$R_genomic_end,
+                               R_genomic_strand =arms.df$strand)
+
+head(forgi.reformated.gc.df)
+head(forgi.reformated.tx.df)
+
+write.table(forgi.reformated.gc.df, paste0(prefix, "_gc.txt"), quote = FALSE, sep = "\t")
+write.table(forgi.reformated.tx.df, paste0(prefix, "_tx.txt"), quote = FALSE, sep = "\t")
 

@@ -113,7 +113,6 @@ files.list <- unlist(strsplit(opt$bed, ","))
 peaks.gr <- resize_peaks(files.list, left = opt$left, right = opt$right)
 message("Merging and resizing peaks...")
 
-
 # Load the structure probability bed files
 structure.files.list <- unlist(strsplit(opt$prob, ","))
 structure.files.list <- structure.files.list[str_detect(structure.files.list, pattern = ".bed")]
