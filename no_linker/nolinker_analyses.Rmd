@@ -14,8 +14,10 @@ output:
 ---
 
 #### Libraries
-```{r}
+```{r include=FALSE}
+
 library(data.table)
+library(rtracklayer)
 library(primavera)
 library(tidyverse)
 library(stringr)
@@ -29,6 +31,7 @@ theme_set(theme_bw() +
 #### Functions
 ```{r}
 plot_stacked_barchart <- function(data.df, column, group) {
+  
   data_counts.df <- data.df %>%
     select(name, {{group}}, {{column}}) %>%
     group_by({{group}}, {{column}}) %>%
@@ -36,6 +39,7 @@ plot_stacked_barchart <- function(data.df, column, group) {
     arrange(desc({{column}})) %>%
     mutate(percentage = counts*100 / sum(counts)) %>%
     mutate(pos = cumsum(percentage) - percentage/2)
+  
   bar = ggplot() + geom_bar(aes(y = percentage, x = "", fill = {{column}}), alpha = 0.8, data = data_counts.df,
                             stat="identity", width = 0.5) +
     geom_text(data = data_counts.df, aes(x = "", y = pos, label = paste0(round(percentage,1),"%")), size=3) +
@@ -48,6 +52,7 @@ plot_stacked_barchart <- function(data.df, column, group) {
     ylab("Percentage") +
     xlab("Experiment")
   return(bar)
+  
 }
 ```
 
@@ -55,13 +60,16 @@ plot_stacked_barchart <- function(data.df, column, group) {
 ```{r}
 get_nucleotide_frequency <- function(duplexes.df) {
   
-  L_seq <- DNAStringSet(duplexes.df$L_sequence)
-  R_seq <- DNAStringSet(duplexes.df$R_sequence)
+  # L_seq <- DNAStringSet(duplexes.df$L_sequence)
+  # R_seq <- DNAStringSet(duplexes.df$R_sequence)
+  L_seq <- DNAStringSet(duplexes.df$l_paired_residues)
+  R_seq <- DNAStringSet(duplexes.df$r_paired_residues)
+  
   L_freq <- as.data.frame(oligonucleotideFrequency(L_seq, width = 1, as.prob=TRUE))
   R_freq <- as.data.frame(oligonucleotideFrequency(R_seq, width = 1, as.prob=TRUE))
   duplexes.df <- dplyr::bind_cols(duplexes.df, L_freq, R_freq)
-  colnames(duplexes.df) = gsub("...25|...26|...27|...28", "_L", colnames(duplexes.df)) # rename columns
-  colnames(duplexes.df) = gsub("...29|...30|...31|...32", "_R", colnames(duplexes.df))
+  colnames(duplexes.df) = gsub("...43|...44|...45|...46", "_L", colnames(duplexes.df)) # rename columns
+  colnames(duplexes.df) = gsub("...47|...48|...49|...50", "_R", colnames(duplexes.df))
   
   # Pur content - calculate max pur L vs. R arm 
   duplexes.df <- duplexes.df %>%
@@ -90,7 +98,9 @@ get_nucleotide_frequency <- function(duplexes.df) {
 
   nuc_freq_reordered.df <- rbind(nuc_freq_max_pur_arm.df, nuc_freq_min_pur_arm.df)
   nuc_freq_reordered.df <- nuc_freq_reordered.df %>% arrange(desc(max_pur))
+  
   return(nuc_freq_reordered.df)
+  
 }
 
 ```
@@ -98,7 +108,8 @@ get_nucleotide_frequency <- function(duplexes.df) {
 
 ```{r}
 plot_nucleotide_frequency <- function(data) {
-  # Prep for plotting
+  
+  # Prepare for plotting
   high_pur.df <- data %>% 
     select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm) %>%
     dplyr::arrange(G_freq_max_pur_arm)
@@ -126,7 +137,182 @@ plot_nucleotide_frequency <- function(data) {
     ylab("Frequency") +
     xlab("ID") +
     scale_color_manual(values = c("darkgreen","dodgerblue4","goldenrod3","firebrick"))
+  
   return(nuc_freq.gg)
+  
+}
+```
+
+
+```{r}
+# Structure functions:
+
+GetMFE <- function(L_sequence, R_sequence) {
+  
+  input <- paste0(L_sequence, "\n", R_sequence)
+  rnaduplex <- system("RNAduplex --noLP", input = input, intern = TRUE)
+  
+  rnaduplex <- gsub("\\s+", "_", rnaduplex)
+  mfe <- sapply(strsplit(rnaduplex, "_"), "[", 5) # Need to fix for positives < 10 ? as they have an extra space
+  mfe <- as.numeric(gsub("\\(|\\)", "", mfe))
+  
+  # Get dot.bracket
+  db <- sapply(strsplit(rnaduplex, "_"), "[", 1)
+  
+  # Get from/to positions
+  l <- sapply(strsplit(rnaduplex, "_"), "[", 2)
+  r <- sapply(strsplit(rnaduplex, "_"), "[", 4)
+  l_from <- as.numeric(sapply(strsplit(l, ","), "[", 1))
+  l_to <- as.numeric(sapply(strsplit(l, ","), "[", 2))
+  r_from <- as.numeric(sapply(strsplit(r, ","), "[", 1))
+  r_to <- as.numeric(sapply(strsplit(r, ","), "[", 2))
+  
+  l_width <- nchar(L_sequence)
+  r_width <- nchar(R_sequence)
+  
+  # Pad db with . according to from/to
+  l_db <- sapply(strsplit(db, "&"), "[", 1)
+  r_db <- sapply(strsplit(db, "&"), "[", 2)
+  l_db <- unlist(strsplit(l_db, "")) # convert string to vector of characters
+  r_db <- unlist(strsplit(r_db, ""))
+  
+  l_db <- c(rep(".", l_from - 1L), l_db, rep(".", l_width - l_to))
+
+  r_db <- c(rep(".", r_from - 1L), r_db, rep(".", r_width - r_to))
+  
+  stopifnot(all(length(l_db == l_width), length(r_db) == r_width))
+  db <- paste0(c(l_db, "&", r_db), collapse = "")
+
+  #if(mfe > 0) mfe <- 0
+  
+ return(list(mfe = mfe, db = db))
+  
+}
+
+# find position of the first "(" and ")" in L and R respectively
+# find position of the last "(" and ")" in L and R respectively
+
+# trim external dots..to get all paired (find pos of first and last ())
+# trim same positions from seq
+
+get_paired_regions <- function(id, L_db, L_sequence, R_db, R_sequence) {
+  
+  l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
+  l_start <- l_brackets[1]
+  l_end <- l_brackets[length(l_brackets)]
+  l_trimmed_db <- str_sub(L_db, l_start, l_end)
+  l_trimmed_seq <- str_sub(L_sequence, l_start, l_end)
+
+  r_brackets <- str_locate_all(R_db, pattern = "\\)")[[1]][,1]
+  r_start <- r_brackets[1]
+  r_end <- r_brackets[length(r_brackets)]
+  r_trimmed_db <- str_sub(R_db, r_start, r_end)
+  r_trimmed_seq <- str_sub(R_sequence, r_start, r_end)
+
+  stopifnot(length(l_brackets) == length(r_brackets)) # check L and R arms of the duplex have an equal number of bp
+
+  paired_residues_count <- length(l_brackets)
+  l_paired_residues <- paste(str_sub(L_sequence, start = l_brackets, end = l_brackets), collapse = '')
+  r_paired_residues <- paste(str_sub(R_sequence, start = r_brackets, end = r_brackets), collapse = '')
+
+  results.ls <- list(id = id, l_start =l_start, l_end = l_end, l_trimmed_db=l_trimmed_db, l_trimmed_seq=l_trimmed_seq,
+                   r_start=r_start, r_end=r_end, r_trimmed_db=r_trimmed_db, r_trimmed_seq=r_trimmed_seq,
+                   paired_residues_count = paired_residues_count,
+                   l_paired_residues=l_paired_residues, r_paired_residues=r_paired_residues)
+  
+  return(results.ls)
+
+}
+
+
+#### functions to get max paired
+get_stem_segment_length <- function(input.ls) {
+  
+  data <- input.ls$data
+  
+  if (is.null(data)) {
+    input.ls <- input.ls
+    stem_len = 0
+  } else {
+    
+    if (!FALSE %in% unique(data$l_bracket_pos == data$r_bracket_pos)) {
+      stem_len <- nrow(data)
+      data <- data
+      input.ls <- list(data=data, stem_len=stem_len)
+      
+    } else {
+      data <- data %>%
+        mutate(l_bracket_pos = l_bracket_pos - as.numeric(data[1,1]),
+                r_bracket_pos = r_bracket_pos - as.numeric(data[1,2]))
+    
+      stem.df <- data %>% dplyr::filter(l_bracket_pos == r_bracket_pos)
+      stem_len <- nrow(stem.df) 
+      
+      rest.df <- anti_join(data, stem.df, by = "pos")
+    
+      if (nrow(rest.df) == 0) {
+        input.ls <- list(data = stem.df, stem_len=stem_len)
+      } else {
+        
+        input.ls <- list(data = rest.df, stem_len=stem_len)
+      }
+    }
+      
+  }
+  write(stem_len, file = "stem_lengths.txt", sep="\n", append = TRUE)
+  
+  return(input.ls)
+}
+
+
+
+get_max_stem_length <- function(input.ls, i=30) {
+  
+  if (i == 0) {
+    stem_len <- get_stem_segment_length(input.ls)$stem_len
+    
+    input.ls <- list(input.ls$data, stem_len)
+    
+    return(input.ls)
+    
+    } else {
+                  
+      input.ls <- get_stem_segment_length(input.ls)
+      i <- i - 1
+      get_max_stem_length(input.ls, i)
+    }
+  
+  stem_lengths <- read.csv("stem_lengths.txt", sep="\t")
+  col <- colnames(stem_lengths)
+  max <- max(stem_lengths[,col])
+  
+  return(max)
+ 
+}
+
+get_max_paired <- function(dataframe, id) {
+  
+  data <- dataframe[dataframe$id == id,]
+  
+  L_db <- data$L_duplex_db
+  R_db <- data$R_duplex_db
+  
+  rev_R_db <- stringi::stri_reverse(R_db)
+  l_bracket <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
+  r_bracket <- str_locate_all(rev_R_db, pattern = "\\)")[[1]][,1]
+  
+  paired.dt <- as.data.table(list(l_bracket_pos = l_bracket, r_bracket_pos=r_bracket))
+  paired.dt$pos <- row.names(paired.dt)
+  
+  input.ls <- list(data = paired.dt, stem_len = 1)
+  
+  max <- get_max_stem_length(input.ls)
+  max.dt <- as.data.table(list(id = id, max_paired = max))
+  
+  file.remove("stem_lengths.txt")
+  
+  return(max.dt)
+  
 }
 ```
 
@@ -225,6 +411,7 @@ biotype_counts.df
 
 ```{r}
 # Simple bar-chart
+
 ggplot(distinct(biotype_counts.df, across(c(Experiment, RNA_biotype, biotype_percentage))),
        aes(RNA_biotype, biotype_percentage)) + 
   geom_bar(position="dodge", stat = "identity", aes(fill = Experiment), alpha = 0.8) +
@@ -276,7 +463,7 @@ threeutr.df <-threeutr.df %>%
          R_arm_width = R_end - R_start + 1)
 ```
 
-## Hybrid spans
+## Hybrid span
 
 ```{r}
 ggplot(threeutr.df, aes(x = hybrid_span, color = Experiment)) + 
@@ -330,20 +517,6 @@ all_exp_mfe.dt <- rbind(hybrids_mfe.dt, paris_mfe.dt)
 
 
 
-```{r echo=FALSE}
-## All intramolecular hybrids MFE
-# all_exp_mfe.dt$mfe <- as.numeric(all_exp_mfe.dt$mfe)
-# 
-# ggplot(all_exp_mfe.dt, aes(x = mfe, color = Experiment)) + 
-#   geom_density(alpha = 0.8) +
-#   scale_colour_brewer(palette="Dark2") +
-#   facet_grid(cols = vars(Experiment)) +
-#   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-#   ylab("Density") +
-#   xlab("MFE (kcal/mol)")
-
-```
-
 ## 3'UTR hybrids MFE
 
 ```{r, warning = FALSE}
@@ -396,34 +569,176 @@ ggplot(mfe_3utr.dt, aes(x = min_mfe, color = Experiment)) +
 
 ```
 
-```{r}
-paris.dt %>% arrange(name)
-```
-# Sequence content
-
-```{r}
-#hybrids.dt
-hybrids_mfe.dt <- hybrids_mfe.dt %>% dplyr::filter(str_detect(cluster, "C")) #keep hybrids within clusters
-```
-
-
-```{r}
-test <- get_nucleotide_frequency(hybrids_mfe.dt)
-plot_nucleotide_frequency(test)
-```
 
 # Hybrid clusters with mega-long arms
-
-
 
 ```{r}
 long_arm_clusters.df <- threeutr.df %>% dplyr::filter(L_arm_width > 90 | R_arm_width > 90)
 long_arm_hybrids.dt <- semi_join(hybrids_mfe.dt, long_arm_clusters.df, by = c("cluster" = "name"))
-long_arm_clusters.df
-long_arm_hybrids.dt
+
+```
+
+# Binding energy (updated)
+
+
+```{r}
+hybrids_mfe.dt <- hybrids_mfe.dt %>% dplyr::filter(str_detect(cluster, "C")) #keep hybrids within clusters
+
+# for each cluster, select the hybrid corresponding to min MFE, only these hybrids will be analysed further
+threeutr.dt <- hybrids_mfe.dt 
+
+threeutr.dt <- threeutr.dt %>%
+  dplyr::filter(str_detect(cluster, "C")) %>%
+  group_by(cluster) %>%  #had to group also by gene id because redundant cluster names in PARIS data
+  dplyr::slice(which.min(mfe)) %>%
+  ungroup()
+
+```
+
+```{r}
+# get 3'UTR cluster names from the clusters table
+threeutr_clusters.dt <- hybrids.dt %>%
+  dplyr::filter(L_region == "UTR3" & R_region == "UTR3") 
+
+threeutr_clusters.ls <- unique(threeutr_clusters.dt$name)
+
+# filter hybrids table by 3'UTR cluster names
+threeutr.dt <- threeutr.dt[threeutr.dt$cluster %in% threeutr_clusters.ls,]
+```
+
+## Get dot bracket structure
+
+```{r}
+threeutr.dt <- threeutr.dt %>%
+  rowwise() %>%
+  mutate(binding = list(GetMFE(L_sequence, R_sequence))) %>%
+  mutate(db = binding$db, mfe = binding$mfe) %>%
+  ungroup() %>%
+  dplyr::select(-binding)
+
+```
+
+## Get paired positions, db, sequences, total sum of paired residues within a duplex
+
+```{r}
+# separate L_db and R_db
+threeutr.dt <- threeutr.dt %>%
+  separate(db, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
 ```
 
 
+```{r}
+threeutr.dt <- threeutr.dt %>%
+  rowwise() %>%
+  mutate(paired_regions = list(get_paired_regions(id, L_db, L_sequence, R_db, R_sequence))) %>%
+  mutate(L_duplex_start= paired_regions$l_start, 
+         L_duplex_end = paired_regions$l_end,
+         L_duplex_db =  paired_regions$l_trimmed_db,
+         L_duplex_sequence =  paired_regions$l_trimmed_seq,
+         R_duplex_start= paired_regions$r_start, 
+         R_duplex_end = paired_regions$r_end,
+         R_duplex_db =  paired_regions$r_trimmed_db,
+         R_duplex_seq =  paired_regions$r_trimmed_seq,
+         total_paired = paired_regions$paired_residues_count,
+         l_paired_residues = paired_regions$l_paired_residues,
+         r_paired_residues = paired_regions$r_paired_residues) %>%
+  ungroup() %>%
+  dplyr::select(-paired_regions)
+```
+
+## Get the maximum length of uninterrupted duplex segment within each hybrid
+
+```{r}
+max_paired.dt <- rbindlist(lapply(threeutr.dt$id, get_max_paired, data=threeutr.dt))
+threeutr.dt <- left_join(threeutr.dt, max_paired.dt, by = "id")
+```
+
+## Count the maximum number of internal loops/bulges per duplex
+
+```{r}
+threeutr.dt <- threeutr.dt %>%
+  rowwise() %>%
+  mutate(L_iloop_count = length(str_locate_all(L_duplex_db, pattern = fixed("(."))[[1]][,1]),
+         R_iloop_count = length(str_locate_all(R_duplex_db, pattern = fixed(".)"))[[1]][,1])) %>%
+  mutate(iloop_counts = max(L_iloop_count, R_iloop_count)) %>%
+  ungroup()
+```
+
+
+```{r}
+# fwrite(file = "threeutr.db.tsv", threeutr.dt, sep="\t")
+```
+
+## Analyse/visualise duplex features
+
+```{r}
+id_features.df <- threeutr.dt %>%
+  dplyr::select(id, total_paired, max_paired, iloop_counts) %>%
+  ungroup()
+```
+
+
+```{r}
+quantile(id_features.df$total_paired, 0.9)
+quantile(id_features.df$total_paired, 0.1)
+median(id_features.df$total_paired)
+```
+
+```{r}
+quantile(id_features.df$max_paired, 0.9)
+quantile(id_features.df$max_paired, 0.1)
+median(id_features.df$max_paired)
+```
+
+```{r}
+quantile(id_features.df$iloop_counts, 0.9)
+quantile(id_features.df$iloop_counts, 0.1)
+median(id_features.df$iloop_counts)
+```
+
+
+
+```{r}
+# convert to long format
+id_features.df <- rowid_to_column(id_features.df)
+id_features.df <- id_features.df %>% 
+  gather("feature", "counts", total_paired:iloop_counts)
+
+id_features_summed.gg <- ggplot(id_features.df, aes(x = factor(feature, levels = c("total_paired", "max_paired","iloop_counts")), y = counts, fill = feature)) +
+  geom_boxplot() +
+  ylim(0, 72) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  ggtitle("STAU1 hybrids")
+
+id_features_summed.gg
+ggsave(paste0("linker_boxplot.pdf"), id_features_summed.gg, height = 7, width = 7, dpi = 300)
+
+```
+
+# Sequence content
+
+## Nucleotide frequency - only the paired residues
+
+```{r}
+paired_nuc_freq.df <- get_nucleotide_frequency(threeutr.dt)
+paired_nuc_freq.gg <- plot_nucleotide_frequency(paired_nuc_freq.df)
+paired_nuc_freq.gg
+ggsave(paste0("nolinker_nuc_freq.pdf"), paired_nuc_freq.gg, height = 11, width = 7, dpi = 300)
+```
+
+
+```{r}
+# df <- df %>%
+#   rowwise() %>%
+#   mutate(L_iloop_starts = str_locate_all(L_duplex_db, pattern = fixed("(."))[[1]][,1],
+#          L_iloop_ends = str_locate_all(L_duplex_db, pattern = fixed(".("))[[1]][,1],
+#          R_rev = stringi::stri_reverse(R_duplex_db)) %>%
+#   mutate(R_iloop_starts = str_locate_all(R_rev, pattern = fixed("(."))[[1]][,1],
+#          R_iloop_ends = str_locate_all(R_rev, pattern = fixed(".("))[[1]][,1]) %>%
+#   
+```
 
 
 
