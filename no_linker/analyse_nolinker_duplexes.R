@@ -7,9 +7,6 @@ library(Biostrings)
 library(tictoc)
 library(rslurm)
 
-
-
-
 # ==========
 # Define functions
 # ==========
@@ -296,7 +293,7 @@ while(status == FALSE) {
 
 shuffled.ls <- get_slurm_out(sjob, outtype = 'raw')
 shuffled.dt <- rbindlist(shuffled.ls)
-threeutr.dt <- left_join(threeutr.dt, mfe.dt, by = "id")
+threeutr.dt <- left_join(threeutr.dt, shuffled.dt, by = "id")
 
 saveRDS(shuffled.ls, file = "shuffled.rds")
 cleanup_files(sjob)
