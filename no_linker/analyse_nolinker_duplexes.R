@@ -7,6 +7,8 @@ library(Biostrings)
 library(tictoc)
 library(rslurm)
 
+
+
 # ==========
 # Define functions
 # ==========
@@ -104,7 +106,7 @@ get_shuffled_mfe <- function(id, L_sequence, R_sequence) {
 }
 
 
-get_forgi <- function(db, script_path = ".") {
+get_forgi <- function(id, db, script_path = ".") {
   
   # stopifnot(all(strsplit(db, "")[[1]] %in% c("(", ")", ".")))
   forgi.out <- system(command = paste0(script_path, "/get_elementstring.py"), input = db, intern = TRUE)
@@ -133,6 +135,7 @@ get_forgi <- function(db, script_path = ".") {
   forgi.dt$element_type <- with(forgi.dt, substr(element, 1, 1))
   forgi.dt$element_number <- with(forgi.dt, substr(element, 2, nchar(element)))
   
+  forgi.dt$id <- id
   
   return(forgi.dt)
   
@@ -333,16 +336,13 @@ forgi_db <- threeutr.dt %>%
   unite("forgi_db", c(L_duplex_db, R_duplex_db), sep="...", remove = FALSE) %>%  # replace & with "..."
   dplyr::select(id, forgi_db)
 
-forgi_db.ls <- forgi_db$forgi_db
-
-forgi_input.df <- data.frame(db = forgi_db.ls, script_path = get_elementstring.py_path)
-
+forgi_input.df <- data.frame(id = forgi_db$id, db = forgi_db$forgi_db, script_path = get_elementstring.py_path)
 forgi_input.df <- mutate(forgi_input.df, db = as.character(forgi_input.df$db))
 
 
 tic()
 sjob <- slurm_apply(get_forgi, forgi_input.df, jobname = paste0("forgi_", paste0(sample(c(LETTERS, letters, 0:9), 10), collapse = "")),
-                    nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"), submit = TRUE)
+                    nodes = 100, cpus_per_node = 1, slurm_options = list(time = "24:00:00"), submit = TRUE)
 
 message("forgi is running..")
 
@@ -358,7 +358,7 @@ forgi.dt <- rbindlist(forgi)
 cleanup_files(sjob)
 toc()
 
-forgi.dt$id <- rep(forgi_db$id, elementNROWS(forgi))
+#forgi.dt$id <- rep(forgi_db$id, elementNROWS(forgi))
 # remove the hairpins
 
 forgi.dt <- forgi.dt %>%
