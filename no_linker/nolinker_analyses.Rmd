@@ -60,8 +60,6 @@ plot_stacked_barchart <- function(data.df, column, group) {
 ```{r}
 get_nucleotide_frequency <- function(duplexes.df) {
   
-  # L_seq <- DNAStringSet(duplexes.df$L_sequence)
-  # R_seq <- DNAStringSet(duplexes.df$R_sequence)
   L_seq <- DNAStringSet(duplexes.df$l_paired_residues)
   R_seq <- DNAStringSet(duplexes.df$r_paired_residues)
   
@@ -144,225 +142,7 @@ plot_nucleotide_frequency <- function(data) {
 ```
 
 
-```{r}
-# Structure functions:
-
-GetMFE <- function(L_sequence, R_sequence) {
-  
-  input <- paste0(L_sequence, "\n", R_sequence)
-  rnaduplex <- system("RNAduplex --noLP", input = input, intern = TRUE)
-  
-  rnaduplex <- gsub("\\s+", "_", rnaduplex)
-  mfe <- sapply(strsplit(rnaduplex, "_"), "[", 5) # Need to fix for positives < 10 ? as they have an extra space
-  mfe <- as.numeric(gsub("\\(|\\)", "", mfe))
-  
-  # Get dot.bracket
-  db <- sapply(strsplit(rnaduplex, "_"), "[", 1)
-  
-  # Get from/to positions
-  l <- sapply(strsplit(rnaduplex, "_"), "[", 2)
-  r <- sapply(strsplit(rnaduplex, "_"), "[", 4)
-  l_from <- as.numeric(sapply(strsplit(l, ","), "[", 1))
-  l_to <- as.numeric(sapply(strsplit(l, ","), "[", 2))
-  r_from <- as.numeric(sapply(strsplit(r, ","), "[", 1))
-  r_to <- as.numeric(sapply(strsplit(r, ","), "[", 2))
-  
-  l_width <- nchar(L_sequence)
-  r_width <- nchar(R_sequence)
-  
-  # Pad db with . according to from/to
-  l_db <- sapply(strsplit(db, "&"), "[", 1)
-  r_db <- sapply(strsplit(db, "&"), "[", 2)
-  l_db <- unlist(strsplit(l_db, "")) # convert string to vector of characters
-  r_db <- unlist(strsplit(r_db, ""))
-  
-  l_db <- c(rep(".", l_from - 1L), l_db, rep(".", l_width - l_to))
-
-  r_db <- c(rep(".", r_from - 1L), r_db, rep(".", r_width - r_to))
-  
-  stopifnot(all(length(l_db == l_width), length(r_db) == r_width))
-  db <- paste0(c(l_db, "&", r_db), collapse = "")
-
-  #if(mfe > 0) mfe <- 0
-  
- return(list(mfe = mfe, db = db))
-  
-}
-
-
-ShuffleSequence <- function(sequence, number = 1, klet = 2, seed = 42) {
-  
-  system(paste0("ushuffle -seed ", seed, " -k ", klet, " -n ", number, " -s ", sequence), intern = TRUE)
-}
-
-
-get_shuffled_mfe <- function(id, L_sequence, R_sequence) {
-  
-  #t <- data[data$id == id,]
-  
-  L <- ShuffleSequence(L_sequence, number = 100, klet = 2)
-  R <- ShuffleSequence(R_sequence, number = 100, klet = 2)
-  
-  # make a df with the shuffled sequences for each id
-  
-  shuffled.dt <- as.data.table(list(L_sequence = L, R_sequence = R))
-  
-  # Get MFE mean and sd
-  shuffled.df <- shuffled.dt %>%
-    rowwise() %>%
-    mutate(binding = list(GetMFE(L_sequence, R_sequence))) %>%
-    mutate(mfe = binding$mfe) %>%
-    ungroup() %>%
-    dplyr::select(-binding) %>%
-    summarise(mean_mfe = mean(mfe), mean_sd = sd(mfe))
-  
-  results.ls <- list(id = id, shuffled_mfe = shuffled.df$mean_mfe,
-                     shuffled_mfe_sd = shuffled.df$mean_sd)
-}
-
-
-```
-
-
-```{r}
-# Processing structure functions:
-
-# find position of the first "(" and ")" in L and R respectively
-# find position of the last "(" and ")" in L and R respectively
-
-# trim external dots..to get all paired (find pos of first and last ())
-# trim same positions from seq
-
-get_paired_regions <- function(id, L_db, L_sequence, R_db, R_sequence) {
-  
-  l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
-  l_start <- l_brackets[1]
-  l_end <- l_brackets[length(l_brackets)]
-  l_trimmed_db <- str_sub(L_db, l_start, l_end)
-  l_trimmed_seq <- str_sub(L_sequence, l_start, l_end)
-
-  r_brackets <- str_locate_all(R_db, pattern = "\\)")[[1]][,1]
-  r_start <- r_brackets[1]
-  r_end <- r_brackets[length(r_brackets)]
-  r_trimmed_db <- str_sub(R_db, r_start, r_end)
-  r_trimmed_seq <- str_sub(R_sequence, r_start, r_end)
-
-  stopifnot(length(l_brackets) == length(r_brackets)) # check L and R arms of the duplex have an equal number of bp
-
-  paired_residues_count <- length(l_brackets)
-  l_paired_residues <- paste(str_sub(L_sequence, start = l_brackets, end = l_brackets), collapse = '')
-  r_paired_residues <- paste(str_sub(R_sequence, start = r_brackets, end = r_brackets), collapse = '')
-
-  results.ls <- list(id = id, l_start =l_start, l_end = l_end, l_trimmed_db=l_trimmed_db, l_trimmed_seq=l_trimmed_seq,
-                   r_start=r_start, r_end=r_end, r_trimmed_db=r_trimmed_db, r_trimmed_seq=r_trimmed_seq,
-                   paired_residues_count = paired_residues_count,
-                   l_paired_residues=l_paired_residues, r_paired_residues=r_paired_residues)
-  
-  return(results.ls)
-
-}
-
-
-#### functions to get max paired
-get_stem_segment_length <- function(input.ls) {
-  
-  data <- input.ls$data
-  
-  if (is.null(data)) {
-    input.ls <- input.ls
-    stem_len = 0
-  } else {
-    
-    if (!FALSE %in% unique(data$l_bracket_pos == data$r_bracket_pos)) {
-      stem_len <- nrow(data)
-      data <- data
-      input.ls <- list(data=data, stem_len=stem_len)
-      
-    } else {
-      data <- data %>%
-        mutate(l_bracket_pos = l_bracket_pos - as.numeric(data[1,1]),
-                r_bracket_pos = r_bracket_pos - as.numeric(data[1,2]))
-    
-      stem.df <- data %>% dplyr::filter(l_bracket_pos == r_bracket_pos)
-      stem_len <- nrow(stem.df) 
-      
-      rest.df <- anti_join(data, stem.df, by = "pos")
-    
-      if (nrow(rest.df) == 0) {
-        input.ls <- list(data = stem.df, stem_len=stem_len)
-      } else {
-        
-        input.ls <- list(data = rest.df, stem_len=stem_len)
-      }
-    }
-      
-  }
-  write(stem_len, file = "stem_lengths.txt", sep="\n", append = TRUE)
-  
-  return(input.ls)
-}
-
-
-
-get_max_stem_length <- function(input.ls, i=30) {
-  
-  if (i == 0) {
-    stem_len <- get_stem_segment_length(input.ls)$stem_len
-    
-    input.ls <- list(input.ls$data, stem_len)
-    
-    return(input.ls)
-    
-    } else {
-                  
-      input.ls <- get_stem_segment_length(input.ls)
-      i <- i - 1
-      get_max_stem_length(input.ls, i)
-    }
-  
-  stem_lengths <- read.csv("stem_lengths.txt", sep="\t")
-  col <- colnames(stem_lengths)
-  max <- max(stem_lengths[,col])
-  
-  return(max)
- 
-}
-
-get_max_paired <- function(dataframe, id) {
-  
-  data <- dataframe[dataframe$id == id,]
-  
-  L_db <- data$L_duplex_db
-  R_db <- data$R_duplex_db
-  
-  rev_R_db <- stringi::stri_reverse(R_db)
-  l_bracket <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
-  r_bracket <- str_locate_all(rev_R_db, pattern = "\\)")[[1]][,1]
-  
-  paired.dt <- as.data.table(list(l_bracket_pos = l_bracket, r_bracket_pos=r_bracket))
-  paired.dt$pos <- row.names(paired.dt)
-  
-  input.ls <- list(data = paired.dt, stem_len = 1)
-  
-  max <- get_max_stem_length(input.ls)
-  max.dt <- as.data.table(list(id = id, max_paired = max))
-  
-  file.remove("stem_lengths.txt")
-  
-  return(max.dt)
-  
-}
-```
-
-
 # Get genomic coordinates and annotate STAU1 hybrids
-
-#### This step was necessary because a bug in Tosca is not getting genomic coordinates or annotating most hybrids. The bug can be fixed if you reformat names of hybrids seqnames so they match the annotation gtf:
-```{r eval=FALSE, echo=TRUE}
-hybrids.dt[, c("L_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
-hybrids.dt[, c("R_seqnames") := tstrsplit(L_seqnames, "::", fixed=TRUE)[1]]
-```
-#### before calling the 'convert_coordinates' function.
 
 
 ```{r, warning = FALSE}
@@ -494,7 +274,7 @@ plot_stacked_barchart(all_exp_mRNA.df, hybrid_type, Experiment)
 threeutr.df <- all_exp_mRNA.df %>%
   dplyr::filter(L_region == "UTR3" & R_region == "UTR3")
 
-threeutr.df <-threeutr.df %>%
+threeutr.df <- threeutr.df %>%
   rowwise() %>%
   mutate(hybrid_span = R_start - L_end + 1, 
          L_arm_width = L_end - L_start + 1,
@@ -554,7 +334,6 @@ all_exp_mfe.dt <- rbind(hybrids_mfe.dt, paris_mfe.dt)
 ```
 
 
-
 ## 3'UTR hybrids MFE
 
 ```{r, warning = FALSE}
@@ -581,7 +360,6 @@ ggplot(mfe_3utr.dt, aes(x = mfe, color = Experiment)) +
 
 ## 3'UTR clusters MFE
 
-
 ```{r, warning = FALSE}
 # obtain minimum mfe per cluster per experiment
 mfe_3utr.dt <- mfe_3utr.dt %>%
@@ -607,14 +385,6 @@ ggplot(mfe_3utr.dt, aes(x = min_mfe, color = Experiment)) +
 
 ```
 
-
-# Hybrid clusters with mega-long arms
-
-```{r}
-long_arm_clusters.df <- threeutr.df %>% dplyr::filter(L_arm_width > 90 | R_arm_width > 90)
-long_arm_hybrids.dt <- semi_join(hybrids_mfe.dt, long_arm_clusters.df, by = c("cluster" = "name"))
-
-```
 
 # Binding energy (updated)
 
@@ -646,29 +416,19 @@ threeutr.dt <- threeutr.dt[threeutr.dt$cluster %in% threeutr_clusters.ls,]
 
 
 # Shuffled binding energy
-```{r}
-ti <- threeutr.dt
-```
-
 
 ```{r}
-library(tictoc)
 
-tic()
-ttt <- ti %>%
+threeutr.dt <- threeutr.dt %>%
   rowwise() %>%
   mutate(shuffled = list(get_shuffled_mfe(id, L_sequence, R_sequence))) %>%
   mutate(shuffled_mfe = shuffled$shuffled_mfe,
          shuffled_sd = shuffled$shuffled_mfe_sd) %>%
   ungroup() %>%
   select(-shuffled)
+#fwrite(threeutr.dt, file = "nolinker_3utr_mfe_db.tsv", sep="\t")
 
-toc()
-
-# top <- get_shuff_mfe("H6205",ti)
-# top
 ```
-
 
 
 
@@ -683,6 +443,34 @@ threeutr.dt <- threeutr.dt %>%
   dplyr::select(-binding)
 
 ```
+
+## Annotate structure
+
+```{r}
+# process db structure
+
+forgi_db <- threeutr.dt %>%
+  unite("forgi_db", c(L_duplex_db, R_duplex_db), sep="...", remove = FALSE) %>%  # replace & with "..."
+  dplyr::select(id, forgi_db)
+  
+forgi_db.ls <- forgi_db$forgi_db
+forgi_db.ls <- sample(forgi_db.ls, 5)
+```
+
+
+
+```{r}
+forgi_test <- lapply(forgi_db.ls, get_forgi, script_path = getwd())
+forgi_test$id <- rep(names(forgi_test), elementNROWS(forgi_test))
+#forgi_test2 <- rbindlist(forgi_test)
+
+# forgi_test2$id <- rep(forgi_db$id, elementNROWS(forgi_test))
+forgi_test
+```
+
+
+
+
 
 ## Get paired positions, db, sequences, total sum of paired residues within a duplex
 
@@ -796,16 +584,27 @@ ggsave(paste0("nolinker_nuc_freq.pdf"), paired_nuc_freq.gg, height = 11, width =
 
 
 ```{r}
-# df <- df %>%
-#   rowwise() %>%
-#   mutate(L_iloop_starts = str_locate_all(L_duplex_db, pattern = fixed("(."))[[1]][,1],
-#          L_iloop_ends = str_locate_all(L_duplex_db, pattern = fixed(".("))[[1]][,1],
-#          R_rev = stringi::stri_reverse(R_duplex_db)) %>%
-#   mutate(R_iloop_starts = str_locate_all(R_rev, pattern = fixed("(."))[[1]][,1],
-#          R_iloop_ends = str_locate_all(R_rev, pattern = fixed(".("))[[1]][,1]) %>%
-#   
+mfe.df <- threeutr.dt %>%
+  dplyr::select(id, mfe, shuffled_mfe)
+
+mfe.df <- mfe.df %>%
+  gather("sample", "MFE", mfe:shuffled_mfe)
+
+mfe.df <- mfe.df %>%
+  mutate(sample = case_when((sample == "mfe") ~ "STAU1",
+                            (sample == "shuffled_mfe") ~ "Shuffled control"))
 ```
 
+```{r}
+mfe.gg <- ggplot(mfe.df, aes(x = MFE, linetype = sample)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Dark2") +
+  scale_linetype_manual(values=c("longdash", "solid"))+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)") +
+  ggtitle("3'UTR clusters min MFE")
 
-
+ggsave("3UTR_clusters_nolinker_minMFE.pdf", mfe.gg, dpi=300, height = 7, width = 8)
+```
 
