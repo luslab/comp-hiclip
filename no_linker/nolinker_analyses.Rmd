@@ -189,6 +189,44 @@ GetMFE <- function(L_sequence, R_sequence) {
   
 }
 
+
+ShuffleSequence <- function(sequence, number = 1, klet = 2, seed = 42) {
+  
+  system(paste0("ushuffle -seed ", seed, " -k ", klet, " -n ", number, " -s ", sequence), intern = TRUE)
+}
+
+
+get_shuffled_mfe <- function(id, L_sequence, R_sequence) {
+  
+  #t <- data[data$id == id,]
+  
+  L <- ShuffleSequence(L_sequence, number = 100, klet = 2)
+  R <- ShuffleSequence(R_sequence, number = 100, klet = 2)
+  
+  # make a df with the shuffled sequences for each id
+  
+  shuffled.dt <- as.data.table(list(L_sequence = L, R_sequence = R))
+  
+  # Get MFE mean and sd
+  shuffled.df <- shuffled.dt %>%
+    rowwise() %>%
+    mutate(binding = list(GetMFE(L_sequence, R_sequence))) %>%
+    mutate(mfe = binding$mfe) %>%
+    ungroup() %>%
+    dplyr::select(-binding) %>%
+    summarise(mean_mfe = mean(mfe), mean_sd = sd(mfe))
+  
+  results.ls <- list(id = id, shuffled_mfe = shuffled.df$mean_mfe,
+                     shuffled_mfe_sd = shuffled.df$mean_sd)
+}
+
+
+```
+
+
+```{r}
+# Processing structure functions:
+
 # find position of the first "(" and ")" in L and R respectively
 # find position of the last "(" and ")" in L and R respectively
 
@@ -605,6 +643,34 @@ threeutr_clusters.ls <- unique(threeutr_clusters.dt$name)
 # filter hybrids table by 3'UTR cluster names
 threeutr.dt <- threeutr.dt[threeutr.dt$cluster %in% threeutr_clusters.ls,]
 ```
+
+
+# Shuffled binding energy
+```{r}
+ti <- threeutr.dt
+```
+
+
+```{r}
+library(tictoc)
+
+tic()
+ttt <- ti %>%
+  rowwise() %>%
+  mutate(shuffled = list(get_shuffled_mfe(id, L_sequence, R_sequence))) %>%
+  mutate(shuffled_mfe = shuffled$shuffled_mfe,
+         shuffled_sd = shuffled$shuffled_mfe_sd) %>%
+  ungroup() %>%
+  select(-shuffled)
+
+toc()
+
+# top <- get_shuff_mfe("H6205",ti)
+# top
+```
+
+
+
 
 ## Get dot bracket structure
 
