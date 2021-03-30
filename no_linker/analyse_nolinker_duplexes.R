@@ -271,7 +271,7 @@ mfe.dt <- rbindlist(mfe.ls)
 
 threeutr.dt <- left_join(threeutr.dt, mfe.dt, by = c("id","mfe"))
 
-saveRDS(mfe.ls, file = "mfe.rds")
+#saveRDS(mfe.ls, file = "mfe.rds")
 
 # Remove temporary files
 cleanup_files(sjob) 
@@ -298,7 +298,7 @@ shuffled.ls <- get_slurm_out(sjob, outtype = 'raw')
 shuffled.dt <- rbindlist(shuffled.ls)
 threeutr.dt <- left_join(threeutr.dt, shuffled.dt, by = "id")
 
-saveRDS(shuffled.ls, file = "shuffled.rds")
+#saveRDS(shuffled.ls, file = "shuffled.rds")
 cleanup_files(sjob)
 
 # ==========
@@ -355,7 +355,7 @@ while(status == FALSE) {
 
 forgi <- get_slurm_out(sjob, outtype = 'raw')
 forgi.dt <- rbindlist(forgi)
-cleanup_files(sjob)
+#cleanup_files(sjob)
 toc()
 
 #forgi.dt$id <- rep(forgi_db$id, elementNROWS(forgi))
