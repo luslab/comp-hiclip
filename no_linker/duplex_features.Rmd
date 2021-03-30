@@ -138,7 +138,7 @@ get_id_features <- function(data.df) {
 plot_stacked_barchart <- function(data.df, column, group) {
   
   data_counts.df <- data.df %>%
-    select(name, {{group}}, {{column}}) %>%
+    dplyr::select(name, {{group}}, {{column}}) %>%
     group_by({{group}}, {{column}}) %>%
     summarise(counts = n()) %>%
     arrange(desc({{column}})) %>%
@@ -214,7 +214,7 @@ plot_nucleotide_frequency <- function(data) {
   
   # Prepare for plotting
   high_pur.df <- data %>% 
-    select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm) %>%
+    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm) %>%
     dplyr::arrange(G_freq_max_pur_arm)
   
   high_pur.df <- rowid_to_column(high_pur.df)
@@ -223,7 +223,7 @@ plot_nucleotide_frequency <- function(data) {
   long_high_pur.df$arm = "High purine arm"
   
   low_pur.df <- data %>% 
-    select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm) %>%
+    dplyr::select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm) %>%
     dplyr::arrange(desc(U_freq_min_pur_arm))
   low_pur.df <- rowid_to_column(low_pur.df)
   long_low_pur.df <- low_pur.df %>% 
@@ -302,13 +302,12 @@ get_mfe <- function(forgi, rnafold, prefix) {
 #### Data
 
 ```{r}
-
-# outputs from mfe and forgi analyses
+# Outputs from mfe and forgi analyses
 nolinker.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.mfe_analyses.tsv.gz") # analyse_nolinker_duplexes.R output
 nolinker_forgi.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.forgi.tsv.gz") # similar but for PARIS
 
 paris.dt <- fread("paris_3utr_minmfe_cluster_hybrids.mfe_analyses.tsv")
-#paris.forgi.dt <- fread()
+paris.forgi.dt <- fread("paris_3utr_minmfe_cluster_hybrids.forgi.tsv.gz")
 
 nornase.forgi.dt <- fread("stau1.peaks.10nt_10nt_forgi_analyses.df.txt")
 
@@ -319,11 +318,11 @@ rnafold.df <- dplyr::select(rnafold.df, c(id, sequence, mea_structure))
 ```
 
 ```{r}
-# annotations
+# Annotations
 genes.gr <- rtracklayer::import.gff2("/Users/iosubi/Documents/projects/computational_hiCLIP/files/human_GencodeV33.gtf.gz")
 regions.gr <- import.gff2("~/Documents/Genomes/human/regions.gtf.gz")
 
-# clusters (Tosca)
+# Clusters (Tosca)
 hybrids.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/files/all.clusters.tsv.gz")
 paris_clusters.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/files/paris/all.clusters.tsv.gz")
 
@@ -337,14 +336,14 @@ Only intramolecular 3'UTR duplexes were analysed. For the hybrid data, the hybri
 
 #### No RNase duplexes
 ```{r}
-#Sys.setenv(PATH="/Users/iosubi/opt/miniconda3/bin/")
+# Sys.setenv(PATH="/Users/iosubi/opt/miniconda3/bin/")
 nonhybrids.mfe.df <- get_mfe(nornase.forgi.dt, rnafold.df, prefix="stau1")
 nonhybrids.mfe.df <- nonhybrids.mfe.df %>%
   dplyr::select(id, eval_mfe) %>%
   distinct()
   
 
-nornase.forgi.dt <- left_join(nornase.forgi.dt, nonhybrids.mfe.df,by = "id")
+nornase.forgi.dt <- left_join(nornase.forgi.dt, nonhybrids.mfe.df, by = "id")
 
 nonhybrids.mfe.df <- nonhybrids.mfe.df %>%
   mutate(Sample = "mfe", Experiment = "STAU1\nnonhybrids")
@@ -442,22 +441,21 @@ median(nolinker_features.df$total_paired)
 #### Filter the non-hybrids according to the size of paired residues
 ```{r}
 filtered.nonhyb.forgi.df <- nornase.forgi.dt %>%
-  dplyr::filter(between(sum_paired, min, max) )
+  dplyr::filter(between(sum_paired, 12, max) )
 ```
 
 
 ```{r}
-# create mfe df
 filtered.nonhyb.mfe.df <- filtered.nonhyb.forgi.df %>%
   dplyr::select(id, eval_mfe) %>%
   distinct() %>%
-  mutate(Sample = "mfe", Experiment = "STAU1\nnonhybrids")
+  mutate(Sample = "mfe", Experiment = "STAU1 nonhybrids")
 
 filtered.nonhyb.mfe.df <- dplyr::rename(filtered.nonhyb.mfe.df, MFE = eval_mfe)
 ```
 
 ```{r}
-# append datasets for all experiments
+# Append datasets for all experiments
 stau1.hyb.filtered_nonhyb.dt <- bind_rows(nolinker.mfe.df, paris.mfe.df, filtered.nonhyb.mfe.df)
 stau1.hyb.filtered_nonhyb.dt <- stau1.hyb.filtered_nonhyb.dt %>%
   mutate(sample = case_when((Sample == "mfe") ~ "STAU1",
@@ -500,7 +498,11 @@ ggsave("filtered_mfe_comparison.pdf", mfe.filtered.violin.gg, dpi = 300)
 ```
 ## Duplex types
 
+
 ```{r}
+
+# No linker
+
 nolinker.feat.df <- nolinker_forgi.dt %>% replace(is.na(.), 0) # replqce NA with zero to simplify filtering
 
 nolinker.feat.df <- nolinker.feat.df %>%
@@ -519,6 +521,31 @@ nolinker_pie.gg <- draw_pie_chart(nolinker.feat.df, stem_type)
 ggsave(paste0("nolinker", "_stem_types_pie.pdf"), nolinker_pie.gg, height = 11, width = 7, dpi = 300)
 nolinker_pie.gg + ggtitle("STAU1 hybrids")
 
+# PARIS
+
+paris.feat.df <- paris.forgi.dt %>% replace(is.na(.), 0) # replqce NA with zero to simplify filtering
+
+paris.feat.df <- paris.feat.df %>%
+  group_by(id) %>%
+  mutate(stem_type = case_when(!any(element_type == "i") ~ "Uninterrupted stem",
+                               any(element_type == "i") & (!any(element_type == "i" & (L_width > 1 | R_width > 1))) &
+                                 (!any(element_type == "i" & L_width != R_width)) ~ "Stem with only symmetrical bulges",
+                               (any(element_type == "i")) & (!any(element_type == "i" & (L_width > 1 | R_width > 1))) &
+                                 (any(element_type == "i" & L_width != R_width)) ~ "Stem with non-symmetrical bulges",
+                               (any(element_type == "i")) &
+                                 (any(element_type == "i" & (L_width > 1) & (R_width == 0 | R_width >= 1))) |
+                                 (any(element_type == "i" & (L_width = 1) & (R_width > 1))) ~ "Stem with internal loops"))
+
+
+paris_pie.gg <- draw_pie_chart(paris.feat.df, stem_type)
+ggsave(paste0("paris", "_stem_types_pie.pdf"), nolinker_pie.gg, height = 11, width = 7, dpi = 300)
+paris_pie.gg + ggtitle("PARIS hybrids")
+
+
+
+
+# Nonhybrids
+
 nornase.forgi.gg <- draw_pie_chart(nornase.forgi.dt, stem_type)
 ggsave("non_hyb_stem_types_pie.pdf", nornase.forgi.gg, dpi = 300, height = 11, width = 7)
 nornase.forgi.gg + ggtitle("STAU1 nonhybrids")
@@ -534,27 +561,31 @@ filtered.nonhyb.forgi.gg + ggtitle(paste0("STAU1 nonhybrids ", min, "-", max," b
 ```{r}
 # paris.dt$total_paired
 nolinker.feat.df <- analyse_duplexes(nolinker.feat.df)
+
+paris.feat.df <- analyse_duplexes(paris.feat.df)
 ```
 
 ```{r}
 nolinker_features.df <- get_id_features(nolinker.feat.df)
 nonhyb_features.df <- get_id_features(nornase.forgi.dt)
 filtered_nonhyb_features.df <- get_id_features(filtered.nonhyb.forgi.df)
+paris_features.df <- get_id_features(paris.feat.df)
 
 filtered_nonhyb_features.df$Experiment <- "STAU1 nonhybrids (filtered)"
-nolinker_features.df$Experiment <- "STAU1 hybrids (filtered)"
+nolinker_features.df$Experiment <- "STAU1 hybrids"
 nonhyb_features.df$Experiment <- "STAU1 nonhybrids"
+paris_features.df$Experiment <- "PARIS"
 
-all.features.df <- bind_rows(nolinker_features.df, filtered_nonhyb_features.df, nonhyb_features.df)
+all.features.df <- bind_rows(nolinker_features.df, filtered_nonhyb_features.df, nonhyb_features.df, paris_features.df)
 ```
 
 
 ```{r}
-# long format
 all.features.df <- rowid_to_column(all.features.df)
 all.features.df <- all.features.df %>% 
   gather("feature", "counts", max_duplex:iloop_counts)
 ```
+
 
 ## Duplex features
 
@@ -568,13 +599,14 @@ all_features.gg <- ggplot(transform(all.features.df, feature = factor(feature, l
   theme(legend.position="right", legend.direction="vertical")
 
 all_features.gg
-#ggsave("feature_comparison_boxplot.pdf", all_features.gg, dpi = 300)
+# ggsave("feature_comparison_boxplot.pdf", all_features.gg, dpi = 300)
 ```
 
 
 # Cluster analyses
 
 These analyses were performed on the clustered hybrids produced with the Tosca pipeline.
+
 ### STAU1 hybrids data: Get genomic coordinates and annotate hybrids
 
 ```{r, warning = FALSE}
@@ -617,6 +649,17 @@ fwrite(paris_clusters.dt, "paris_annotated_clusters.gc.tsv.gz", sep = "\t")
 paris_clusters.dt$Experiment <- "PARIS"
 ```
 
+```{r}
+# add col cluster_name because PARIS data does not have unique cluster identifiers
+paris_clusters.dt <- paris_clusters.dt %>% unite("cluster_name", c(name, L_seqnames),
+                                           na.rm = TRUE, remove = FALSE, sep="_")
+  
+  
+  
+hybrids.dt <- hybrids.dt %>% unite("cluster_name", c(name, L_seqnames),
+                                           na.rm = TRUE, remove = FALSE, sep="_")
+```
+
 
 #### Merge experiments
 
@@ -630,7 +673,7 @@ all_exp.df <- all_exp.df %>% dplyr::filter(L_gene_name == R_gene_name)
 ## Transcript biotypes
 ```{r}
 biotype_counts.df <- all_exp.df %>%
-  select(name, Experiment, L_biotype, R_biotype) %>%
+  dplyr::select(cluster_name, Experiment, L_biotype, R_biotype) %>%
   pivot_longer(c(L_biotype, R_biotype), names_to = "arm", values_to = "biotype")
 
 biotype_counts.df <- biotype_counts.df %>%
@@ -641,6 +684,7 @@ biotype_counts.df <- biotype_counts.df %>%
   arrange(desc(biotype)) %>%
   mutate(percentage = counts*100 / sum(counts)) %>%
   ungroup()
+
 biotype_counts.df <- biotype_counts.df %>%
   mutate(RNA_biotype = case_when((percentage < 0.05) ~ "Other",
                                  (percentage >= 0.05) ~ biotype))
@@ -697,8 +741,7 @@ plot_stacked_barchart(all_exp_mRNA.df, hybrid_type, Experiment)
 ## 3'UTR hybrids
 
 ```{r}
-# Get hybrid spans
-# Get hybrid arm widths
+# Get hybrid spans; Get hybrid arm widths
 
 threeutr.df <- all_exp_mRNA.df %>%
   dplyr::filter(L_region == "UTR3" & R_region == "UTR3")
