@@ -165,14 +165,19 @@ plot_stacked_barchart <- function(data.df, column, group) {
 ```{r}
 get_nucleotide_frequency <- function(duplexes.df) {
   
+  duplexes.df <- duplexes.df %>%
+    dplyr::filter(!is.na(l_paired_residues)) %>%
+    dplyr::filter(!is.na(r_paired_residues))
+  
   L_seq <- DNAStringSet(duplexes.df$l_paired_residues)
   R_seq <- DNAStringSet(duplexes.df$r_paired_residues)
   
   L_freq <- as.data.frame(oligonucleotideFrequency(L_seq, width = 1, as.prob=TRUE))
   R_freq <- as.data.frame(oligonucleotideFrequency(R_seq, width = 1, as.prob=TRUE))
   duplexes.df <- dplyr::bind_cols(duplexes.df, L_freq, R_freq)
-  colnames(duplexes.df) = gsub("...43|...44|...45|...46", "_L", colnames(duplexes.df)) # rename columns
-  colnames(duplexes.df) = gsub("...47|...48|...49|...50", "_R", colnames(duplexes.df))
+  
+  colnames(duplexes.df) = gsub("...41|...42|...43|...44", "_L", colnames(duplexes.df)) # rename columns
+  colnames(duplexes.df) = gsub("...45|...46|...47|...48", "_R", colnames(duplexes.df))
   
   # Pur content - calculate max pur L vs. R arm 
   duplexes.df <- duplexes.df %>%
@@ -239,6 +244,7 @@ plot_nucleotide_frequency <- function(data) {
     facet_grid(cols = vars(arm)) +
     ylab("Frequency") +
     xlab("ID") +
+    ylim(0, 1) +
     scale_color_manual(values = c("darkgreen","dodgerblue4","goldenrod3","firebrick"))
   
   return(nuc_freq.gg)
@@ -303,6 +309,7 @@ get_mfe <- function(forgi, rnafold, prefix) {
 
 ```{r}
 # Outputs from mfe and forgi analyses
+setwd("~/Documents/projects/computational_hiCLIP/notebooks")
 nolinker.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.mfe_analyses.tsv.gz") # analyse_nolinker_duplexes.R output
 nolinker_forgi.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.forgi.tsv.gz") # similar but for PARIS
 
@@ -336,7 +343,7 @@ Only intramolecular 3'UTR duplexes were analysed. For the hybrid data, the hybri
 
 #### No RNase duplexes
 ```{r}
-# Sys.setenv(PATH="/Users/iosubi/opt/miniconda3/bin/")
+#Sys.setenv(PATH="/Users/iosubi/opt/miniconda3/bin/")
 nonhybrids.mfe.df <- get_mfe(nornase.forgi.dt, rnafold.df, prefix="stau1")
 nonhybrids.mfe.df <- nonhybrids.mfe.df %>%
   dplyr::select(id, eval_mfe) %>%
@@ -441,7 +448,7 @@ median(nolinker_features.df$total_paired)
 #### Filter the non-hybrids according to the size of paired residues
 ```{r}
 filtered.nonhyb.forgi.df <- nornase.forgi.dt %>%
-  dplyr::filter(between(sum_paired, 12, max) )
+  dplyr::filter(between(sum_paired, 8, max) )
 ```
 
 
@@ -553,7 +560,7 @@ nornase.forgi.gg + ggtitle("STAU1 nonhybrids")
 
 filtered.nonhyb.forgi.gg <- draw_pie_chart(filtered.nonhyb.forgi.df, stem_type)
 ggsave("filtered_non_hyb_stem_types_pie.pdf", filtered.nonhyb.forgi.gg, dpi = 300, height = 11, width = 7)
-filtered.nonhyb.forgi.gg + ggtitle(paste0("STAU1 nonhybrids ", min, "-", max," bp long"))
+filtered.nonhyb.forgi.gg + ggtitle(paste0("STAU1 nonhybrids ", 8, "-", max," bp long"))
 
 ```
 ## Stem lengths
@@ -600,6 +607,38 @@ all_features.gg <- ggplot(transform(all.features.df, feature = factor(feature, l
 
 all_features.gg
 # ggsave("feature_comparison_boxplot.pdf", all_features.gg, dpi = 300)
+```
+# Nucleotide frequency analysis
+
+```{r}
+#nolinker_nuc_freq.df <- get_nucleotide_frequency(nolinker.dt)
+
+
+
+
+#TRUE %in% is.na(nolinker.dt$l_paired_residues) 
+
+#DNAStringSet(nolinker.dt$l_paired_residues)
+```
+```{r}
+paris.dt <- paris.dt %>%
+  dplyr::select(-cluster_name)
+```
+
+
+```{r}
+nolinker_nuc_freq.df <- get_nucleotide_frequency(nolinker.dt)
+nolinker_nuc_freq.gg <- plot_nucleotide_frequency(nolinker_nuc_freq.df)
+
+paris_nuc_freq.df <- get_nucleotide_frequency(paris.dt)
+paris_nuc_freq.gg <- plot_nucleotide_frequency(paris_nuc_freq.df)
+
+nonnhyb_nuc_freq.gg <- plot_nucleotide_frequency(filtered.nonhyb.forgi.df)
+
+
+nolinker_nuc_freq.gg + ggtitle("STAU1")
+nonnhyb_nuc_freq.gg + ggtitle("STAU1 nonhybrids")
+paris_nuc_freq.gg + ggtitle("PARIS")
 ```
 
 
