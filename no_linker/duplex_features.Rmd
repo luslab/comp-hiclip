@@ -478,7 +478,7 @@ stau1.hyb.filtered_nonhyb.gg <- ggplot(stau1.hyb.filtered_nonhyb.dt, aes(x = MFE
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
   ylab("Density") +
   xlab("MFE (kcal/mol)") +
-  ggtitle("3'UTR clusters min MFE")
+  ggtitle("3'UTR clusters min MFE - filtered")
 
 stau1.hyb.filtered_nonhyb.gg
 
