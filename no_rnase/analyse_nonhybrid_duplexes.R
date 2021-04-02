@@ -242,32 +242,33 @@ get_gc_content <- function(data.df) {
   
 }
 
-
-plot_nuc_frequencies <- function(forgi.df) {
-  # Prep for plotting
-  high_pur.df <- forgi.df %>% 
-    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm) %>%
-    ungroup() %>%
-    distinct() %>%
+plot_nucleotide_frequency <- function(data) {
+  
+  data <- data %>%
+    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm,
+                  A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm) %>%
+    dplyr::distinct() %>%
+    drop_na() %>%
     dplyr::arrange(G_freq_max_pur_arm)
   
-  high_pur.df <-rowid_to_column(high_pur.df)
+  # Prepare for plotting
+  high_pur.df <- data %>% 
+    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm)
+  high_pur.df <- rowid_to_column(high_pur.df)
   long_high_pur.df <- high_pur.df %>% 
     gather(residue, frequency, A_freq_max_pur_arm:U_freq_max_pur_arm)
   long_high_pur.df$arm = "High purine arm"
   
-  low_pur.df <- first_stem_loop.df %>% 
-    dplyr::select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm) %>%
-    ungroup() %>%
-    distinct() %>%
-    dplyr::arrange(desc(U_freq_min_pur_arm))
+  low_pur.df <- data %>% 
+    dplyr::select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm)
+  
   low_pur.df <- rowid_to_column(low_pur.df)
   long_low_pur.df <- low_pur.df %>% 
     gather(residue, frequency, A_freq_min_pur_arm:U_freq_min_pur_arm)
   long_low_pur.df$arm = "Low purine arm"
   
   nuc_freq.df <- rbind(long_high_pur.df, long_low_pur.df)
-  nuc_freq.df$residue <- str_sub(nuc_freq.df$residue, end=-18) #trim string to get nucleotide letter
+  nuc_freq.df$residue <- str_sub(nuc_freq.df$residue, 1,1) #trim string to get nucleotide (first) letter
   
   # Plot individual nucleotide frequencies
   nuc_freq.gg <- ggplot(nuc_freq.df, aes(x=rowid, y=frequency, color = residue)) +
@@ -275,6 +276,7 @@ plot_nuc_frequencies <- function(forgi.df) {
     facet_grid(cols = vars(arm)) +
     ylab("Frequency") +
     xlab("ID") +
+    ylim(0, 1) +
     scale_color_manual(values = c("darkgreen","dodgerblue4","goldenrod3","firebrick"))
   
   return(nuc_freq.gg)
@@ -581,7 +583,7 @@ ggsave(paste0(prefix, "_boxplot_each.pdf"), id_features.gg, height = 7, width = 
 ggsave(paste0(prefix, "_boxplot_all.pdf"), id_features_summed.gg, height = 7, width = 7, dpi = 300)
 
 # Nuc frequency plots
-nuc_freq.gg <- plot_nuc_frequencies(first_stem_loop.df)
+nuc_freq.gg <- plot_nucleotide_frequency(first_stem_loop.df)
 ggsave(paste0(prefix, "_nuc_freq.pdf"), nuc_freq.gg, height = 11, width = 7, dpi = 300)
 
 # MFE of the first stem loop
