@@ -217,19 +217,24 @@ get_nucleotide_frequency <- function(duplexes.df) {
 ```{r}
 plot_nucleotide_frequency <- function(data) {
   
-  # Prepare for plotting
-  high_pur.df <- data %>% 
-    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm) %>%
+  data <- data %>%
+    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm,
+                  A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm) %>%
+    dplyr::distinct() %>%
+    drop_na() %>%
     dplyr::arrange(G_freq_max_pur_arm)
   
+  # Prepare for plotting
+  high_pur.df <- data %>% 
+    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm)
   high_pur.df <- rowid_to_column(high_pur.df)
   long_high_pur.df <- high_pur.df %>% 
     gather(residue, frequency, A_freq_max_pur_arm:U_freq_max_pur_arm)
   long_high_pur.df$arm = "High purine arm"
   
   low_pur.df <- data %>% 
-    dplyr::select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm) %>%
-    dplyr::arrange(desc(U_freq_min_pur_arm))
+    dplyr::select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm)
+
   low_pur.df <- rowid_to_column(low_pur.df)
   long_low_pur.df <- low_pur.df %>% 
     gather(residue, frequency, A_freq_min_pur_arm:U_freq_min_pur_arm)
@@ -309,7 +314,7 @@ get_mfe <- function(forgi, rnafold, prefix) {
 
 ```{r}
 # Outputs from mfe and forgi analyses
-setwd("~/Documents/projects/computational_hiCLIP/notebooks")
+#setwd("~/Documents/projects/computational_hiCLIP/notebooks")
 nolinker.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.mfe_analyses.tsv.gz") # analyse_nolinker_duplexes.R output
 nolinker_forgi.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.forgi.tsv.gz") # similar but for PARIS
 
@@ -323,6 +328,7 @@ rnafold.df <- rowid_to_column(rnafold.df, "id")
 rnafold.df$id <- paste0("ID", rnafold.df$id, sep="")
 rnafold.df <- dplyr::select(rnafold.df, c(id, sequence, mea_structure))
 ```
+
 
 ```{r}
 # Annotations
@@ -507,7 +513,6 @@ ggsave("filtered_mfe_comparison.pdf", mfe.filtered.violin.gg, dpi = 300)
 
 
 ```{r}
-
 # No linker
 
 nolinker.feat.df <- nolinker_forgi.dt %>% replace(is.na(.), 0) # replqce NA with zero to simplify filtering
@@ -547,9 +552,6 @@ paris.feat.df <- paris.feat.df %>%
 paris_pie.gg <- draw_pie_chart(paris.feat.df, stem_type)
 ggsave(paste0("paris", "_stem_types_pie.pdf"), nolinker_pie.gg, height = 11, width = 7, dpi = 300)
 paris_pie.gg + ggtitle("PARIS hybrids")
-
-
-
 
 # Nonhybrids
 
@@ -611,20 +613,17 @@ all_features.gg
 # Nucleotide frequency analysis
 
 ```{r}
-#nolinker_nuc_freq.df <- get_nucleotide_frequency(nolinker.dt)
-
-
-
-
-#TRUE %in% is.na(nolinker.dt$l_paired_residues) 
-
-#DNAStringSet(nolinker.dt$l_paired_residues)
-```
-```{r}
 paris.dt <- paris.dt %>%
   dplyr::select(-cluster_name)
 ```
 
+```{r}
+nolinker_nuc_freq.df
+
+x <- nolinker_nuc_freq.df %>% dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm,A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm)
+    dplyr::distinct() %>%
+    dplyr::arrange(desc(G_freq_max_pur_arm))
+```
 
 ```{r}
 nolinker_nuc_freq.df <- get_nucleotide_frequency(nolinker.dt)
