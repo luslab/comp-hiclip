@@ -310,11 +310,67 @@ get_mfe <- function(forgi, rnafold, prefix) {
 
 ```
 
+
+```{r}
+# Shuffled control MEA functions for non-hybrids
+
+run_rnafold <- function(sequence, args =  c("-p", "--noLP", "--noPS", "--MEA", sequence)) {
+  
+  rnafold.out <- system2(command = "RNAfold", args = args, stdout = TRUE)
+  return(rnafold.out)
+  
+}
+
+
+extract_mea_fe <- function(mea) {
+  
+  mea_fe <- str_split(mea, "\\{")[[1]][[2]]
+  mea_fe <- str_remove_all(mea_fe, " ")
+  mea_fe <- as.numeric(str_split(mea_fe, "MEA")[[1]][[1]])
+  return(mea_fe)
+  
+}
+
+
+get_shuffled_mea <- function(id, sequence) {
+  
+  fasta.df <- data.frame(id = id, sequence = sequence)
+  shuffled <- sapply(seq_along(id), function(i) ShuffleSequence(fasta.df[i,]$sequence, number = 100, klet = 2))
+  
+  # write a multi fasta per ID containg the shuffled sequences
+  shuff_fasta <- sapply(1:ncol(shuffled), function(i) RNAStringSet(shuffled[,i]))
+  shuff_fasta <- unlist(RNAStringSetList(shuff_fasta))
+  
+  #names(shuff_fasta) <- sapply(1:length(shuff_fasta), function(i) paste0(id, "_",i))
+  
+  temp.fasta <- paste0(id,".fa")
+  writeXStringSet(shuff_fasta, filepath = paste0(id,".fa"))
+  
+  rnafold.out <- run_rnafold(temp.fasta)
+  
+  rnafold.out.mea <- rnafold.out[str_detect(rnafold.out, "MEA")]
+  rnafold.out.mea_fe <- lapply(rnafold.out.mea, function(x) extract_mea_fe(x))
+  rnafold.out.mea_fe <- rnafold.out.mea_fe[!is.na(rnafold.out.mea_fe)]
+  rnafold.out.mea_fe.mean <- mean(unlist(rnafold.out.mea_fe))
+  
+  #names(rnafold.out.mea_fe.mean) <- id
+ 
+  invisible(file.remove(temp.fasta))
+  return(list(id = id, shuffled_mea_fe = rnafold.out.mea_fe.mean))
+
+  }
+
+
+
+```
+
+
+
 #### Data
 
 ```{r}
 # Outputs from mfe and forgi analyses
-#setwd("~/Documents/projects/computational_hiCLIP/notebooks")
+setwd("~/Documents/projects/computational_hiCLIP/notebooks")
 nolinker.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.mfe_analyses.tsv.gz") # analyse_nolinker_duplexes.R output
 nolinker_forgi.dt <- fread("stau1_3utr_minmfe_cluster_hybrids.forgi.tsv.gz") # similar but for PARIS
 
@@ -349,22 +405,48 @@ Only intramolecular 3'UTR duplexes were analysed. For the hybrid data, the hybri
 
 #### No RNase duplexes
 ```{r}
-#Sys.setenv(PATH="/Users/iosubi/opt/miniconda3/bin/")
+# Sys.setenv(PATH="/Users/iosubi/opt/miniconda3/bin/")
 nonhybrids.mfe.df <- get_mfe(nornase.forgi.dt, rnafold.df, prefix="stau1")
+
 nonhybrids.mfe.df <- nonhybrids.mfe.df %>%
-  dplyr::select(id, eval_mfe) %>%
+  dplyr::select(id, stem_loop_seq, stem_loop_db, eval_mfe) %>%
   distinct()
-  
 
 nornase.forgi.dt <- left_join(nornase.forgi.dt, nonhybrids.mfe.df, by = "id")
+```
+
+```{r}
+
+# fwrite(nonhybrids.mfe.df, "rnafold_test.txt", sep = "\t")
+nonhybrids.shuff.mfe.df <- nonhybrids.mfe.df %>%
+  rowwise() %>%
+  mutate(mea = list(get_shuffled_mea(id, stem_loop_seq))) %>%
+  mutate(shuffled_mea_fe = mea$shuffled_mea_fe) %>%
+  dplyr::select(-mea) %>%
+  ungroup() %>%
+  dplyr::select(id, shuffled_mea_fe)
+
+nornase.forgi.dt <- left_join(nornase.forgi.dt, nonhybrids.shuff.mfe.df, by = "id")
+
+nonhybrids.shuff.mfe.df <- mutate(nonhybrids.shuff.mfe.df, Sample = "shuffled_mfe", Experiment = "STAU1\nnonhybrids")
+
+nonhybrids.shuff.mfe.df <- dplyr::rename(nonhybrids.shuff.mfe.df, MFE = shuffled_mea_fe)
+```
+
+
+```{r}
+nonhybrids.mfe.df <- nonhybrids.mfe.df %>%
+  dplyr::select(id, eval_mfe)
 
 nonhybrids.mfe.df <- nonhybrids.mfe.df %>%
   mutate(Sample = "mfe", Experiment = "STAU1\nnonhybrids")
 
 nonhybrids.mfe.df <- dplyr::rename(nonhybrids.mfe.df, MFE = eval_mfe)
-  
 ```
 
+```{r}
+nonhybrids.mfe.df <- rbind(nonhybrids.mfe.df, nonhybrids.shuff.mfe.df)
+```
 
 #### No linker duplexes
 ```{r}
@@ -413,7 +495,7 @@ stau1.hyb.nonhyb.gg <- ggplot(stau1.hyb.nonhyb.dt, aes(x = MFE, linetype = Sampl
   ggtitle("3'UTR clusters min MFE")
 
 stau1.hyb.nonhyb.gg
-# ggsave("3UTR_clusters_nolinker_minMFE.pdf", stau1.hyb.nonhyb.gg, dpi=300, height = 7, width = 8)                               
+ggsave("3UTR_clusters_nolinker_minMFE.pdf", stau1.hyb.nonhyb.gg, dpi=300, height = 7, width = 8)                               
 ```
 ### MFE Violin plots
 
@@ -457,14 +539,8 @@ filtered.nonhyb.forgi.df <- nornase.forgi.dt %>%
   dplyr::filter(between(sum_paired, 8, max) )
 ```
 
-
 ```{r}
-filtered.nonhyb.mfe.df <- filtered.nonhyb.forgi.df %>%
-  dplyr::select(id, eval_mfe) %>%
-  distinct() %>%
-  mutate(Sample = "mfe", Experiment = "STAU1 nonhybrids")
-
-filtered.nonhyb.mfe.df <- dplyr::rename(filtered.nonhyb.mfe.df, MFE = eval_mfe)
+filtered.nonhyb.mfe.df <- semi_join(nonhybrids.mfe.df, filtered.nonhyb.forgi.df, by = "id")
 ```
 
 ```{r}
@@ -489,6 +565,7 @@ stau1.hyb.filtered_nonhyb.gg <- ggplot(stau1.hyb.filtered_nonhyb.dt, aes(x = MFE
 stau1.hyb.filtered_nonhyb.gg
 
 ```
+
 ```{r}
 # all
 stau1.hyb.filtered_nonhyb.dt <- stau1.hyb.filtered_nonhyb.dt %>%
