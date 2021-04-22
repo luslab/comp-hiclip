@@ -1,3 +1,5 @@
+#!/usr/bin/env Rscript 
+
 library(stringr)
 library(rtracklayer)
 library(GenomicFeatures)
@@ -31,26 +33,32 @@ resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
 
 # gr must have a "name" metadata column with transcript names
 convert_to_transcriptomic_coordinates <- function(gr, txdb.sqlite) {
+  
   txdb <- loadDb(txdb.sqlite)
   transcripts.gr <- transcripts(txdb)
   names(transcripts.gr) <- id2name(txdb, feature.type = "tx")
   transcripts.gr <- transcripts.gr[transcripts.gr$tx_name %in% gr$name]
   mapped.gr <- mapToTranscripts(x=gr, transcripts=transcripts.gr)
+  
   return(mapped.gr)
+  
 }
 
 
 merge_by_partial_string <- function(df1, df2) {
+  
   df1$matchID = row.names(df1)
   df2$matchID = sapply(df2$gene_name, function(x) grep(x, df1$fasta_id)) # not very fast but ok
   
   df_merge = merge(df1, df2, by = "matchID")[-1]
+  
   return(df_merge)
-}
+
+  }
 
 
 # ==========
-# Data and params
+# Data and parameters
 # ==========
 
 data.dir <- "/Users/iosubi/Documents/projects/computational_hiCLIP/nonhybrids_10nt_10nt"
@@ -58,14 +66,14 @@ first_stem_loop.df <- read.csv(paste0(data.dir, "/stau1.peaks.10nt_10nt_forgi_an
 bed.files <- list.files(path = data.dir, pattern = "annot.bed.gz", full.names = TRUE)
 
 
-# params
-xl <- 1 #crosslink site position 
+# Params
+xl <- 1 # crosslink site position 
 prefix = "stau1.peaks.10nt_10nt"
 
-# annotation
+# Annotation
 txdb <- paste0(data.dir,"/gencode_V33_txdb.sqlite")
 gencode.txdb <- AnnotationDbi::loadDb(txdb)
-human.gtf <- paste0(data.dir, "/human_GencodeV33.gtf") # cotains fasta_id used in Tosca
+human.gtf <- paste0(data.dir, "/human_GencodeV33.gtf") # contains fasta_id used by Tosca
 
 message(paste0("Analysing ", prefix, " data"))
 
@@ -77,16 +85,15 @@ message(paste0("Analysing ", prefix, " data"))
 # Prepare gene IDs and coordinates
 # ==========
 
-# load peaks data, resize exactly as for rnafold annotations used to predict structures
-
+# Load peaks data, resize exactly as for rnafold annotations used to predict structures
 peaks.gc.gr <- resize_peaks(bed.files, left = 0, right = 100)
 
-# add a new column containing gene ids by directly mapping the transcript ids
+# Add a new column containing gene ids by directly mapping the transcript ids
 keys = peaks.gc.gr$name
 mapped.ids <- select(gencode.txdb, keys = keys, columns="GENEID", keytype="CDSNAME")
 peaks.gc.gr$gene_name <- mapped.ids$GENEID
 
-# add fasta_id from annotation used for Tosca as a new column
+# Add fasta_id from annotation used for Tosca as a new column
 human.gr <- import.gff2(human.gtf)
 human.gr <- keepStandardChromosomes(human.gr, pruning.mode = "coarse")
 human.gr <- dropSeqlevels(human.gr, c("chrM", "chrY"), pruning.mode = "coarse")
@@ -95,7 +102,7 @@ human.df <- as.data.frame(human.gr)
 genes.ls <- unique(peaks.gc.gr$gene_name) # create list of unique gene names to filter the human annotation
 
 human.df <- human.df %>%
-  filter(str_detect(fasta_id, paste(genes.ls, collapse = "|"))) #filter for gene names in the peak gr
+  filter(str_detect(fasta_id, paste(genes.ls, collapse = "|"))) # filter for gene names in the peak gr
 human.df$row <- row.names(human.df)
 human.df <- as.data.frame(human.df[,c("row", "fasta_id")])
 peaks.gc.df <- as.data.frame(peaks.gc.gr)
@@ -104,19 +111,19 @@ peaks.gc.df <- merge_by_partial_string(human.df, peaks.gc.df)
 peaks.gc.df <- peaks.gc.df %>%
   dplyr::select(-row)
 
-# Get transcriptomic coordinates; Convert genomic coordinates to transcriptomic coordinates
+# Get transcriptomic coordinates i.e. convert genomic coordinates to transcriptomic coordinates
 peaks.tx.gr <- convert_to_transcriptomic_coordinates(peaks.gc.gr, txdb)
-peaks.tx.gr$id <- paste0("ID",peaks.tx.gr$xHits)
+peaks.tx.gr$id <- paste0("ID", peaks.tx.gr$xHits)
 peaks.tx.gr$name <- seqnames(peaks.tx.gr)
 
-# make df containing the peaks starts + 100 in genomic and transcriptomic coordinates
+# Make df containing the peaks starts + 100 in genomic and transcriptomic coordinates
 peaks.df <- left_join(peaks.gc.df, as.data.frame(peaks.tx.gr), by = c("id", "name"), suffix=c("",".tx"))
 
-# extract the start and end position of the stem-loop individually for each arm
+# Extract the start and end position of the stem-loop individually for each arm
 arms.df <- first_stem_loop.df %>% 
   distinct(id, L_min, L_max, R_min, R_max, L_seq, R_seq, L_db, R_db)
 
-# merge df containing the peaks starts + 100 in genomic and transcriptomic coordinates to arms data frame
+# Merge df containing the peaks starts + 100 in genomic and transcriptomic coordinates to arms data frame
 arms.df <- as.data.frame(left_join(arms.df, peaks.df, by = "id"))
 
 # ==========
@@ -134,6 +141,7 @@ arms.df <- arms.df %>%
          R_genomic_end = case_when((strand == "+") ~ start + R_max - xl,
                                    (strand == "-") ~ end - R_min + xl))
 
+
 # Calculate L and R arms transcriptomic coordinates
 arms.df <- arms.df %>%
   mutate(L_tx_start = start.tx + L_min - xl,
@@ -141,8 +149,17 @@ arms.df <- arms.df %>%
          R_tx_start = start.tx + R_min - xl,
          R_tx_end = start.tx + R_max - xl)
 
+# Check L and R arm coordinate widths are correct
+stopifnot(abs(arms.df$L_genomic_end - arms.df$L_genomic_start) == abs(arms.df$L_tx_end - arms.df$L_tx_start))
+stopifnot(abs(arms.df$L_max - arms.df$L_min) == abs(arms.df$L_genomic_end - arms.df$L_genomic_start))
 
-# transcriptomic (similar to tosca hybrids table):
+stopifnot(abs(arms.df$R_genomic_end - arms.df$R_genomic_start) == abs(arms.df$R_tx_end - arms.df$R_tx_start))
+stopifnot(abs(arms.df$R_max - arms.df$R_min) == abs(arms.df$R_genomic_end - arms.df$R_genomic_start))
+
+
+# Write out tables
+
+# Transcriptomic (similar to tosca hybrids table):
 forgi.reformated.tx.df <- data.frame(id=arms.df$id, name=arms.df$name, orientation=NA, type = "intragenic", hybrid_selection = NA, L_seqnames = arms.df$fasta_id,
                                      L_read_start = arms.df$L_min, L_read_end = arms.df$L_max, L_start = arms.df$L_tx_start, L_end = arms.df$L_tx_end, L_width = NA, L_strand = "+", 
                                      R_seqnames = arms.df$fasta_id, R_read_start = arms.df$R_min, R_read_end = arms.df$R_max, R_start = arms.df$R_tx_start, R_end = arms.df$R_tx_end, R_width = NA, R_strand = "+",
@@ -157,14 +174,18 @@ forgi.reformated.tx.df <- forgi.reformated.tx.df %>%
   ungroup()
 
 
-# genomic (similar to tosca clusters table):
-forgi.reformated.gc.df <- data.frame(name = arms.df$id, count = arms.df$score, L_seqnames=arms.df$fasta_id,	
+# Genomic (similar to tosca clusters table):
+forgi.reformated.gc.df <- data.frame(name = arms.df$id, count = NA, L_seqnames=arms.df$fasta_id,	
                                      L_start=arms.df$L_tx_start, L_end=arms.df$L_tx_end, L_strand="+", L_genomic_seqnames=arms.df$seqnames,
                                      L_genomic_start=arms.df$L_genomic_start, L_genomic_end= arms.df$L_genomic_end,
-                                     L_genomic_strand=arms.df$strand, R_seqnames=arms.df$fasta_id, R_start=arms.df$R_tx_start, R_end=arms.df$L_tx_end,
+                                     L_genomic_strand=arms.df$strand, R_seqnames=arms.df$fasta_id, R_start=arms.df$R_tx_start, R_end=arms.df$R_tx_end,
                                      R_strand="+", R_genomic_seqnames=arms.df$seqnames,
                                      R_genomic_start=arms.df$R_genomic_start,  R_genomic_end= arms.df$R_genomic_end,
                                      R_genomic_strand =arms.df$strand)
 
+stopifnot(abs(forgi.reformated.gc.df$L_genomic_end - forgi.reformated.gc.df$L_genomic_start) == abs(forgi.reformated.gc.df$L_end - forgi.reformated.gc.df$L_start))
+stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_genomic_start) == abs(forgi.reformated.gc.df$R_end - forgi.reformated.gc.df$R_start))
+
 write_tsv(forgi.reformated.gc.df, paste0(prefix, "_gc.txt"), quote = FALSE)
 write_tsv(forgi.reformated.tx.df, paste0(prefix, "_tx.txt"), quote = FALSE)
+
