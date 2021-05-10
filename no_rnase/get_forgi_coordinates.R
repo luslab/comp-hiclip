@@ -31,20 +31,6 @@ resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
 }
 
 
-# gr must have a "name" metadata column with transcript names
-convert_to_transcriptomic_coordinates <- function(gr, txdb.sqlite) {
-  
-  txdb <- loadDb(txdb.sqlite)
-  transcripts.gr <- transcripts(txdb)
-  names(transcripts.gr) <- id2name(txdb, feature.type = "tx")
-  transcripts.gr <- transcripts.gr[transcripts.gr$tx_name %in% gr$name]
-  mapped.gr <- mapToTranscripts(x=gr, transcripts=transcripts.gr)
-  
-  return(mapped.gr)
-  
-}
-
-
 merge_by_partial_string <- function(df1, df2) {
   
   df1$matchID = row.names(df1)
@@ -85,12 +71,12 @@ message(paste0("Analysing ", prefix, " data"))
 # Prepare gene IDs and coordinates
 # ==========
 
-# Load peaks data, resize exactly as for rnafold annotations used to predict structures
+# Load peaks data, resize exactly as for rnafold used to predict structures
 peaks.gc.gr <- resize_peaks(bed.files, left = 0, right = 100)
 
 # Add a new column containing gene ids by directly mapping the transcript ids
 keys = peaks.gc.gr$name
-mapped.ids <- select(gencode.txdb, keys = keys, columns="GENEID", keytype="CDSNAME")
+mapped.ids <- AnnotationDbi::select(gencode.txdb, keys = keys, columns="GENEID", keytype="CDSNAME")
 peaks.gc.gr$gene_name <- mapped.ids$GENEID
 
 # Add fasta_id from annotation used for Tosca as a new column
@@ -99,71 +85,82 @@ human.gr <- keepStandardChromosomes(human.gr, pruning.mode = "coarse")
 human.gr <- dropSeqlevels(human.gr, c("chrM", "chrY"), pruning.mode = "coarse")
 human.df <- as.data.frame(human.gr)
 
-genes.ls <- unique(peaks.gc.gr$gene_name) # create list of unique gene names to filter the human annotation
+genes.ls <- unique(peaks.gc.gr$gene_name) # create list of unique gene names from peak file to filter the human annotation
 
 human.df <- human.df %>%
   filter(str_detect(fasta_id, paste(genes.ls, collapse = "|"))) # filter for gene names in the peak gr
+
 human.df$row <- row.names(human.df)
-human.df <- as.data.frame(human.df[,c("row", "fasta_id")])
+
+human.df <- dplyr::rename(human.df, fasta_id_start = start, fasta_id_end = end)
+
+human.df <- as.data.frame(human.df[,c("row", "fasta_id", "fasta_id_start", "fasta_id_end")])
+
 peaks.gc.df <- as.data.frame(peaks.gc.gr)
 
 peaks.gc.df <- merge_by_partial_string(human.df, peaks.gc.df)
 peaks.gc.df <- peaks.gc.df %>%
   dplyr::select(-row)
 
-# Get transcriptomic coordinates i.e. convert genomic coordinates to transcriptomic coordinates
-peaks.tx.gr <- convert_to_transcriptomic_coordinates(peaks.gc.gr, txdb)
-peaks.tx.gr$id <- paste0("ID", peaks.tx.gr$xHits)
-peaks.tx.gr$name <- seqnames(peaks.tx.gr)
+# Add transcriptomic coordinates
+peaks.df <- peaks.gc.df %>%
+  mutate(tx_start = case_when((strand == "+") ~ start - fasta_id_start + 1,
+                                     (strand == "-") ~  fasta_id_end - end + 1),
+         tx_end = case_when((strand == "+") ~ end - fasta_id_start + 1,
+                                   (strand == "-") ~  fasta_id_end - start + 1))
 
-# Make df containing the peaks starts + 100 in genomic and transcriptomic coordinates
-peaks.df <- left_join(peaks.gc.df, as.data.frame(peaks.tx.gr), by = c("id", "name"), suffix=c("",".tx"))
+# ==========
+# Load predicted stem-loops arms data
+# ==========
 
 # Extract the start and end position of the stem-loop individually for each arm
 arms.df <- first_stem_loop.df %>% 
   distinct(id, L_min, L_max, R_min, R_max, L_seq, R_seq, L_db, R_db)
 
-# Merge df containing the peaks starts + 100 in genomic and transcriptomic coordinates to arms data frame
+# Merge df containing the peaks starts + 100 in genomic and transcriptomic coordinates to arms dataframe
 arms.df <- as.data.frame(left_join(arms.df, peaks.df, by = "id"))
 
 # ==========
 # Obtain coordinates for each arm of the stem loop
 # ==========
 
-# Calculate L and R arms genomic coordinates, remember that xl = 1
+# Calculate L and R arms genomic coordinates
 arms.df <- arms.df %>%
-  mutate(L_genomic_start = case_when((strand == "+") ~ start + L_min - xl,
-                                     (strand == "-") ~ end - L_max + xl),
-         L_genomic_end = case_when((strand == "+") ~ start + L_max - xl,
-                                   (strand == "-") ~ end - L_min + xl),
-         R_genomic_start = case_when((strand == "+") ~ start + R_min - xl,
-                                     (strand == "-") ~ end - R_max + xl),
-         R_genomic_end = case_when((strand == "+") ~ start + R_max - xl,
-                                   (strand == "-") ~ end - R_min + xl))
-
+  mutate(L_genomic_start = case_when((strand == "+") ~ start + L_min - 1,
+                                     (strand == "-") ~ end - L_max + 1),
+         L_genomic_end = case_when((strand == "+") ~ start + L_max - 1,
+                                   (strand == "-") ~ end - L_min + 1),
+         R_genomic_start = case_when((strand == "+") ~ start + R_min - 1,
+                                     (strand == "-") ~ end - R_max + 1),
+         R_genomic_end = case_when((strand == "+") ~ start + R_max - 1,
+                                   (strand == "-") ~ end - R_min + 1))
 
 # Calculate L and R arms transcriptomic coordinates
 arms.df <- arms.df %>%
-  mutate(L_tx_start = start.tx + L_min - xl,
-         L_tx_end = start.tx + L_max - xl,
-         R_tx_start = start.tx + R_min - xl,
-         R_tx_end = start.tx + R_max - xl)
+    mutate(L_tx_start = tx_start + L_min - 1,
+           L_tx_end = tx_start + L_max - 1,
+           R_tx_start = tx_start + R_min - 1,
+           R_tx_end = tx_start + R_max - 1)
 
 # Check L and R arm coordinate widths are correct
-stopifnot(abs(arms.df$L_genomic_end - arms.df$L_genomic_start) == abs(arms.df$L_tx_end - arms.df$L_tx_start))
-stopifnot(abs(arms.df$L_max - arms.df$L_min) == abs(arms.df$L_genomic_end - arms.df$L_genomic_start))
+stopifnot(abs(arms.df$L_genomic_end - arms.df$L_genomic_start) == 
+            abs(arms.df$L_tx_end - arms.df$L_tx_start))
+stopifnot(abs(arms.df$L_max - arms.df$L_min) == 
+            abs(arms.df$L_genomic_end - arms.df$L_genomic_start))
 
-stopifnot(abs(arms.df$R_genomic_end - arms.df$R_genomic_start) == abs(arms.df$R_tx_end - arms.df$R_tx_start))
-stopifnot(abs(arms.df$R_max - arms.df$R_min) == abs(arms.df$R_genomic_end - arms.df$R_genomic_start))
+stopifnot(abs(arms.df$R_genomic_end - arms.df$R_genomic_start) == 
+            abs(arms.df$R_tx_end - arms.df$R_tx_start))
+stopifnot(abs(arms.df$R_max - arms.df$R_min) == 
+            abs(arms.df$R_genomic_end - arms.df$R_genomic_start))
 
 
 # Write out tables
 
-# Transcriptomic (similar to tosca hybrids table):
-forgi.reformated.tx.df <- data.frame(id=arms.df$id, name=arms.df$name, orientation=NA, type = "intragenic", hybrid_selection = NA, L_seqnames = arms.df$fasta_id,
+# Transcriptomic (similar to Tosca hybrids table):
+forgi.reformated.tx.df <- data.frame(id=arms.df$id, name=arms.df$name, orientation = NA, type = "intragenic", hybrid_selection = NA, L_seqnames = arms.df$fasta_id,
                                      L_read_start = arms.df$L_min, L_read_end = arms.df$L_max, L_start = arms.df$L_tx_start, L_end = arms.df$L_tx_end, L_width = NA, L_strand = "+", 
                                      R_seqnames = arms.df$fasta_id, R_read_start = arms.df$R_min, R_read_end = arms.df$R_max, R_start = arms.df$R_tx_start, R_end = arms.df$R_tx_end, R_width = NA, R_strand = "+",
-                                     umi=NA, L_sequence=arms.df$L_seq, R_sequence=arms.df$R_seq, mfe = NA)
+                                     umi= NA, L_sequence=arms.df$L_seq, R_sequence=arms.df$R_seq, mfe = NA)
 
 forgi.reformated.tx.df <- forgi.reformated.tx.df %>%
   rowwise() %>%
@@ -183,9 +180,12 @@ forgi.reformated.gc.df <- data.frame(name = arms.df$id, count = NA, L_seqnames=a
                                      R_genomic_start=arms.df$R_genomic_start,  R_genomic_end= arms.df$R_genomic_end,
                                      R_genomic_strand =arms.df$strand)
 
-stopifnot(abs(forgi.reformated.gc.df$L_genomic_end - forgi.reformated.gc.df$L_genomic_start) == abs(forgi.reformated.gc.df$L_end - forgi.reformated.gc.df$L_start))
-stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_genomic_start) == abs(forgi.reformated.gc.df$R_end - forgi.reformated.gc.df$R_start))
+stopifnot(abs(forgi.reformated.gc.df$L_genomic_end - forgi.reformated.gc.df$L_genomic_start) == 
+            abs(forgi.reformated.gc.df$L_end - forgi.reformated.gc.df$L_start))
+stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_genomic_start) == 
+            abs(forgi.reformated.gc.df$R_end - forgi.reformated.gc.df$R_start))
 
+# Export tables
 write_tsv(forgi.reformated.gc.df, paste0(prefix, "_gc.txt"), quote = FALSE)
 write_tsv(forgi.reformated.tx.df, paste0(prefix, "_tx.txt"), quote = FALSE)
 
