@@ -6,8 +6,8 @@
 # Updated 28th December 2020 to merge overlapping genes
 # Updated 28th January 2021 to add tRNA
 
-suppressPackageStartupMessages(library(rentrez))
-suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(primavera))
 suppressPackageStartupMessages(library(Biostrings))
 suppressPackageStartupMessages(library(rtracklayer))
 
@@ -16,21 +16,6 @@ suppressPackageStartupMessages(library(rtracklayer))
 # =========
 # Get rRNA
 # =========
-
-get_ncbi_sequence <- function(accession) {
-  
-  fa <- entrez_fetch(db="nucleotide", id=accession, rettype="fasta")
-  lines <- str_split(fa, "\n")[[1]]
-  id <- gsub(">", "", lines[1])
-  seq <- paste0(lines[-1], collapse = "")
-  
-  # Convert to DNAStringSet
-  dss <- DNAStringSet(seq)
-  names(dss) <- id
-  
-  return(dss)
-  
-}
 
 rDNA.ds <- get_ncbi_sequence("U13369.1") # NCBI rDNA
 rRNA_5S.ds <- get_ncbi_sequence("NR_023363.1") # NCBI rRNA 5S
@@ -53,7 +38,7 @@ ref.gff <- "gencode.v33.annotation.gff3.gz"
 
 if(!file.exists(ref.gff)) {
 
-    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/gencode.v33.annotation.gff3.gz", 
+    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/gencode.v33.annotation.gff3.gz",
                 destfile = ref.gff,
                 method = "wget",
                 quiet = TRUE)
@@ -92,7 +77,7 @@ multi.reduced.sel.genes.gr$revmap <- NULL
 reduced.sel.genes.gr <- sort(c(unique.sel.genes.gr, multi.reduced.sel.genes.gr))
 reduced.sel.genes.gr$name <- paste0(reduced.sel.genes.gr$gene_name, ":", reduced.sel.genes.gr$gene_id)
 
-invisible(file.remove(ref.gff))
+# invisible(file.remove(ref.gff))
 
 # =========
 # Mask snRNAs, rRNA and tRNA
@@ -110,10 +95,10 @@ if(!file.exists("hg38-tRNAs.bed")) {
                 destfile = "hg38-tRNAs.tar.gz",
                 method = "wget",
                 quiet = TRUE)
-  
+
   untar(tarfile = "hg38-tRNAs.tar.gz",
         files = "hg38-tRNAs.bed")
-  
+
   invisible(file.remove("hg38-tRNAs.tar.gz"))
 
 }
@@ -122,7 +107,40 @@ trna.gr <- import.bed("hg38-tRNAs.bed")
 trna.gr <- keepStandardChromosomes(trna.gr, pruning.mode = "coarse")
 mcols(trna.gr) <- NULL
 
-mask.gr <- c(snrna.gr, trna.gr)
+# rRNA from RepeatMasker
+if(!file.exists("hg38.rmsk.txt.gz")) {
+
+  download.file(url = "http://hgdownload.soe.ucsc.edu/goldenPath/hg38/database/rmsk.txt.gz",
+                destfile = "hg38.rmsk.txt.gz",
+                method = "wget",
+                quiet = TRUE)
+
+}
+
+rm.dt <- fread("hg38.rmsk.txt.gz",
+               col.names = c(
+               "#bin", 
+               "swScore", 
+               "milliDiv", 
+               "milliDel", 
+               "milliIns", 
+               "genoName", 
+               "genoStart", 
+               "genoEnd", 
+               "genoLeft", 
+               "strand", 
+               "repName", 
+               "repClass", 
+               "repFamily", 
+               "repStart", 
+               "repEnd", 
+               "repLeft", 
+               "id"))
+rm.dt <- rm.dt[repClass %in% c("rRNA", "tRNA", "snRNA", "srpRNA", "scRNA", "RNA")] # RNA = 7SK
+rm.gr <- with(rm.dt, GRanges(seqnames = genoName, ranges = IRanges(start = genoStart + 1, end = genoEnd), strand = strand))
+rm.gr <- keepStandardChromosomes(rm.gr, pruning.mode = "coarse")
+
+mask.gr <- sort(reduce(c(snrna.gr, trna.gr, rm.gr)))
 mask.bed <- tempfile(tmpdir = ".", fileext = ".bed")
 export.bed(mask.gr, mask.bed)
 
@@ -133,7 +151,7 @@ export.bed(mask.gr, mask.bed)
 ref.fasta <- "GRCh38.primary_assembly.genome.fa"
 if(!file.exists(ref.fasta)) {
 
-    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/GRCh38.primary_assembly.genome.fa.gz", 
+    download.file(url = "ftp://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_33/GRCh38.primary_assembly.genome.fa.gz",
                 destfile = "GRCh38.primary_assembly.genome.fa.gz",
                 method = "wget",
                 quiet = TRUE)
@@ -157,7 +175,7 @@ cmd <- paste("samtools faidx", masked.fasta)
 # message(cmd)
 system(cmd)
 
-cmd <- paste("bedtools getfasta -s -name -fi", masked.fasta, "-bed", reduced.sel.genes.bed, "| pigz > human.fa.gz")
+cmd <- paste("bedtools getfasta -s -name -fi", masked.fasta, "-bed", reduced.sel.genes.bed, "| pigz > GRCh38.gencode_v33.fa.gz")
 # message(cmd)
 system(cmd)
 
@@ -166,8 +184,36 @@ invisible(file.remove(ref.fasta))
 invisible(file.remove(masked.fasta))
 invisible(file.remove(paste0(masked.fasta, ".fai")))
 
+# Remove everything after ::
+fa <- readDNAStringSet("GRCh38.gencode_v33.fa.gz")
+names(fa) <- gsub("::.*", "", names(fa))
+invisible(file.remove("GRCh38.gencode_v33.fa.gz"))
+
 # Add rRNA and tRNA
-writeXStringSet(rrna.ds, "human.fa.gz", append = TRUE, compress = TRUE)
-writeXStringSet(trna.ds, "human.fa.gz", append = TRUE, compress = TRUE)
+writeXStringSet(c(fa, rrna.ds, trna.ds), "GRCh38.gencode_v33.fa.gz", compress = TRUE)
+
+# =========
+# Create transcript gtf for coordinate conversion
+# =========
+
+rrna.gr <- GRanges(seqnames = names(rrna.ds),
+                   ranges = IRanges(start = 1, width = width(rrna.ds)),
+                   strand = "+",
+                   fasta_id = names(rrna.ds))
+
+trna.gr <- GRanges(seqnames = names(trna.ds),
+                   ranges = IRanges(start = 1, width = width(trna.ds)),
+                   strand = "+",
+                   fasta_id = names(trna.ds))
+
+reduced.sel.genes.gr$fasta_id <- reduced.sel.genes.gr$name
+reduced.sel.genes.gr$gene_name <- NULL
+reduced.sel.genes.gr$gene_id <- NULL
+reduced.sel.genes.gr$gene_type <- NULL
+reduced.sel.genes.gr$name <- NULL
+
+transcript.gtf <- c(rrna.gr, trna.gr, reduced.sel.genes.gr)
+export.gff2(transcript.gtf, "GRCh38.gencode_v33.tx.gtf")
+system("pigz GRCh38.gencode_v33.tx.gtf")
 
 message("Completed")
