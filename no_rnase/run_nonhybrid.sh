@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# Merge linker and nolinker nonhybrid data from Sugimoto et al., 2015 and run nf-core clipseq
+# Merge linker and nolinker nonhybrid data from Sugimoto et al., 2015,run nf-core clipseq and peak-calling
 # 21 May 2021
 
 
@@ -75,3 +75,21 @@ nextflow run nf-core/clipseq -r dev \
 --peakcaller icount --half_window 10 --merge_window 10 \
 -N ira.iosub@crick.ac.uk
 
+
+# Group crosslinks from high and low RNase conditions
+
+zcat $RESULTSDIR/xlinks/stau1_high.xl.bed.gz stau1_low.xl.bed.gz | \
+sort -k1,1 -k2,2 -k3,3 -k6,6 | \
+bedtools groupby -i stdin -g 1,2,3,6 -c 5 -o sum | \
+awk '{OFS="\t"}{print $1, $2, $3, ".", $5, $4}' | \
+pigz > $RESULTSDIR/xlinks/stau1.xl.bed.gz
+
+
+# Run peak calling for merged crosslinks
+
+iCount peaks icount/icount_gencode.v33.annotation.gtf.gz xlinks/stau1.xl.bed.gz stau1.10nt.sigxl.bed.gz --half_window 10 --fdr 0.05
+        
+pigz -d -c stau1.10nt.sigxl.bed.gz | \
+bedtools sort | \
+bedtools merge -s -d 10 -c 4,5,6 -o distinct,sum,distinct | \
+pigz > stau1.10nt_10nt.peaks.bed.gz
