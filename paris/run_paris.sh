@@ -14,16 +14,18 @@ ml Nextflow/20.10.0
 ml Singularity/3.6.4
 ml Graphviz/2.38.0-foss-2016b
 
-nextflow pull amchakra/tosca
+# nextflow pull amchakra/tosca
 
-nextflow run amchakra/tosca \
+# nextflow run amchakra/tosca \
+nextflow run /camp/home/chakraa2/.nextflow/assets/amchakra/tosca/main.nf \
 -resume \
 -profile crick,conda \
 --org comp_hiclip \
 --input paris.csv \
 --outdir /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris/results \
---split_size 1000000 \
+--split_size 100000 \
 --umi_separator _ \
---dedup_method none
+--dedup_method none \
+--star_args '--limitOutSJcollapsed 5000000'
 
 

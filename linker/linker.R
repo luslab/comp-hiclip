@@ -95,7 +95,7 @@ split_read <- function(fq, adapter) {
 
 linker <- "CTGTAGGCACCATACAATG"
 
-args <- commandArgs(trailingOnly = TRUE)
+# args <- commandArgs(trailingOnly = TRUE)
 
 if(file.exists(args[2])) stop("Output file already exists.")
 
