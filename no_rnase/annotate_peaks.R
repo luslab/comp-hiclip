@@ -3,6 +3,8 @@
 library(rtracklayer)
 library(GenomicFeatures)
 library(stringr)
+library(optparse)
+
 
 
 # ==========
@@ -43,19 +45,31 @@ annotate_intervals <- function(bed.filename, max.tpm.transcripts.gr, longest.pc.
 }
 
 
+# =========
+# Options and paths
+# =========
+
+option_list <- list(make_option(c("", "--bed"), action = "store", type = "character", default=NA, help = "Peaks bed file"),
+                    make_option(c("", "--txdb"), action = "store", type = "character", default=NA, help = "TxDb object"))
+opt_parser = OptionParser(option_list = option_list)
+opt <- parse_args(opt_parser)
+
+data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/forgi"
+
+
+
 # ==========
 # Files and parameters
 # ==========
 
-genomes.dir <- "/camp/lab/luscomben/home/users/iosubi/genomes"
-data.dir <- "/camp/lab/luscomben/home/users/iosubi/projects/comp_hiclip/nonhybrids/rnafold_forgi_peaks_10nt_10nt"
 
-files.list <- list.files(path = data.dir, pattern = "peaks.bed.gz", full.names = TRUE)
-longest_pcoding.df <- read.csv(paste0(data.dir, "/longest_pcoding_transcripts.tsv"), sep = "\t")
-max_tpm_transcripts.gr <- import.bed(paste0(data.dir, "/gencode_v33_max_tpm_transcripts.bed.gz"))
+files.list <- list.files(path = opt$bed, pattern = "peaks.bed.gz", full.names = TRUE)
+
+longest_pcoding.df <- read.csv(paste0(data.dir, "/gencode.v33.longest_pcoding_transcripts.tsv.gz"), sep = "\t")
+max_tpm_transcripts.gr <- import.bed(paste0(data.dir, "/gencode.v33_max_tpm_transcripts.bed.gz"))
 
 # Load TxDb object
-TxDb  <- loadDb(paste0(genomes.dir,"/gencode_V33_txdb.sqlite"))
+TxDb  <- loadDb(opt$txdb)
 TxDb <- keepStandardChromosomes(TxDb, pruning.mode="coarse")
 
 # ==========

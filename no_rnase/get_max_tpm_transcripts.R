@@ -5,13 +5,16 @@ library(dplyr)
 library(data.table)
 library(TxDb.Hsapiens.UCSC.hg38.knownGene)
 library(stringr)
+library(optparse)
+
 
 # =========
 # Options and paths
 # =========
 
 option_list <- list(make_option(c("", "--gtf"), action = "store", type = "character", default=NA, help = "GTF annotation file"),
-                    make_option(c("", "--tpm"), action = "store", type = "character", default=NA, help = "Transcript quantification table"))
+                    make_option(c("", "--tpm"), action = "store", type = "character", default=NA, help = "Transcript quantification table"),
+                    make_option(c("", "--out"), action = "store", type = "character", default=NA, help = "Output name"))
 opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
@@ -70,4 +73,4 @@ max_tpm_transcripts.df <- max_tpm_transcripts.df %>%
 max_tpm_transcripts.gr <- GRanges(max_tpm_transcripts.df)
 max_tpm_transcripts.gr$name <- max_tpm_transcripts.gr$tx_name
 
-export.bed(max_tpm_transcripts.gr, con=paste0(data.dir,"/gencode.v33_max_tpm_transcripts.bed.gz"))
+export.bed(max_tpm_transcripts.gr, con=opt$out)

@@ -5,22 +5,37 @@ library(GenomicFeatures)
 library(dplyr)
 library(data.table)
 library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(optparse)
+
+
+
+# =========
+# Options and paths
+# =========
+
+option_list <- list(make_option(c("", "--gtf"), action = "store", type = "character", default=NA, help = "GTF annotation file"),
+                    make_option(c("", "--out"), action = "store", type = "character", default=NA, help = "Output name"))
+opt_parser = OptionParser(option_list = option_list)
+opt <- parse_args(opt_parser)
+
+data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/"
+
 
 # ==========
 # Load annotations
 # ==========
 
-genomes.dir <- "/camp/lab/luscomben/home/users/iosubi/genomes"
+gtf <- import.gff2(opt$gtf)
 
-gtf <- import.gff2(paste0(genomes.dir, "/gencode.v33.primary_assembly.annotation.gtf.gz"))
 
-if (file.exists(paste0(genomes.dir, "/gencode_V33_txdb.sqlite"))) {
-  TxDb <- loadDb(paste0(genomes.dir, "/gencode_V33_txdb.sqlite"))
+if (file.exists(paste0(data.dir, "/gencode.v33.txdb.sqlite"))) {
+  TxDb <- loadDb(paste0(data.dir, "/gencode.v33.txdb.sqlite"))
   TxDb <- keepStandardChromosomes(TxDb , pruning.mode="coarse")
 } else {
-  TxDb <- makeTxDbFromGFF(paste0(genomes.dir, "/gencode.v33.primary_assembly.annotation.gtf.gz"), format="gtf", organism = "Homo sapiens", chrominfo = seqinfo(TxDb.Hsapiens.UCSC.hg38.knownGene) )
-  saveDb(TxDb, file=paste0(genomes.dir, "/gencode_V33_txdb.sqlite"))
-  TxDb <- loadDb(paste0(genomes.dir, "/gencode_V33_txdb.sqlite"))
+  TxDb <- makeTxDbFromGFF(opt$gtf, format="gtf",
+                          organism = "Homo sapiens", chrominfo = seqinfo(TxDb.Hsapiens.UCSC.hg38.knownGene) )
+  saveDb(TxDb, file=paste0(data.dir, "/gencode.v33.txdb.sqlite"))
+  TxDb <- loadDb(paste0(data.dir, "/gencode.v33.txdb.sqlite"))
 }
 
 
@@ -49,4 +64,4 @@ longest.pc.df <- longest.pc.df %>% arrange(desc(longest), desc(nexon), desc(utr3
 
 unique.longest.pc.df <- longest.pc.df[ !duplicated(longest.pc.df$gene_id), ] 
 
-fwrite(unique.longest.pc.df, "longest_pcoding_transcripts.tsv", sep = "\t")
+fwrite(unique.longest.pc.df, opt$out, sep = "\t")
