@@ -63,7 +63,8 @@ data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/resu
 # ==========
 
 
-files.list <- list.files(path = opt$bed, pattern = "peaks.bed.gz", full.names = TRUE)
+#files.list <- list.files(path = opt$bed, pattern = "peaks.bed.gz", full.names = TRUE)
+files.list <- opt$bed
 
 longest_pcoding.df <- read.csv(paste0(data.dir, "/gencode.v33.longest_pcoding_transcripts.tsv.gz"), sep = "\t")
 max_tpm_transcripts.gr <- import.bed(paste0(data.dir, "/gencode.v33_max_tpm_transcripts.bed.gz"))

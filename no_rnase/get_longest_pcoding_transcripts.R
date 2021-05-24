@@ -60,8 +60,8 @@ gtf.dt <- gtf.dt[txlengths.dt]
 longest.pc.dt <- gtf.dt[gene_type %in% pc & transcript_type %in% pc, longest := max(tx_len), by = gene_id] # select out where both are protein coding as sometimes a processed transcript is the longest
 
 longest.pc.dt <- longest.pc.dt[gene_type %in% pc & transcript_type %in% pc & tx_len == longest] # selects longest
-longest.pc.df <- longest.pc.df %>% arrange(desc(longest), desc(nexon), desc(utr3_len), desc(cds_len), desc(utr5_len))
+longest.pc.dt <- longest.pc.dt %>% arrange(desc(longest), desc(nexon), desc(utr3_len), desc(cds_len), desc(utr5_len))
 
-unique.longest.pc.df <- longest.pc.df[ !duplicated(longest.pc.df$gene_id), ] 
+unique.longest.pc.dt <- longest.pc.dt[ !duplicated(longest.pc.dt$gene_id), ] 
 
-fwrite(unique.longest.pc.df, opt$out, sep = "\t")
+fwrite(unique.longest.pc.dt, opt$out, sep = "\t")

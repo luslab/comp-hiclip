@@ -39,6 +39,7 @@ if (file.exists(paste0(data.dir, "/gencode.v33.txdb.sqlite"))) {
 # TPM data 
 rnaseq.dt <- fread(opt$tpm)
 
+
 # ==========
 # Get all transcripts
 # ==========
@@ -50,11 +51,12 @@ transcripts.df <- as.data.frame(transcriptsBy(TxDb))
 # ==========
 
 samples.ls <- colnames(rnaseq.dt)[str_detect(colnames(rnaseq.dt), "ERR")]
+rnaseq.dt <- dplyr::select(rnaseq.dt, c(tx, gene_id, all_of(samples.ls)))
 
 rnaseq.dt <- rnaseq.dt %>%
   dplyr::filter(if_any(matches("ERR"), ~ . != 0)) # filter out rows with all samples with TPM = 0
   
-rnaseq.dt <- dplyr::select(rnaseq.dt, tx, gene_id, samples.ls)
+
 rnaseq.dt$tpm_mean <- rowMeans(subset(rnaseq.dt, select = samples.ls), na.rm = TRUE)
 
 # ==========
@@ -65,7 +67,8 @@ max_tpm.df <- rnaseq.dt %>%
   group_by(gene_id) %>%
   dplyr::slice(which.max(tpm_mean)) #in case of ties, first transcript is taken; with this data there were no ties
 
-max_tpm_transcripts.df <- semi_join(transcripts.df, max_tpm.df, by = c("tx" = "transcript_id"))
+
+max_tpm_transcripts.df <- semi_join(transcripts.df, max_tpm.df, by = c("tx_name" = "tx"))
 max_tpm_transcripts.df <- max_tpm_transcripts.df %>%
   dplyr::select(seqnames, start, end, width, strand, tx_name, group_name) %>%
   dplyr::rename(gene_id = group_name)

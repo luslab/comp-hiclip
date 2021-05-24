@@ -4,13 +4,13 @@ library(rtracklayer)
 library(GenomicFeatures)
 library(BSgenome.Hsapiens.UCSC.hg38)
 library(Biostrings)
-library(dplyr)
 library(stringr)
 library(rslurm)
 library(tictoc)
 library(tidyverse)
-library(primavera)
+#library(primavera)
 library(optparse)
+
 
 # ==========
 # Define functions
@@ -18,16 +18,17 @@ library(optparse)
 
 run_rnaplfold <- function(sequence, args =  c("-u 1", "-W 100", paste0("< ",sequence))) {
   
-  system2(command = "RNAplfold", args = args, stdout = T)
+  system2(command = "RNAplfold", args = args, stdout = TRUE)
 }
 
 
-get_rnaplfold_probs <- function(id, sequence) {
+get_rnaplfold_probability <- function(id, sequence) {
+  
   temp.fasta <- paste0(id,".fasta")
   fasta.ds <- DNAStringSet(sequence)
   names(fasta.ds) <- id
   writeXStringSet(fasta.ds, filepath = paste0(id,".fasta"))
-  #rnaplfold.out <- paste0(id,".rnaplfold")
+  
   run_rnaplfold(temp.fasta)
   rnaplfold.df <- read.csv(paste0(id,"_lunp"), comment.char = "#",sep="\t", header = FALSE, row.names = NULL, skip = 2, col.names = c("pos","prob"))
   
@@ -40,15 +41,22 @@ get_rnaplfold_probs <- function(id, sequence) {
     nt$score <- rev(as.numeric(rnaplfold.df$prob)) 
     nt$name <- noquote(id)
   }
+  
   invisible(file.remove(temp.fasta))
   return(nt)
 }
 
+shuffle_sequence <- function(sequence, number = 1, klet = 2, seed = 42) {
+  system(paste0("ushuffle -seed ", seed, " -k ", klet, " -n ", number, " -s ", sequence), intern = TRUE)
+}
+
+
 get_rnaplfold_shuffled <- function(id, sequence) {
   
   fasta.df <- data.frame(id = id, sequence = sequence)
-  shuffled <- sapply(seq_along(id), function(i) ShuffleSequence(fasta.df[i,]$sequence, number = 100, klet = 2))
-  # write a multi fasta per ID containg the shuffled sequences
+  shuffled <- sapply(seq_along(id), function(i) shuffle_sequence(fasta.df[i,]$sequence, number = 100, klet = 2))
+  
+  # Write a multi fasta per ID containg the shuffled sequences
   shuff_fasta <- sapply(1:ncol(shuffled), function(i) DNAStringSet(shuffled[,i]))
   shuff_fasta <- unlist(DNAStringSetList(shuff_fasta))
   
@@ -57,7 +65,7 @@ get_rnaplfold_shuffled <- function(id, sequence) {
   writeXStringSet(shuff_fasta, filepath = paste0(id,".fa"))
   run_rnaplfold(paste0(id,".fa"))
   
-  # read all output files that start with id
+  # Read all output files that start with id
   rnaplfold.out.ls <- vector(mode = "list", length = 1) # create empty list/ re-initialise list
   rnaplfold.out.ls <- list.files(pattern = paste0("^",id))
   rnaplfold.out.ls <- rnaplfold.out.ls[str_detect(rnaplfold.out.ls, pattern = "_lunp")]
@@ -68,7 +76,7 @@ get_rnaplfold_shuffled <- function(id, sequence) {
   rnaplfold.df <- rnaplfold.df %>% remove_rownames %>% column_to_rownames(var="pos...1")
   
   rnaplfold.df$prob <- rowMeans(rnaplfold.df, na.rm=TRUE)
-  rnaplfold.df$prob_sd <- apply(rnaplfold.df, 1, function(x) { sd(x, na.rm=TRUE) })
+  rnaplfold.df$prob_sd <- apply(rnaplfold.df, 1, function(x) { sd(x, na.rm = TRUE) })
   rnaplfold.df <- rnaplfold.df %>%
     select(prob, prob_sd)
   rnaplfold.out.ls <- list()
@@ -86,6 +94,7 @@ get_rnaplfold_shuffled <- function(id, sequence) {
     nt$sd <- rev(as.numeric(rnaplfold.df$prob_sd))
     nt$name <- noquote(id)
   }
+  
   invisible(file.remove(paste0(id,".fa")))
   #invisible(file.remove(rnaplfold.out.ls))
   return(nt)
@@ -116,9 +125,8 @@ Hsapiens <- BSgenome.Hsapiens.UCSC.hg38 # load hg38 genome
 threeutr.plfold.db <- "threeutrs.rnaplfold.bed"
 
 #inputs and outputs
-# data.dir <- getwd()
-# files.list <- list.files(path = data.dir, pattern = "annot.bed.gz", full.names = T)
-files.list <- unlist(strsplit(opt$bed, ","))
+#files.list <- unlist(strsplit(opt$bed, ","))
+files.list <- opt$bed
 prefix <- opt$prefix # RBP name of interest, will be added as prefix to output filenames
 
 # ==========
@@ -133,6 +141,7 @@ if (!file.exists(opt$threeutrs)) {
     stop("Error: cannot extract coordinates, please provide a TxDb file")
     
   } else {
+    
     gencode_V33.txdb <- loadDb(txdb) # load TxDb object
     gencode_V33.txdb <- keepStandardChromosomes(gencode_V33.txdb, pruning.mode="coarse")
     threeutr.grl <- threeUTRsByTranscript(gencode_V33.txdb, use.names=TRUE)
@@ -155,12 +164,14 @@ bed.gr <- unique(bed.gr)
 bed.gr <- keepStandardChromosomes(bed.gr, pruning.mode = "coarse")
 transcript.ls <- unique(bed.gr$name)
 
+
+
 # select only the transcripts from the peaks annotation, and get fasta
 transcript.ls <- intersect(names(threeutr.grl), transcript.ls)
-threeutr.grl <- threeutr.grl[transcript.ls]
+grl <- threeutr.grl[transcript.ls]
 
 message("Extracting 3UTR sequences...")
-fasta <- extractTranscriptSeqs(Hsapiens, threeutr.grl)
+fasta <- extractTranscriptSeqs(Hsapiens, grl)
 fasta.df <- data.frame(id = names(fasta), sequence = as.character(fasta))
 
 # ==========
@@ -175,7 +186,7 @@ tic()
 if (!file.exists(threeutr.plfold.db)) {
   
   
-  sjob <- slurm_apply(get_rnaplfold_probs, fasta.df, jobname = "RNAplfold", add_objects = c("threeutr.grl","run_rnaplfold"),
+  sjob <- slurm_apply(get_rnaplfold_probability, fasta.df, jobname = "RNAplfold", add_objects = c("grl","run_rnaplfold"),
                       nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"), 
                       submit = TRUE)
   Sys.sleep(60)
@@ -192,9 +203,12 @@ if (!file.exists(threeutr.plfold.db)) {
   output <- get_slurm_out(sjob, outtype = "raw")
   saveRDS(output, "threeutrs.rnaplfold.grl.rds")
   
-  cleanup_files(sjob)
+  #cleanup_files(sjob)
 
   rnaplfold.ls <- readRDS("threeutrs.rnaplfold.grl.rds") # load the GRanges List
+  
+  print(length(rnaplfold.ls))
+  
   rnaplfold.grl <- GRangesList(rnaplfold.ls)
   export.bed(unlist(rnaplfold.grl), paste0(prefix, "_threeutrs.rnaplfold.bed"), format = "BED")
   message("Probability scores (BED) exported.")
@@ -211,6 +225,8 @@ if (!file.exists(threeutr.plfold.db)) {
 
 toc()
 
+
+
 # ==========
 # Run RNAplfold for shuffled sequences
 # ==========
@@ -218,7 +234,7 @@ toc()
 tic()
 
 if (opt$shuffle) {
-  sjob <- slurm_apply(get_rnaplfold_shuffled, fasta.df, jobname = "RNAplfold_shuffled", add_objects = c("threeutr.grl","run_rnaplfold"),
+  sjob <- slurm_apply(get_rnaplfold_shuffled, fasta.df, jobname = "RNAplfold_shuffled", add_objects = c("threeutr.grl","run_rnaplfold","shuffle_sequence"),
                       nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"),
                       submit = TRUE)
   
@@ -236,7 +252,7 @@ if (opt$shuffle) {
   output <- get_slurm_out(sjob, outtype = "raw")
   saveRDS(output, "threeutrs.rnaplfold.shuffled.grl.rds")
   
-  cleanup_files(sjob)
+  #cleanup_files(sjob)
   
   rnaplfold.shuffled.ls <- readRDS("threeutrs.rnaplfold.shuffled.grl.rds") #load the GRanges List
   rnaplfold.shuffled.grl <- GRangesList(rnaplfold.shuffled.ls)
