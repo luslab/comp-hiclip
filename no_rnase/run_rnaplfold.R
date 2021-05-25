@@ -81,7 +81,7 @@ get_rnaplfold_shuffled <- function(id, sequence) {
     select(prob, prob_sd)
   rnaplfold.out.ls <- list()
   
-  nt <- unlist(tile(threeutr.grl[[id]], width = 1)) # make GRanges for each nucleotide position
+  nt <- unlist(tile(grl[[id]], width = 1)) # make GRanges for each nucleotide position
   stopifnot(nrow(rnaplfold.df) == length(nt)) # check that size of the transcript from RNAplfold output is identical to GRanges annotation
   
   if(unique(strand(nt)) == "+") {
@@ -203,14 +203,14 @@ if (!file.exists(threeutr.plfold.db)) {
   output <- get_slurm_out(sjob, outtype = "raw")
   saveRDS(output, "threeutrs.rnaplfold.grl.rds")
   
-  #cleanup_files(sjob)
+  cleanup_files(sjob)
 
   rnaplfold.ls <- readRDS("threeutrs.rnaplfold.grl.rds") # load the GRanges List
   
   print(length(rnaplfold.ls))
   
   rnaplfold.grl <- GRangesList(rnaplfold.ls)
-  export.bed(unlist(rnaplfold.grl), paste0(prefix, "_threeutrs.rnaplfold.bed"), format = "BED")
+  export.bed(unlist(rnaplfold.grl), paste0(prefix, "_threeutrs.rnaplfold.bed.gz"), format = "BED")
   message("Probability scores (BED) exported.")
   
 } else {
@@ -219,7 +219,7 @@ if (!file.exists(threeutr.plfold.db)) {
   message("Filtering 3UTR db for transcripts of interest...")
   rnaplfold.gr <- import.bed(threeutr.plfold.db)
   rnaplfold.gr <- rnaplfold.gr[rnaplfold.gr$name %in% transcript.ls]
-  export.bed(rnaplfold.gr, paste0(prefix, "_threeutrs.rnaplfold.bed"), format = "BED")
+  export.bed(rnaplfold.gr, paste0(prefix, "_threeutrs.rnaplfold.bed.gz"), format = "BED")
   
 }
 
@@ -234,7 +234,7 @@ toc()
 tic()
 
 if (opt$shuffle) {
-  sjob <- slurm_apply(get_rnaplfold_shuffled, fasta.df, jobname = "RNAplfold_shuffled", add_objects = c("threeutr.grl","run_rnaplfold","shuffle_sequence"),
+  sjob <- slurm_apply(get_rnaplfold_shuffled, fasta.df, jobname = "RNAplfold_shuffled", add_objects = c("grl","run_rnaplfold","shuffle_sequence"),
                       nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"),
                       submit = TRUE)
   
@@ -252,11 +252,11 @@ if (opt$shuffle) {
   output <- get_slurm_out(sjob, outtype = "raw")
   saveRDS(output, "threeutrs.rnaplfold.shuffled.grl.rds")
   
-  #cleanup_files(sjob)
+  cleanup_files(sjob)
   
   rnaplfold.shuffled.ls <- readRDS("threeutrs.rnaplfold.shuffled.grl.rds") #load the GRanges List
   rnaplfold.shuffled.grl <- GRangesList(rnaplfold.shuffled.ls)
-  export.bed(unlist(rnaplfold.shuffled.grl), paste0(prefix, "_threeutrs.rnaplfold.shuffled.bed"), format = "BED")
+  export.bed(unlist(rnaplfold.shuffled.grl), paste0(prefix, "_threeutrs.rnaplfold.shuffled.bed.gz"), format = "BED")
   message("Probability scores for shuffled control (BED) exported.")
 } else {
   message("A shuffled control was not generated.")
