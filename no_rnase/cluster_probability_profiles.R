@@ -20,7 +20,7 @@ theme_set(theme_bw() +
 # Define functions
 # ==========
 
-std <- function(x) sd(x)/sqrt(length(x))
+get_sem <- function(x) sd(x)/sqrt(length(x))
 
 get_metaprofile_mean <- function(filename) {
   
@@ -31,13 +31,14 @@ get_metaprofile_mean <- function(filename) {
   prob.mean <- prob.df %>% 
     summarise(across(where(is.numeric), mean))
   prob.sd <- prob.df %>% 
-    summarise(across(where(is.numeric), std))
+    summarise(across(where(is.numeric), get_sem))
   prob.mean <- as.data.frame(t(prob.mean))
   colnames(prob.mean) <- "mean_prob"
   prob.sd <- as.data.frame(t(prob.sd))
   colnames(prob.sd) <- "std_prob"
   df <- cbind(prob.mean, prob.sd)
   df <- rownames_to_column(df, var = "pos")
+  
   return(df)
   
 }
@@ -47,7 +48,6 @@ plot_metaprofile <- function(data.df) {
   
   profile.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample)) +
     geom_line(aes(linetype = Sample)) +
-    #geom_errorbar( aes(ymin = mean_prob-std_prob, ymax = mean_prob+std_prob),width = 0.2) +
     scale_linetype_manual(values=c("longdash", "solid"))+
     geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
     #ylim(c(0,1))+
@@ -56,7 +56,7 @@ plot_metaprofile <- function(data.df) {
     ylab("Mean probability") +
     labs(linetype = "Sample") +
     geom_text(data = data.df, 
-              aes(x=75,y=0.60,label=paste0("n = ", peaks_count)), inherit.aes=FALSE, size=4) 
+              aes(x = 55,y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4) 
   
   return(profile.gg)
 }
@@ -93,9 +93,9 @@ plot_heatmap <- function(data.df, plot.title, plot.name) {
   
   data.df <- data.df %>% arrange("0")
   data.mx = as.matrix(data.df) # get numeric matrix
-  heatmap <- pheatmap(data.mx,cluster_cols = FALSE, cluster_rows = FALSE, show_rownames = FALSE,
-                      fontsize_col = 3.5, border_color=FALSE,
-                      annotation_colors = list(.cluster=mat_colors$group), angle_col="45",
+  heatmap <- pheatmap(data.mx, cluster_cols = FALSE, cluster_rows = FALSE, show_rownames = FALSE,
+                      fontsize_col = 3.5, border_color = FALSE,
+                      annotation_colors = list(.cluster = mat_colors$group), angle_col = "45",
                       main = plot.title, filename = plot.name)
   return(heatmap)
   
@@ -118,7 +118,7 @@ plot_cluster_mean <- function(cl, left_flank) {
     theme(text = element_text(size=14),
           strip.text = element_text(size=10, face = "bold"),
           plot.title = element_text(size = 14, face = "bold"),
-          axis.text.x = element_text(angle=60, hjust=1)) +
+          axis.text.x = element_text(angle=60, hjust = 1)) +
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
   # rename legend title and add the number of observations in each cluster:
   clust.mean.profiles <- clust.mean.profiles +guides(color=guide_legend(title='Cluster')) + geom_text(data=clust.mean, 
@@ -144,22 +144,23 @@ if (!is.na(opt$shuffled)) {
 }
 
 
-# shuff.file <- "stau1_threeutrs.rnaplfold.shuffled_prob.df.txt"
-
-prefix <- str_split(prob.file, pattern = ".df")[[1]][1]
+prefix <- str_split(prob.file, pattern = ".tsv")[[1]][1]
 prob.name <- str_to_upper(str_split(prob.file, pattern = "_")[[1]][1]) #RBP name
 
 
 # ==========
-# Load  metaprofile dataframes (df output from get_structure_metaprofile.R)
+# Load metaprofile dataframes (df output from get_structure_metaprofile.R)
 # ==========
 
-prob.df <- read.csv(prob.file, sep="\t")
-colnames(prob.df) <- seq(1:ncol(prob.df)) - (ncol(prob.df)+1)/2
+prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+prob.df <- column_to_rownames(prob.df, var = "V1")
+
+colnames(prob.df) <- seq(1:ncol(prob.df) - (ncol(prob.df)+1)/2)
 prob.df <- drop_na(prob.df, 0)
 
+
 # draw heatmap before clustering
-plot_heatmap(prob.df, plot.title =prob.name, plot.name = paste0(prefix,"_heatmap.pdf"))
+plot_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,"_heatmap.pdf"))
 
 # calculate the mean probability and standard error of the mean
 prob.mean.df <- get_metaprofile_mean(prob.file)
@@ -170,14 +171,16 @@ if (!is.na(opt$shuffled)) {
   shuff.mean.df <- get_metaprofile_mean(shuff.file)
   shuff.mean.df$Sample <- "Shuffled control"
   data.df <- rbind(prob.mean.df, shuff.mean.df)
-  data.df$peaks_count <- nrow(prob.mean.df)
+  data.df$peaks_count <- nrow(prob.df)
 } else {
   data.df <- prob.mean.df
+  data.df$peaks_count <- nrow(prob.df)
 }
 
 # plot the mean probability and standard error of the mean
 profile.gg <- plot_metaprofile(data.df)
-profile.gg <- profile.gg+geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), linetype=2, alpha=0.3)
+profile.gg <- profile.gg+
+  geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), linetype=2, alpha=0.3)
 ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
 
 
@@ -212,6 +215,6 @@ plot_cluster_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,
 
 # Export clusters data
 prob.df <- rownames_to_column(prob.df, var = "id")
-write.table(prob.df, paste0(prefix,"_clusters.df.txt"), quote = F, row.names = F, sep = "\t")
+data.table::fwrite(prob.df, paste0(prefix,"_clusters.tsv.gz"), sep = "\t")
 
 
