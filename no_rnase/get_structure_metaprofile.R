@@ -19,8 +19,6 @@ resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
   gr <- unlist(grl)
   gr <- keepStandardChromosomes(gr, pruning.mode = "coarse")
   gr <- dropSeqlevels(gr, c("chrM", "chrY"), pruning.mode = "coarse")
-  gr$peak_id <- seq(1,length(gr))
-  gr.df <- as.data.frame(gr)
 
   gr <- resize(gr, width = 1, fix = "start") # resize the peaks, start of peak = 1
   gr <- unique(gr)  # keep unique xl positions
@@ -58,10 +56,10 @@ get_overlaps <- function(gr, element.gr, left = 100, right = 100) {
   
   # write.table(overlap.df, paste0(prefix,"_overlap.df.txt"), quote = FALSE, sep = "\t")
   
-  pos.df <- unstack(overlap.df, structure_prob ~ pos) #reshape df and keep only the nt positions and scores
+  pos.df <- unstack(overlap.df, structure_prob ~ pos) # reshape df and keep only the nt positions and scores
   pos.df <- rowid_to_column(pos.df, var = "id")
   pos.df$id <- paste0("ID", pos.df$id)
-  rownames(pos.df) <- pos.df$id #make the id column the index
+  rownames(pos.df) <- pos.df$id # make the id column the index
   pos.df <- select(pos.df, -id)
   colnames(pos.df) <- seq(-left, right)
   pos.df <- pos.df[rowSums(is.na(pos.df)) != ncol(pos.df), ] # remove peaks with all NAs (i.e. no overlaps found)
@@ -111,7 +109,7 @@ message("Merging and resizing peaks...")
 # Load the structure probability bed files
 structure.files.list <- unlist(strsplit(opt$prob, ","))
 structure.files.list <- structure.files.list[str_detect(structure.files.list, pattern = ".bed")]
-structure.files.list
+
 message("Calculating profiles...")
 
 lapply(structure.files.list, get_metaprofile, gr = peaks.gr)
