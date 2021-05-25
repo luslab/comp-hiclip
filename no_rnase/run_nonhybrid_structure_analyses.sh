@@ -8,7 +8,6 @@ RNASEQ_DIR=$RESULTSDIR/rnaseq/results/salmon
 
 cd $RESULTSDIR
 
-
 # Get highest TPM transcript per gene
 ./get_max_tpm_transcripts.R --gtf=$REFDIR/gencode.v33.annotation.gtf.gz --tpm=$RNASEQ_DIR/salmon.merged.transcript_tpm.tsv --out=$STRUCTURE_DIR/gencode.v33_max_tpm_transcripts.bed.gz
 
