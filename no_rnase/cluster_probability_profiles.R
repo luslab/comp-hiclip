@@ -156,7 +156,8 @@ prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
 prob.df <- column_to_rownames(prob.df, var = "V1")
 
 colnames(prob.df) <- seq(1:ncol(prob.df) - (ncol(prob.df)+1)/2)
-prob.df <- drop_na(prob.df, 0)
+# prob.df <- drop_na(prob.df, 0)
+prob.df <- drop_na(prob.df)
 
 
 # draw heatmap before clustering
