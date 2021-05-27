@@ -14,18 +14,28 @@ ml Nextflow/20.10.0
 ml Singularity/3.6.4
 ml Graphviz/2.38.0-foss-2016b
 
-# nextflow pull amchakra/tosca
+PROJ=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip
+mkdir -p $PROJ/results_paris
 
-# nextflow run amchakra/tosca \
-nextflow run /camp/home/chakraa2/.nextflow/assets/amchakra/tosca/main.nf \
+nextflow pull amchakra/tosca -r main
+
+nextflow run amchakra/tosca -r main \
 -resume \
 -profile crick,conda \
 --org comp_hiclip \
---input paris.csv \
---outdir /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris/results \
---split_size 100000 \
+--input paris_umi.csv \
+--outdir $PROJ/results_paris \
+--split_size 1000000 \
 --umi_separator _ \
 --dedup_method none \
+--percent_overlap 0.5 \
+--atlas true \
+--analyse_structure true \
+--clusters_only true \
+--shuffled_mfe true \
+--transcript_fa $PROJ/ref/GRCh38.gencode_v33.fa \
+--transcript_fai $PROJ/ref/GRCh38.gencode_v33.fa.fai \
+--transcript_gtf $PROJ/ref/GRCh38.gencode_v33.tx.gtf.gz \
 --star_args '--limitOutSJcollapsed 5000000'
 
 
