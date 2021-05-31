@@ -46,9 +46,10 @@ get_metaprofile_mean <- function(filename) {
 
 plot_metaprofile <- function(data.df) {
   
-  profile.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample)) +
+  profile.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
     geom_line(aes(linetype = Sample)) +
     scale_linetype_manual(values=c("longdash", "solid"))+
+    scale_color_manual(values=c('#E69F00', '#222222'))+
     geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
     #ylim(c(0,1))+
     xlab("Distance relative to the peak start (nt)")+
@@ -145,7 +146,10 @@ if (!is.na(opt$shuffled)) {
 
 
 prefix <- str_split(prob.file, pattern = ".tsv")[[1]][1]
-prob.name <- str_to_upper(str_split(prob.file, pattern = "_")[[1]][1]) #RBP name
+prob.name <- str_split(prob.file, pattern = "\\/")[[1]]
+prob.name <- prob.name[length(prob.name)]
+prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
+print(prob.name)
 
 
 # ==========
@@ -181,7 +185,7 @@ if (!is.na(opt$shuffled)) {
 # plot the mean probability and standard error of the mean
 profile.gg <- plot_metaprofile(data.df)
 profile.gg <- profile.gg+
-  geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), linetype=2, alpha=0.3)
+  geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), alpha=0.3)
 ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
 
 
