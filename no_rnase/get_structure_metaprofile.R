@@ -38,7 +38,7 @@ get_overlaps <- function(gr, element.gr, left = 100, right = 100) {
   gr.nt$structure_prob <- as.numeric(NA)
   gr.nt[queryHits(overlap)]$structure_prob <- element.gr[subjectHits(overlap)]$score
   
-  gr.nt$id <- rep(peaks.gr$id, each = w)
+  gr.nt$id <- rep(gr$id, each = w)
   
   overlap.df <- as.data.frame(gr.nt)
   # overlap.df$id <- 1 + seq(0, nrow(overlap.df) - 1) %/% w  # add peak ids #one ID every w nt
