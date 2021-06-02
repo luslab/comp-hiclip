@@ -185,7 +185,8 @@ if (!is.na(opt$shuffled)) {
 # plot the mean probability and standard error of the mean
 profile.gg <- plot_metaprofile(data.df)
 profile.gg <- profile.gg+
-  geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), alpha=0.3)
+  geom_ribbon(aes(ymin=(data.df$mean_prob-data.df$std_prob), ymax=(data.df$mean_prob+data.df$std_prob)), alpha=0.1, colour="grey70", fill="grey70")
+
 ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
 
 
