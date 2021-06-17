@@ -38,29 +38,32 @@ get_overlaps <- function(gr, element.gr, left = 100, right = 100) {
   gr.nt$structure_prob <- as.numeric(NA)
   gr.nt[queryHits(overlap)]$structure_prob <- element.gr[subjectHits(overlap)]$score
   
+  gr.nt$id <- rep(gr$id, each = w)
+  
   overlap.df <- as.data.frame(gr.nt)
-  overlap.df$id <- 1 + seq(0, nrow(overlap.df) - 1) %/% w  # add peak ids #one ID every w nt
-  overlap.df$id <- paste0("ID",overlap.df$id)
+  # overlap.df$id <- 1 + seq(0, nrow(overlap.df) - 1) %/% w  # add peak ids #one ID every w nt
+  # overlap.df$id <- paste0("ID",overlap.df$id)
+  
   
   stopifnot(unique(unique(overlap.df$id) == unique(gr$id)) == TRUE)
   
   overlap.df <- rowid_to_column(overlap.df, "nt_id") # record nt order in nt_id column
   
   plus <- overlap.df %>% dplyr::filter(overlap.df$strand == "+") # separate by strands to assign nt position
+  
   plus$pos <- seq(1:w)
   minus <- overlap.df %>% dplyr::filter(overlap.df$strand == "-")
+  
   minus$pos <- rev(seq(1:w))
   overlap.df <- rbind(plus, minus) %>%
     arrange(nt_id) %>%
     dplyr::select(-nt_id) # order by nt_id and remove the nt_id col
   
-  # write.table(overlap.df, paste0(prefix,"_overlap.df.txt"), quote = FALSE, sep = "\t")
-  
   pos.df <- unstack(overlap.df, structure_prob ~ pos) # reshape df and keep only the nt positions and scores
   pos.df <- rowid_to_column(pos.df, var = "id")
   pos.df$id <- paste0("ID", pos.df$id)
   rownames(pos.df) <- pos.df$id # make the id column the index
-  pos.df <- select(pos.df, -id)
+  pos.df <- dplyr::select(pos.df, -id)
   colnames(pos.df) <- seq(-left, right)
   pos.df <- pos.df[rowSums(is.na(pos.df)) != ncol(pos.df), ] # remove peaks with all NAs (i.e. no overlaps found)
   
@@ -75,6 +78,9 @@ get_metaprofile <- function(gr, element.gr) {
   
   pref <- str_split(element.gr, pattern = ".bed")[[1]][1]
   structure.gr <- structure.gr[structure.gr$name %in% transcript.list]
+  
+  gr <- gr[gr$name %in% unique(structure.gr$name)]
+  
   #stopifnot(length(element.gr) == length(unique(element.gr)))
   
   pos.df <- get_overlaps(gr, structure.gr, left = opt$left, right = opt$right)

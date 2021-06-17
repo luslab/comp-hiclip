@@ -25,13 +25,6 @@ cd $STRUCTURE_DIR
 # Generate RNAplfold unpaired probability metaprofile (-100nt and +100nt window)
 ./get_structure_metaprofile.R --bed=$RESULTSDIR/stau1.10nt_10nt.peaks.annot.bed.gz --prob=$STRUCTURE_DIR/stau1_threeutrs.rnaplfold.bed,$STRUCTURE_DIR/stau1_threeutrs.rnaplfold.shuffled.bed --prefix=$STRUCTURE_DIR/stau1
 
-# Cluster RNAplfold probability profiles
-./cluster_probability_profiles.R -p stau1_threeutrs.rnaplfold_prob.df.txt -s stau1_threeutrs.rnaplfold.shuffled_prob.df.txt -c 5
-
 # Run RNAfold and annotate structures with forgi for all STAU1 peaks
 ./run_rnafold.R --bed=$RESULTSDIR/stau1.10nt_10nt.peaks.annot.bed.gz --prefix=$STRUCTURE_DIR/stau1
-
-# Analyse structure annotions for the 3'UTR peaks with predicted stems downstream according to RNAplfold (in the"stau1_threeutrs.rnaplfold_prob_clusters.df.txt" output from steps above)
-./analyse_nonhybrid_duplexes.R -f stau1.forgi.tsv.gz -r stau1.rnafold.tsv.gz -d=15
-
 
