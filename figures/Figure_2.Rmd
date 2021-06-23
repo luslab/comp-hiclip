@@ -1,0 +1,1523 @@
+---
+title: "Figure 2 & related"
+author: "Ira Iosub"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    theme: paper
+    highlight: monochrome
+    df_print: paged
+    code_folding: hide
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+---
+
+#### Libraries
+
+```{r include=FALSE, warning=FALSE}
+suppressPackageStartupMessages(library(rematch))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(reshape2))
+suppressPackageStartupMessages(library(broom))
+suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(grid))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(cluster))
+suppressPackageStartupMessages(library(gridExtra))
+suppressPackageStartupMessages(library(tidyverse, warn.conflicts = FALSE))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(primavera))
+suppressPackageStartupMessages(library(GenomicFeatures))
+suppressPackageStartupMessages(library(rtracklayer))
+suppressPackageStartupMessages(library(UpSetR))
+suppressPackageStartupMessages(library(parallel))
+# suppressPackageStartupMessages(library(Biostrings))
+
+theme_set(theme_bw() +
+            theme(legend.position = "top"))
+```
+
+#### Functions: metaprofiles and clustering
+
+```{r}
+# ==========
+# Define functions
+# ==========
+
+get_sem <- function(x) sd(x)/sqrt(length(x))
+
+get_metaprofile_mean <- function(filename) {
+  
+  prob.df <- read.csv(filename, sep="\t")
+  colnames(prob.df) <- seq(1:ncol(prob.df)) - (ncol(prob.df)+1)/2
+  prob.df <- drop_na(prob.df, 0) # remove peaks sites with NAs at the xl site
+  
+  prob.mean <- prob.df %>% 
+    summarise(across(where(is.numeric), mean))
+  prob.sd <- prob.df %>% 
+    summarise(across(where(is.numeric), get_sem))
+  prob.mean <- as.data.frame(t(prob.mean))
+  colnames(prob.mean) <- "mean_prob"
+  prob.sd <- as.data.frame(t(prob.sd))
+  colnames(prob.sd) <- "std_prob"
+  df <- cbind(prob.mean, prob.sd)
+  df <- rownames_to_column(df, var = "pos")
+  
+  return(df)
+  
+}
+
+
+plot_metaprofile <- function(data.df) {
+  
+  profile.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
+    geom_ribbon(aes(ymin=(mean_prob-std_prob), ymax=(mean_prob+std_prob)), color = "grey80", fill = "grey80") +
+    geom_line(aes(linetype = Sample)) +
+    scale_linetype_manual(values=c("longdash", "solid"))+
+    scale_color_manual(values=c('#E69F00', '#222222'))+
+    geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
+    ylim(c(0.40, 0.60))+
+    xlab("Distance relative to the peak start (nt)")+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Mean probability") +
+    labs(linetype = "Sample") +
+    geom_text(data = data.df, 
+              aes(x = 55,y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4) 
+  
+  return(profile.gg)
+}
+
+run_kmeans <- function(data, k) {
+  
+  set.seed(123)
+  data.kmeans <- kmeans(data, centers = k, iter.max=20)
+  data <- augment(data.kmeans, data) #%>% arrange(.cluster)
+  data <- data %>% add_count(.cluster, name = "cluster_size") %>%
+    column_to_rownames(var = ".rownames")
+  return(data)
+  
+}
+
+
+plot_cluster_heatmap <- function(cluster.df, plot.title, plot.name) {
+  
+  cluster.df <- cluster.df %>% arrange(.cluster)
+  clust.mx = as.matrix(dplyr::select(cluster.df, -c(.cluster, cluster_size))) # get numeric matrix
+  annotation.df <- dplyr::select(cluster.df, .cluster)
+  gaps_row = cumsum(unique(cluster.df$cluster_size))
+  mat_colors <- list(group = col_pal)
+  names(mat_colors$group) <- unique(annotation.df$.cluster)
+  heatmap <- pheatmap(clust.mx,cluster_cols = FALSE, cluster_rows = FALSE, show_rownames = FALSE,
+                      gaps_row = gaps_row, fontsize_col = 3.5,annotation_row = annotation.df, border_color=FALSE,
+                      annotation_colors = list(.cluster=mat_colors$group), angle_col="45",
+                      main = plot.title, filename = plot.name)
+  return(heatmap)
+  
+}
+
+
+# cl = dataframe containing nt position probabilities +  a "cluster" column and a "cluster_size" column
+plot_cluster_mean <- function(cl, left_flank) {
+  
+  clust.m <- melt(cl)
+  clust.mean <- dcast(clust.m, cluster ~ variable, mean)
+  clust.mean.m <- melt(clust.mean, id=c("cluster","cluster_size")) # arrange the df to long format for facet_wrap plotting
+  clust.mean.profiles <- ggplot(data = clust.mean.m, aes(x = as.numeric(variable)-left_flank, y = value, color=cluster)) +
+    geom_line() +
+    geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
+    geom_hline(yintercept = 0.5, linetype = "dashed", color ="grey84", size = 0.5) +
+    facet_wrap(~ cluster, ncol = 1, scales = "free_x") +   #scales = "free_y"
+    xlab("Distance relative to the peak start (nt)") +
+    ylab("Mean probability")+
+    scale_color_manual(values = col_pal)+
+    theme(text = element_text(size=14),
+          strip.text = element_text(size=10, face = "bold"),
+          plot.title = element_text(size = 14, face = "bold"),
+          axis.text.x = element_text(angle=60, hjust = 1)) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  # rename legend title and add the number of observations in each cluster:
+  clust.mean.profiles <- clust.mean.profiles +
+    guides(color=guide_legend(title='Cluster')) +
+    geom_text(data=clust.mean, aes(x=20,y=0.74,label=paste0("n = ",cluster_size)), inherit.aes=FALSE, size=3)
+  
+  return(clust.mean.profiles)
+}
+
+```
+
+#### Functions: forgi output processing
+
+```{r}
+classify_structures <- function(forgi.df, xl = 1, d = 15) {
+  
+  # Find the minimum location of the first non-null multiloop
+  first_non_null_m.df <- forgi.df %>%
+  group_by(id) %>%
+  dplyr::filter(element_type == "m") %>%
+  dplyr::slice(which.min(L_start)) %>%
+  dplyr::select(id, L_start) %>%
+  dplyr::rename(first_m = L_start)
+
+  forgi.df <- left_join(forgi.df, first_non_null_m.df, by="id")
+  
+  # Classify structure types based on the position of first stem start relative to xl site and presence and position of multiloops
+  forgi.df <- forgi.df %>%
+    group_by(id) %>%
+    mutate(duplex_type = case_when(any(element == "f0" & L_end >= d) ~ "No stem",
+                                   (!any(element == "f0" & L_end >= d)) & (any(element == "s0" & L_start == xl)) ~ "Stem and xl paired",
+                                   (!any(element == "f0" & L_end >= d)) & (any(element == "s0" & L_start > xl & L_start <= d & is.na(first_m))) ~ "Stem and xl unpaired\n(no multiloops, 1st or all multiloops are null)",
+                                   (!any(element == "f0" & L_end >= d)) & (any(element == "s0" & L_start > xl & L_start <= d & R_end > first_m)) ~ "Stem and xl unpaired\n(multiloops)",
+                                   (!any(element == "f0" & L_end >= d)) & (any(element == "s0" & L_start > xl & L_start <= d & R_end < first_m)) &
+                                     ((is.na(first_m) | any(element == "m0" & is.na(L_start)))) ~ "Stem and xl unpaired\n(no multiloops, 1st or all multiloops are null)",
+                                   (!any(element == "f0" & L_end >= d)) & (any(element == "s0" & L_start > xl & L_start <= d & R_end < first_m)) &
+                                     !((is.na(first_m) | any(element == "m0" & is.na(L_start)))) ~ "Stem and xl unpaired\n(no multiloops, single stems)")) %>%
+    ungroup()
+  
+  
+  # "Stem and xl unpaired\n(no multiloops, 1st or all multiloops are null)" can contain very long unique stems that should be in the "Stem and xl unpaired\n(no multiloops, 
+  # single stems)" category. These structures have no h1
+  
+  forgi.df <- forgi.df %>%
+    group_by(id) %>%
+    mutate(duplex_type = case_when(duplex_type == "Stem and xl unpaired\n(no multiloops, 1st or all multiloops are null)" & !any(element == "h1") ~ "Stem and xl unpaired\n(no multiloops, long single stems)",
+                                   TRUE ~ duplex_type)) %>%
+    ungroup()
+
+  return(forgi.df)
+  
+}
+
+
+select_first_stem_loop <- function(forgi.df) {
+  
+  # select the first stem loop
+  first_stem_loop.df <- forgi.df %>%
+    group_by(id) %>%
+    dplyr::filter(duplex_type == "Stem and xl unpaired\n(no multiloops, single stems)") %>%
+    dplyr::filter((R_end < first_m) | (element_type == "i" & is.na(R_end) & L_end < first_m)
+                  | (element_type == "h" & is.na(R_end) & L_end < first_m))
+  
+  first_stem_loop_long.df <- forgi.df %>%
+    group_by(id) %>%
+    dplyr::filter(duplex_type == "Stem and xl unpaired\n(no multiloops, long single stems)") 
+    
+  first_stem_loop.df <- rbind(first_stem_loop.df, first_stem_loop_long.df)
+  
+  first_stem_loop.df <- first_stem_loop.df %>%
+    replace(is.na(.), 0) %>% # replace NAs with zero to simplify filtering
+    mutate(stem_position = "first") %>%
+    dplyr::select(-c(first_m)) 
+  
+  return(first_stem_loop.df)
+}
+
+correct_iloop_positions <- function(stem_loop.df, reference_point = "h0") {
+  
+  # Forgi output places all asymmetric internal loops and bulges on the left side, even when they should be on the right.
+  # If such cases exist, swap them to the right
+  # Position of iloop/bulge start relative to the hairpin can be used to correct this
+  # !!!THIS FUNCTION MUST BE APPLIED ON SINGLE SELECTED STEM LOOP STRUCTURES (a single hairpin present)
+  
+  h0.df <- stem_loop.df %>%
+    group_by(id) %>%
+    dplyr::filter(element == reference_point) %>%
+    mutate(h_start = L_start, h_end = L_end ) %>%
+    dplyr::select(id, h_start, h_end) %>%
+    ungroup() %>%
+    distinct()
+
+  stem_loop.df <- left_join(stem_loop.df, h0.df, by = "id")
+
+  if (nrow(dplyr::filter(stem_loop.df, L_start > h_end)) == 0) {
+
+    stem_loop.df <- stem_loop.df%>%
+      dplyr::select(-h_start, -h_end)
+
+  } else {
+
+    stem_loop.df <- stem_loop.df %>%
+      rowwise() %>%
+      mutate(swap = case_when((element_type == "i") & (as.double(L_start) > h_end) ~  "yes", TRUE ~ "no"),
+             R_start = case_when((element_type == "i") & (as.double(L_start) > h_end) ~ as.double(L_start),
+                                 TRUE ~ as.double(R_start)),
+             R_end = case_when((element_type == "i") & (as.double(L_start) > h_end) ~ as.double(L_end),
+                               TRUE ~ as.double(R_end)),
+             R_width = case_when((element_type == "i") & (as.double(L_start) > h_end) ~ as.double(L_width),
+                                 TRUE ~ as.double(R_width))) %>%
+      ungroup()
+
+  
+  stem_loop.df <- stem_loop.df %>%
+    rowwise() %>%
+    mutate(L_start = case_when(swap == "yes" ~ 0, 
+                               TRUE ~ as.double(L_start)),
+           L_end = case_when(swap == "yes" ~ 0,
+                                 TRUE ~ as.double(L_end)),
+           L_width = case_when(swap == "yes" ~ 0,
+                                   TRUE ~ as.double(L_width))) %>%
+        ungroup() %>%
+        dplyr::select(-h_start, -h_end, -swap)
+  
+    }
+
+  return(stem_loop.df)
+}
+
+```
+
+
+```{r}
+separate_stem_loops <- function(forgi.df) {
+  
+  # Analyse the multiple, "fused" stems closest to the xl sites
+  multi_sl.df <- forgi.df %>%
+    group_by(id) %>%
+    dplyr::filter(duplex_type == "Stem and xl unpaired\n(no multiloops, 1st or all multiloops are null)") %>%
+    dplyr::arrange(L_start, .by_group = TRUE)
+  
+  multi_sl.df <- multi_sl.df %>%
+    ungroup() %>%
+    dplyr::filter(!element_type %in% c("f", "t", "m"))
+  
+ 
+  # Select the 2 stem-loops closest to xl site, identify the hairpin positions (for use as reference points to separate structures)
+  h0_h1.df <- multi_sl.df %>%
+    group_by(id) %>%
+    dplyr::filter(element %in% c("h0","h1")) %>%
+    mutate(h0_pos = min(L_start), h1_pos = max(L_start))
+  
+  h0_h1.df <- h0_h1.df %>%
+    dplyr::select(id, h0_pos, h1_pos) %>%
+    distinct()
+  
+  multi_sl.df <- left_join(multi_sl.df, h0_h1.df, by="id")
+  
+  # Identify stem ends for use as reference points to separate structures
+  h0_sliced.df <- multi_sl.df %>%
+    group_by(id) %>%
+    dplyr::filter(L_start <= h0_pos) %>%
+    dplyr::filter(element_type == "s") %>%
+    mutate(first_stem_end = max(R_end)) %>%
+    dplyr::select(id, first_stem_end) %>%
+    distinct()
+  
+  multi_sl.df <- left_join(multi_sl.df, h0_sliced.df, by="id")
+  
+  h1_sliced.df <- multi_sl.df %>%
+    group_by(id) %>%
+    dplyr::filter(L_start > first_stem_end & L_start <= h1_pos) %>%
+    dplyr::filter(element_type == "s") %>%
+    mutate(second_stem_end = max(R_end)) %>%
+    dplyr::select(id, second_stem_end) %>%
+    distinct()
+  
+  multi_sl.df <- left_join(multi_sl.df, h1_sliced.df, by="id")
+  
+  # Finally, select the first and second stem loops
+  # first
+  first_multi.df <- multi_sl.df %>%
+    rowwise() %>%
+    dplyr::filter(L_start < first_stem_end) %>%
+    mutate(stem_position = "first") %>%
+    ungroup()
+  
+  first_multi.df <- correct_iloop_positions(first_multi.df, reference_point = "h0")
+  # second, and update ID to indicate it's the 2nd stem
+  second_multi.df <- multi_sl.df %>%
+    rowwise() %>%
+    dplyr::filter(L_start > first_stem_end & L_start < second_stem_end) %>%
+    mutate(stem_position = "second", id = paste0(id, "_2"),) %>% # 
+    ungroup()
+  
+  second_multi.df <- correct_iloop_positions(second_multi.df, reference_point = "h1")
+
+  multi.df <- rbind(first_multi.df, second_multi.df)
+  
+  multi.df <- multi.df %>%
+    replace(is.na(.), 0) %>%
+    dplyr::select(-first_m, -h0_pos, -h1_pos, -first_stem_end, -second_stem_end)
+  
+  return(multi.df)
+}
+```
+
+
+```{r}
+# forgi - descriptive functions
+get_basepairs_count <- function(data.df) {
+  
+  duplex_max.df <- data.df %>%
+    group_by(id) %>%
+    dplyr::filter(element_type == "s") %>%
+    summarise(total_paired = sum(L_width)) %>%
+    dplyr::select(id, total_paired)
+  
+  data.df <- left_join(data.df, duplex_max.df)
+  return(data.df)
+}
+
+
+get_hairpin_length <- function(data.df) {
+  
+  data_h.df <- data.df %>% 
+    group_by(id) %>%
+    dplyr::filter(element_type == "h") %>% #dplyr::filter(element == "h0") %>%
+    mutate(hairpin_length = L_width) %>%
+    dplyr::select(id, hairpin_length) %>%
+    ungroup() %>%
+    distinct()
+  
+  data.df <- left_join(data.df, data_h.df, by = "id")
+  return(data.df)
+}
+
+
+get_iloop_length_sum <- function(data.df) {
+  
+  data_i.df <- data.df %>%
+    group_by(id) %>%
+    dplyr::filter(element_type == "i") %>%
+    mutate(iloop_length_L = sum(L_width),
+           iloop_length_R = sum(R_width)) %>%
+    dplyr::select(id, iloop_length_L, iloop_length_R) %>%
+    ungroup() %>%
+    distinct()
+  
+  data.df <- left_join(data.df, data_i.df, by = "id")
+  
+  return(data.df)
+}
+
+
+
+crop_stem <- function(data, idx, threshold = 20) {
+  
+  data.df <- data %>% 
+    dplyr::filter(idx == id)
+  data.df <- rowid_to_column(data.df, var = "position")
+  
+  stems.df <- data.df %>%
+    dplyr::filter(element_type == "s") %>%
+    mutate(stem_cumsum = cumsum(L_width))
+  
+  nonstems.df <- anti_join(data.df, stems.df, by = "position")
+  nonstems.df$stem_cumsum <- 0
+  nonstems.df$stem_cumsum_cut <- 0
+  
+  # update L_width so only the first 20 paired res are taken
+  stems.df <- stems.df %>%
+    mutate(L_width = case_when((stem_cumsum > threshold) ~ as.double(L_width) - (as.double(stem_cumsum) - threshold),
+                               TRUE ~ as.double(L_width))) %>%
+    mutate(stem_cumsum_cut = case_when((stem_cumsum > threshold) ~ threshold,
+                                    TRUE ~ as.double(stem_cumsum))) %>%
+    dplyr::filter(stem_cumsum_cut <= threshold)
+  
+  # rejoin
+  remerged.df <- rbind(stems.df, nonstems.df)
+  remerged.df <- dplyr::arrange(remerged.df, position)
+  
+  max_stem_cumsum <- stems.df %>%
+    slice_max(stem_cumsum_cut, n=1)
+  
+  max_stem_cumsum <- min(max_stem_cumsum$position)
+  # print(max_stem_cumsum)
+  
+  remerged.df <- remerged.df %>%
+    dplyr::filter(position <= max_stem_cumsum) 
+
+  return(remerged.df)
+}
+
+
+calculate_paired_metric <- function(data.df) {
+  
+  data.df <- data.df %>%
+    group_by(id) %>%
+    mutate(cut_stem_length = max(stem_cumsum_cut)) %>%
+    ungroup()
+  
+  paired_ratio.df <- data.df %>%
+    dplyr::select(id, cut_stem_length, iloop_length_L, iloop_length_R, stem_label) %>%
+    replace(is.na(.), 0) %>%
+    distinct() %>%
+    rowwise() %>%
+    mutate(paired_to_total_ratio = cut_stem_length*2/(cut_stem_length*2 + iloop_length_L + iloop_length_R)) %>%
+    ungroup() %>%
+    dplyr::select(id, paired_to_total_ratio)
+  
+  data.df <- left_join(data.df, paired_ratio.df, by = "id")
+  
+  return(data.df)
+  
+}
+
+
+plot_stacked_barchart <- function(data.df, column, group=NULL) {
+  
+  data_counts.df <- data.df %>%
+    dplyr::select(id, {{group}}, {{column}}) %>%
+    distinct() %>%
+    group_by({{group}}, {{column}}) %>%
+    summarise(counts = n()) %>%
+    arrange(desc({{column}})) %>%
+    mutate(percentage = scales::percent(counts / sum(counts))) %>%
+    mutate(percentage = as.numeric(sub("%","", percentage))) %>%
+    #mutate(percentage = counts*100 / sum(counts)) %>%
+    mutate(pos = cumsum(percentage) - percentage/2)
+  
+  bar = ggplot() + geom_bar(aes(y = percentage, x = "", fill = {{column}}), alpha = 0.8, data = data_counts.df,
+                            stat="identity", width = 0.5) +
+    geom_text(data = data_counts.df, aes(x = "", y = pos, label = paste0(round(percentage,1),"%")), size=3) +
+    facet_grid(cols = vars({{group}})) +
+    #facet_wrap(. ~ Experiment, scales = "free") +
+    paletteer::scale_fill_paletteer_d("rcartocolor::Earth", direction = -1) +
+    theme(legend.position="right", legend.direction="vertical",
+          legend.title = element_blank()) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Percentage") +
+    theme_minimal()
+  return(bar)
+  
+}
+
+get_duplex_arms <- function(forgi, rnafold) {
+  
+  data.df <- forgi %>%
+    dplyr::filter(element_type == "s") %>%
+    group_by(id) %>%
+    mutate(L_min = min(L_start), L_max = max(L_end),
+           R_min = min(R_start), R_max = max(R_end)) %>%
+    dplyr::select(id,peak_id, L_min, L_max, R_min, R_max) %>%
+    distinct() %>%
+    ungroup()
+  
+  data.df <- left_join(data.df , rnafold, by = c("peak_id" = "id")) # add the sequence and structure
+  
+  data.df <- data.df %>%
+    mutate(L_seq = substr(sequence, L_min, L_max), R_seq = substr(sequence, R_min, R_max),
+           L_db = substr(mea_structure, L_min, L_max), R_db = substr(mea_structure, R_min, R_max)) %>%
+    dplyr::select(-sequence, -mea_structure, -peak_id)
+  
+  forgi <- left_join(forgi, data.df, by = "id")
+  
+  return(forgi)
+}
+
+```
+
+
+
+#### Functions: overlap with clusters from hybrid reads
+
+```{r}
+#Functions that convert forgi output to genomic and transcriptomic coordinates
+
+resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
+  
+  w <- left + right +1  # width of interval: xl site + flanks
+  
+  grl <- GRangesList(lapply(bedfiles.list, import.bed))
+  gr <- unlist(grl)
+  gr <- keepStandardChromosomes(gr, pruning.mode = "coarse")
+  gr <- dropSeqlevels(gr, c("chrM", "chrY"), pruning.mode = "coarse")
+  gr.df <- as.data.frame(gr)
+  
+  gr <- resize(gr, width = 1, fix = "start") # resize the peaks, start of peak = 1
+  gr <- unique(gr)  # keep unique xl positions
+  gr <- resize(resize(gr, width = right+1, fix = "start"), width = w, fix = "end") # add +/- flanks
+  gr$id <- paste0("ID", seq(1,length(gr)))
+  
+  resized.gr.df <- as.data.frame(gr)
+
+  return(gr)
+  
+}
+
+
+merge_by_partial_string <- function(df1, df2) {
+  
+  df1$matchID = row.names(df1)
+  df2$matchID = sapply(df2$gene_name, function(x) grep(x, df1$fasta_id)) # not very fast but ok
+  
+  df_merge = merge(df1, df2, by = "matchID")[-1]
+  
+  return(df_merge)
+
+  }
+
+```
+
+#### Functions: clustering
+
+```{r}
+get_collapsed_clusters <- function(hybrids.dt, percent_overlap = 0.5) {
+  
+  hybrids.dt[, total_count := NULL]
+  hybrids.dt <- hybrids.dt[, total_count := .N, by = .(L_seqnames, R_seqnames)]
+  hybrids.dt <- hybrids.dt[L_seqnames == R_seqnames]
+  hybrids.dt <- hybrids.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
+  hybrids.dt <- hybrids.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
+  hybrids.dt <- hybrids.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
+  hybrids.dt <- hybrids.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
+  hybrids.dt <- hybrids.dt[!grepl("tRNA", L_seqnames)]
+  hybrids.dt <- hybrids.dt[!grepl("tRNA", R_seqnames)]
+  
+  hybrids.list <- split(hybrids.dt, by = c("L_seqnames", "R_seqnames"))
+  hybrids.clusters.list <- parallel::mclapply(hybrids.list, cluster_hybrids, percent_overlap =percent_overlap, mc.cores = 4)
+  hybrids.clusters.dt <- rbindlist(hybrids.clusters.list, use.names = TRUE, fill = TRUE)
+  hybrids.collapsed.dt  <- collapse_clusters(hybrids.clusters.dt, mode = "wide")
+
+  return(hybrids.collapsed.dt)
+}
+```
+
+
+#### Data
+
+***
+> Annotation data
+
+```{r}
+txdb <- paste0(getwd(),"/gencode.v33.txdb.sqlite")
+gencode.txdb <- AnnotationDbi::loadDb(txdb)
+human.gtf <- paste0(getwd(), "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_id used by Tosca
+
+```
+
+
+***
+> Annotated peaks
+
+```{r}
+bed.files <- list.files(getwd(),path = , pattern = "annot.bed.gz", full.names = TRUE)
+stau1.bedfile <- bed.files[str_detect(bed.files, "stau1")]
+print(stau1.bedfile)
+```
+
+
+***
+> Probablility profiles
+
+```{r}
+prob.files <- list.files(getwd(), pattern = "rnaplfold_prob.tsv.gz", full.names = TRUE)
+shuff.files <- list.files(getwd(), pattern = "rnaplfold.shuffled_prob.tsv.gz", full.names = TRUE)
+
+shuffled <- TRUE
+```
+
+
+***
+> Structure annotation data
+
+```{r}
+forgi.df <- fread("stau1.forgi.tsv.gz", data.table = FALSE)
+rnafold.df <- fread("stau1.rnafold.tsv.gz", data.table = FALSE)
+rnafold.df <- rowid_to_column(rnafold.df, "id") # the order of rnafold output is the same as that of forgi output
+rnafold.df$id <- paste0("ID", rnafold.df$id, sep="")
+rnafold.df <- dplyr::select(rnafold.df, c(id, sequence, mea_structure))
+
+stopifnot(unique(forgi.df$id) == unique(rnafold.df$id))
+
+d <- 15  # distance from xl site
+xl <- 1  # position of the crosslink sites in the forgi and RNAfold outputs
+
+```
+
+
+# Main figure
+
+## Fig 2 A
+
+### STAU1 nonhybrid regional distribution
+
+```{r}
+regions.gr <- rtracklayer::import.gff2("/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets/regions.gtf.gz")
+peaks.gr <- import.bed(stau1.bedfile)
+peaks.gr <- keepStandardChromosomes(peaks.gr, pruning.mode = "coarse")
+```
+
+```{r}
+# Get biotype and type
+overlap <- findOverlaps(peaks.gr, regions.gr)
+regions.gr$type <- as.character(regions.gr$type)
+
+peaks.gr$type <- as.character(NA)
+#peaks.gr$biotype <- as.character(NA)
+
+peaks.gr[queryHits(overlap)]$type <- regions.gr[subjectHits(overlap)]$type
+#peaks.gr[queryHits(overlap)]$biotype <- regions.gr[subjectHits(overlap)]$biotype
+
+```
+
+```{r}
+peak_regions.df <- as.data.frame(peaks.gr)
+peak_regions.df$id <- rownames(peak_regions.df)
+plot_stacked_barchart(peak_regions.df, column = type)
+```
+
+### STAU1 unpaired probability metaprofile
+
+```{r}
+prob.file <- prob.files[str_detect(prob.files, "stau1")]
+shuff.file <- shuff.files[str_detect(prob.files, "stau1")]
+prob.name <- str_split(prob.file, pattern = "\\/")[[1]]
+prob.name <- prob.name[length(prob.name)]
+prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
+
+prefix <- basename(prob.file)
+prefix <- str_split(prefix, ".tsv")[[1]][1]
+
+print(prob.file)
+print(prefix)
+```
+
+
+```{r}
+# Load metaprofile dataframes (df output from get_structure_metaprofile.R)
+
+prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+prob.df <- column_to_rownames(prob.df, var = "V1")
+
+colnames(prob.df) <- seq(1-(ncol(prob.df)+1)/2, (ncol(prob.df)-1)/2) # center column names on zero
+prob.df <- drop_na(prob.df)
+
+```
+
+
+```{r}
+prob.mean.df <- get_metaprofile_mean(prob.file)
+prob.mean.df$Sample <- prob.name
+
+if (shuffled == TRUE) {
+  #huff.file <- opt$shuffled
+  shuff.mean.df <- get_metaprofile_mean(shuff.file)
+  shuff.mean.df$Sample <- "Control (shuffled)"
+  data.df <- rbind(prob.mean.df, shuff.mean.df)
+  data.df$peaks_count <- nrow(prob.df)
+} else {
+  data.df <- prob.mean.df
+  data.df$peaks_count <- nrow(prob.df)
+}
+
+# plot the mean probability and standard error of the mean
+profile.gg <- plot_metaprofile(data.df)
+
+  
+#ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
+profile.gg
+```
+
+
+## Fig 2 B
+
+### STAU1 unpaired probability clusters
+
+
+```{r}
+# ==========
+# K-means clustering
+# ==========
+
+n_clusters <- 5
+```
+
+Number of clusters for K-means clustering: `{r} n_clusters`
+
+
+```{r}
+
+# Focus on the -50 to +75 nt relative to peak starts:
+prob.df <- prob.df %>% dplyr::select("-50":"75")
+
+# Focus on the +10 to +75 nt relative to peak starts:
+prob_downstream.df <- prob.df %>% dplyr::select("10":"75")
+```
+
+
+```{r}
+# K-means clustering - "euclidean" dist, 5 clusters
+set.seed(123)
+kmeans.df <- run_kmeans(prob_downstream.df, n_clusters)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+col_pal <- brewer.pal(n_clusters, "Dark2")
+#plot_cluster_heatmap(kmeans.df, plot.title = prob.name, plot.name = paste0(prefix,"_kmeans.pdf"))
+
+# join cluster information to the data containing the -50: +75 nt positions 
+stopifnot(rownames(kmeans.df) == rownames(prob.df))
+prob.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
+prob.df$cluster_size <- kmeans.df$cluster_size
+
+clusters.gg <- plot_cluster_mean(prob.df, 51)
+# ggsave(paste0(prefix,"_cluster_profiles.pdf"), clusters.gg)
+
+prob.df <- prob.df %>%
+  dplyr::rename(.cluster = cluster)
+```
+
+
+```{r}
+plot_cluster_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,"_kmeans_minus50.png"))
+```
+
+
+```{r}
+# Export clusters data
+prob.df <- rownames_to_column(prob.df, var = "id")
+fwrite(prob.df, paste0(prefix,"_clusters.tsv.gz"), sep = "\t")
+```
+
+
+Metaprofiles for each cluster: 
+
+```{r fig3b, fig.height = 9, fig.width = 2, fig.align = "center"}
+clusters.gg
+```
+
+Clusters 1,3,4 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
+
+
+#### Structure annotation analyses
+
+Filter the forgi annotation data for peaks (IDs) in clusters 1, 3 and 4.
+
+
+```{r}
+prob.df <- prob.df %>%
+  dplyr::filter(.cluster == 1 | .cluster == 3 | .cluster == 4)
+
+forgi.df <- semi_join(forgi.df, prob.df, by = "id")
+rnafold.df <- semi_join(rnafold.df, prob.df, by = "id")
+```
+
+There are `r length(unique(forgi.df$id))` peaks in clusters 1,3,4.
+
+
+Classify structures based on their distance from xl site, whether they span multi-loops, and whether the first stem-loop is fused to another stem-loop:
+
+```{r}
+forgi.df <- classify_structures(forgi.df, xl = xl, d = d)
+```
+
+
+Analyse the single stems closest to the xl sites
+
+The percentage peaks with such stem-loops downstream is: `r length(unique(dplyr::filter(forgi.df, duplex_type == "Stem and xl unpaired\n(no multiloops, single stems)")$id))*100/length(unique(forgi.df$id))`
+
+
+```{r}
+first_sl.df <- select_first_stem_loop(forgi.df)
+first_sl.df <- correct_iloop_positions(first_sl.df)
+```
+
+```{r}
+length(unique(first_sl.df$id))
+```
+
+
+The number of peaks (IDs) with a single predicted stem-loop downstream the xl site is: `r length(unique(first_sl.df$id))`
+
+Analyse the multiple, "fused" stems closest to the xl sites
+
+```{r}
+multi_sl.df <- separate_stem_loops(forgi.df)
+```
+
+```{r}
+length(unique(multi_sl.df$id))
+```
+
+```{r} 
+# single_multi_sl.df <- multi_sl.df %>%
+#   group_by(id) %>%
+#   dplyr::filter(!any(element %in% c("h1")))
+```
+
+
+#### Merge all stem-loops
+
+```{r}
+all_sl.df <- rbind(first_sl.df, multi_sl.df)
+```
+
+```{r}
+length(unique(all_sl.df$id))
+```
+
+
+***
+> Description of the stem-loops near the xl site
+
+Obtain number of base-pairs for each structure (ID) and filter out stem-loops with *less than 10 bp*. 
+
+```{r}
+# Get total paired residues sum, hairpin lengths etc
+all_sl.df <- all_sl.df %>%
+  group_by(id) %>%
+  dplyr::arrange(L_start)
+
+all_sl.df <- get_basepairs_count(all_sl.df)
+all_sl.df <- get_hairpin_length(all_sl.df)
+
+all_sl.df <- all_sl.df %>%
+  dplyr::filter(total_paired >= 10)
+```
+
+After filtering out stems with less than 10 bp, there are `r length(unique(first_sl.df$id))` remaining predicted structures.
+
+```{r}
+# structures
+length(unique(all_sl.df$id))
+```
+
+```{r}
+all_sl.df <- all_sl.df %>%
+  rowwise() %>%
+  mutate(peak_id = str_split(id, "_")[[1]][1]) %>%
+  ungroup()
+```
+
+```{r}
+# peaks
+length(unique(all_sl.df$peak_id))
+```
+
+## Fig 2 C
+
+### Examples of STAU1 stem-loops predicted from nonhybrid reads
+
+```{r}
+colnames(all_sl.df)
+```
+
+
+```{r}
+dplyr::filter(first_sl.df, id == "ID17880")
+```
+
+## Fig 2 D
+
+### Overlap with duplexes from STAU1 hybrid reads
+
+***
+> Convert forgi coordinates to tx and genomic
+
+#### Get genomic and tx coordinates for the resized peaks that have been used for RNAplfold and forgi analyses
+
+```{r}
+# ==========
+# Prepare gene IDs and coordinates
+# ==========
+
+# Load peaks data, resize exactly as for rnafold used to predict structures
+peaks.gc.gr <- resize_peaks(stau1.bedfile, left = 0, right = 100)
+
+# Add a new column containing gene ids by directly mapping the transcript ids
+keys = peaks.gc.gr$name
+mapped.ids <- AnnotationDbi::select(gencode.txdb, keys = keys, columns="GENEID", keytype="TXNAME")
+peaks.gc.gr$gene_name <- mapped.ids$GENEID
+```
+
+
+```{r}
+# Add fasta_id from tx annotation used for Tosca as a new column
+
+human.gr <- import.gff2(human.gtf)
+human.gr <- keepStandardChromosomes(human.gr, pruning.mode = "coarse")
+human.gr <- dropSeqlevels(human.gr, c("chrM", "chrY"), pruning.mode = "coarse")
+human.df <- as.data.frame(human.gr)
+
+genes.ls <- unique(peaks.gc.gr$gene_name) # create list of unique gene names from peak file to filter the human annotation
+
+human.df <- human.df %>%
+  filter(str_detect(fasta_id, paste(genes.ls, collapse = "|"))) # filter for gene names in the peak gr
+
+human.df$row <- row.names(human.df)
+human.df <- dplyr::rename(human.df, fasta_id_start = start, fasta_id_end = end)
+human.df <- as.data.frame(human.df[,c("row", "fasta_id", "fasta_id_start", "fasta_id_end")])
+
+peaks.gc.df <- as.data.frame(peaks.gc.gr)
+
+peaks.gc.df <- merge_by_partial_string(human.df, peaks.gc.df)
+peaks.gc.df <- peaks.gc.df %>%
+  dplyr::select(-row)
+
+# Add transcriptomic coordinates to the peaks file
+peaks.df <- peaks.gc.df %>%
+  mutate(tx_start = case_when((strand == "+") ~ start - fasta_id_start + 1,
+                                     (strand == "-") ~  fasta_id_end - end + 1),
+         tx_end = case_when((strand == "+") ~ end - fasta_id_start + 1,
+                                   (strand == "-") ~  fasta_id_end - start + 1))
+
+
+```
+
+
+Some gene names are not present in the human annotation gtf e.g
+
+```{r}
+human.gr$fasta_id[str_detect(human.gr$fasta_id, "ENSG00000184992.13")]
+```
+
+#### Obtain the start and end of the first predicted stem-loop of each ID from the forgi positions
+
+```{r}
+all_sl.df <- get_duplex_arms(all_sl.df, rnafold.df)
+```
+
+```{r}
+# check all structures have arms db added
+TRUE %in% is.na(all_sl.df$L_db)
+```
+
+```{r}
+# ==========
+# Load predicted stem-loops arms data
+# ==========
+
+# Extract the start and end position of the stem-loop individually for each arm
+arms.df <- all_sl.df %>% 
+  distinct(id, peak_id, L_min, L_max, R_min, R_max, L_seq, R_seq, L_db, R_db)
+
+# Merge df containing the peaks starts + 100 in genomic and transcriptomic coordinates to arms dataframe
+arms.df <- as.data.frame(left_join(arms.df, peaks.df, by = c("peak_id" = "id")))
+
+```
+
+#### From the annotated peaks coordinates calculate the genomic and tx coordinates of the first predicted stem-loop using the forgi positions (L_min, L_max, R_min, R_max)
+
+```{r}
+# ==========
+# Obtain coordinates for each arm of the stem loop
+# ==========
+
+# Calculate L and R arms genomic coordinates
+arms.df <- arms.df %>%
+  mutate(L_genomic_start = case_when((strand == "+") ~ start + L_min - 1,
+                                     (strand == "-") ~ end - L_max + 1),
+         L_genomic_end = case_when((strand == "+") ~ start + L_max - 1,
+                                   (strand == "-") ~ end - L_min + 1),
+         R_genomic_start = case_when((strand == "+") ~ start + R_min - 1,
+                                     (strand == "-") ~ end - R_max + 1),
+         R_genomic_end = case_when((strand == "+") ~ start + R_max - 1,
+                                   (strand == "-") ~ end - R_min + 1))
+
+# Calculate L and R arms transcriptomic coordinates
+arms.df <- arms.df %>%
+    mutate(L_tx_start = tx_start + L_min - 1,
+           L_tx_end = tx_start + L_max - 1,
+           R_tx_start = tx_start + R_min - 1,
+           R_tx_end = tx_start + R_max - 1)
+
+# The peaks with gene IDs not present in fasta_ids of human annotation will have NAs instead of coordinates, so filtering them out
+arms.df <- dplyr::filter(arms.df, !is.na(fasta_id))
+
+# Check L and R arm coordinate widths are correct
+stopifnot(abs(arms.df$L_genomic_end - arms.df$L_genomic_start) ==
+            abs(arms.df$L_tx_end - arms.df$L_tx_start))
+stopifnot(abs(arms.df$L_max - arms.df$L_min) ==
+            abs(arms.df$L_genomic_end - arms.df$L_genomic_start))
+
+stopifnot(abs(arms.df$R_genomic_end - arms.df$R_genomic_start) == 
+            abs(arms.df$R_tx_end - arms.df$R_tx_start))
+stopifnot(abs(arms.df$R_max - arms.df$R_min) == 
+            abs(arms.df$R_genomic_end - arms.df$R_genomic_start))
+```
+
+```{r}
+# Write out tables
+
+# Transcriptomic (similar to Tosca hybrids table):
+forgi.reformated.tx.df <- data.frame(id=arms.df$id, name=arms.df$name, orientation = NA, type = "intragenic", hybrid_selection = NA, L_seqnames = arms.df$fasta_id,
+                                     L_read_start = arms.df$L_min, L_read_end = arms.df$L_max, L_start = arms.df$L_tx_start, L_end = arms.df$L_tx_end, L_width = NA, L_strand = "+", 
+                                     R_seqnames = arms.df$fasta_id, R_read_start = arms.df$R_min, R_read_end = arms.df$R_max, R_start = arms.df$R_tx_start, R_end = arms.df$R_tx_end, R_width = NA, R_strand = "+",
+                                     umi= NA, L_sequence=arms.df$L_seq, R_sequence=arms.df$R_seq, mfe = NA)
+
+forgi.reformated.tx.df <- forgi.reformated.tx.df %>%
+  rowwise() %>%
+  mutate(L_width = L_end - L_start + 1,
+         R_width = R_end - R_start +1,
+         L_sequence = str_replace_all(L_sequence, "U", "T"), # replace Us with Ts
+         R_sequence = str_replace_all(R_sequence, "U", "T")) %>%
+  ungroup()
+
+
+# Genomic (similar to tosca clusters table):
+forgi.reformated.gc.df <- data.frame(name = arms.df$id, count = arms.df$score, L_seqnames=arms.df$fasta_id,	
+                                     L_start=arms.df$L_tx_start, L_end=arms.df$L_tx_end, L_strand="+", L_genomic_seqnames=arms.df$seqnames,
+                                     L_genomic_start=arms.df$L_genomic_start, L_genomic_end= arms.df$L_genomic_end,
+                                     L_genomic_strand=arms.df$strand, R_seqnames=arms.df$fasta_id, R_start=arms.df$R_tx_start, R_end=arms.df$R_tx_end,
+                                     R_strand="+", R_genomic_seqnames=arms.df$seqnames,
+                                     R_genomic_start=arms.df$R_genomic_start,  R_genomic_end= arms.df$R_genomic_end,
+                                     R_genomic_strand =arms.df$strand)
+
+stopifnot(abs(forgi.reformated.gc.df$L_genomic_end - forgi.reformated.gc.df$L_genomic_start) ==
+            abs(forgi.reformated.gc.df$L_end - forgi.reformated.gc.df$L_start))
+stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_genomic_start) ==
+            abs(forgi.reformated.gc.df$R_end - forgi.reformated.gc.df$R_start))
+```
+
+```{r}
+# Export tables
+# write_tsv(forgi.reformated.gc.df, paste0(prefix, "_gc.txt"), quote = FALSE)
+# write_tsv(forgi.reformated.tx.df, paste0(prefix, "_tx.txt"), quote = FALSE)
+```
+
+***
+> Calculate overlap with STAU1 duplexes from hybrid reads
+
+#### Cluster the linker and no linker hybrids
+
+```{r}
+# Linker
+linker.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets/linker/linker.clusters.mfe.tsv.gz")
+
+# No linker
+nolinker.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets/nolinker/all.hybrids.tsv.gz")
+nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
+```
+
+```{r}
+# keep common columns
+setdiff(colnames(nolinker.dt), colnames(linker.dt))
+nolinker.dt[, c(setdiff(colnames(nolinker.dt), colnames(linker.dt))):=NULL]
+
+all.hybrids.dt <- rbind(linker.dt, nolinker.dt)
+nrow(all.hybrids.dt)
+
+all.hybrids.dt[, c("cluster", "cluster_hybrid_count"):=NULL]
+
+# ==========
+# Remove rRNA and tRNA hybrids
+# ==========
+
+all.hybrids.dt[, total_count := NULL]
+all.hybrids.dt <- all.hybrids.dt[, total_count := .N, by = .(L_seqnames, R_seqnames)]
+all.hybrids.dt <- all.hybrids.dt[L_seqnames == R_seqnames]
+all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
+all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
+all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
+all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
+all.hybrids.dt <- all.hybrids.dt[!grepl("tRNA", L_seqnames)]
+all.hybrids.dt <- all.hybrids.dt[!grepl("tRNA", R_seqnames)]
+
+nrow(all.hybrids.dt)
+
+# ==========
+# Cluster
+# ==========
+
+all.list <- split(all.hybrids.dt, by = c("L_seqnames", "R_seqnames"))
+all.clusters.list <- parallel::mclapply(all.list, cluster_hybrids, percent_overlap = 0.5, mc.cores = 4)
+all.clusters.dt <- rbindlist(all.clusters.list, use.names = TRUE, fill = TRUE)
+```
+
+```{r}
+#all.clusters.dt[L_seqnames == R_seqnames][!L_seqnames %in% c("tRNA", "rDNA", "rRNA_5S")][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)]
+all.collapsed  <- collapse_clusters(all.clusters.dt, mode = "wide")
+```
+
+#### Find overlaps with merged clusters (no linker and linker)
+
+```{r}
+nonhyb.dt <- as.data.table(forgi.reformated.gc.df)
+
+ol <- primavera::find_valid_hybrid_overlaps(nonhyb.dt, all.collapsed)
+nonhyb_overlapped.dt <- nonhyb.dt[unique(ol$queryHits)]
+```
+
+
+```{r}
+nonhyb_count <- nrow(count(all_sl.df, id))
+hyb_clusters_count <- nrow(all.collapsed)
+nonhyb_ol_count <- nrow(nonhyb_overlapped.dt)
+
+olap_counts <- c(Nonhybrids = nonhyb_count-nonhyb_ol_count, Hybrid.clusters = hyb_clusters_count-nonhyb_ol_count, "Nonhybrids&Hybrid.clusters" = nonhyb_ol_count)
+
+upset(fromExpression(olap_counts),
+      order.by = "freq",
+      decreasing = T,
+      number.angles = 0,
+      text.scale = 1.1,
+      point.size = 2.8,
+      line.size = 1,
+      mainbar.y.label = "Overlaps",
+      sets.x.label = "Total duplexes",
+      empty.intersections = "off"
+      )
+```
+
+#### Find overlaps with linker and nolinker clusters individually
+
+```{r}
+# Cluster linker
+linker.collapsed.dt <- get_collapsed_clusters(linker.dt, percent_overlap = 0.5)
+# Cluster nolinker
+nolinker.collapsed.dt <- get_collapsed_clusters(nolinker.dt, percent_overlap = 0.5)
+
+# Find overlaps
+ol_linker <- find_valid_hybrid_overlaps(nonhyb.dt, linker.collapsed.dt)
+nonhyb_linker_overlapped.dt <- nonhyb.dt[unique(ol_linker$queryHits)]
+
+ol_nolinker <- find_valid_hybrid_overlaps(nonhyb.dt, nolinker.collapsed.dt)
+nonhyb_nolinker_overlapped.dt <- nonhyb.dt[unique(ol_nolinker$queryHits)]
+
+```
+
+```{r}
+# nonhyb_count <- nrow(count(all_sl.df, id))
+linker_clusters_count <- nrow(linker.collapsed)
+nolinker_clusters_count <- nrow(nolinker.collapsed)
+
+nonhyb_linker_ol_count <- nrow(nonhyb_linker_overlapped.dt)
+nonhyb_nolinker_ol_count <- nrow(nonhyb_nolinker_overlapped.dt)
+
+olap_counts <- c(Nonhybrids = nonhyb_count-nonhyb_linker_ol_count - nonhyb_nolinker_ol_count, "Nonhybrids&Linker" = nonhyb_linker_ol_count, "Nonhybrids&NoLinker" = nonhyb_nolinker_ol_count)
+
+upset(fromExpression(olap_counts), 
+      order.by = "freq", 
+      decreasing = T, 
+      number.angles = 0, 
+      text.scale = 1.1, 
+      point.size = 2.8, 
+      line.size = 1,
+      mainbar.y.label = "Overlaps", 
+      sets.x.label = "Total duplexes"
+      ) 
+
+```
+
+
+
+ 
+### Export data
+
+```{r}
+# forgi
+fwrite(all_sl.df, "stau1_nonhybrid.processed.forgi.tsv.gz", sep = "\t", col.names = TRUE)
+
+# hybrids
+write_tsv(forgi.reformated.gc.df, "stau1_nonhybrid.gc.txt", quote = FALSE)
+write_tsv(forgi.reformated.tx.df, "stau1_nonhybrid.tx.txt", quote = FALSE)
+```
+
+
+# Supplementary figure / Extras
+
+***
+> Types of structures downstream STAU1 peaks
+
+The *Stem and xl unpaired* (37.1%) were further characterised. 
+
+```{r}
+#plot_stacked_barchart(forgi.df, duplex_type)
+```
+
+```{r}
+unique(forgi.df$duplex_type)
+```
+
+
+```{r}
+forgi.df <- forgi.df %>%
+  rowwise() %>%
+  mutate(structure_definition = case_when(duplex_type %in% c("No stem", "Stem and xl paired", "Stem and xl unpaired\n(multiloops)") ~ "No structure or the first stem\nspans a multi-loop",
+                                          TRUE ~ "Valid putative stem-loop structures")) %>%
+  ungroup()
+```
+
+```{r}
+plot_stacked_barchart(forgi.df, structure_definition)
+```
+
+***
+> Label structures based on number of base-paired residues
+
+```{r}
+all_sl.df <- all_sl.df %>%
+  group_by(id) %>%
+  mutate(stem_label = case_when((total_paired < 20) ~ "< 20 nt",
+                                 (total_paired >= 20) ~ ">= 20 nt")) %>%
+  ungroup()
+```
+
+***
+> Hairpin length
+
+Hairpin lengths for stem-loops >= 10 bp
+
+```{r}
+h0.gg <- ggplot(all_sl.df, aes(x=hairpin_length)) + 
+  geom_histogram(binwidth=1, color="black", fill = "white") +
+  #facet_grid(~stem_label) +
+  theme_minimal()+
+  ggtitle("Distribution of hairpin loop sizes") +
+  xlab("Hairpin loop size (nt)") +
+  ylab("Count")
+
+h0.gg
+```
+
+![Descriptive features](pm.png)
+
+***
+> Paired metric
+
+The *paired metric* is a measure that takes into account the ratio of paired residues to non-paired residues (bulges and internal loops) in each duplex. The formula is:
+
+$$
+\text{Paired Metric} = \frac{(n_p)*2}{(n_p)*2 + (L_u + R_u)}, \\
+\text{ } \\
+\text{where:} \\
+ n_p = \text{number of paired residues} \\
+ L_u = \text{number of unpaired residues left arm} \\
+ R_u = \text{number of unpaired residues right arm}
+$$
+
+Before caluclating the paired metric, for each structure, we subset the structure containing and up to 20 base-pairs long.
+A similar approach will be applied to the STAU1 hybrids data and PARIS to allow comparison of the structural context most proximal to STAU1 binding sites versus a non-STAU1 specifc atlas of in vivo structures + to compare STAU1 predicted structures from nonhybrid reads with the duplexes from hybrid reads.
+
+```{r}
+res.ls <- lapply(unique(all_sl.df$id), crop_stem, data = all_sl.df)
+all_sl.df <- rbindlist(res.ls)
+```
+
+Before cropping, the median number of bp per stem-loop structure is `r median(first_sl.df$total_paired)`.
+The mean is `r mean(first_sl.df$total_paired)`bp.
+The longest stem is `r max(first_sl.df$total_paired)` bp long.
+
+The following plots show the distributions of number of bp per structure before, and after cutting the stem. 
+
+```{r}
+tot.gg <- ggplot(dplyr::distinct(all_sl.df, id, stem_label, total_paired), aes(x=total_paired)) + 
+  geom_histogram(binwidth=1, color="black", fill = "white") +
+  ylim(0, 5000)+
+  xlim(0, 40)+
+  theme_minimal()+
+  ggtitle("Distribution of total base-pairs per predicted stem-loop (before cutting the stem) ")
+
+
+max_segmented.df <- all_sl.df %>%
+  group_by(id) %>%
+  slice_max(stem_cumsum_cut, n=1) %>%
+  ungroup() %>%
+  distinct(id, stem_label, stem_cumsum, stem_cumsum_cut, total_paired)
+
+
+cut.gg <- ggplot(max_segmented.df, aes(x=stem_cumsum_cut)) + 
+  geom_histogram(binwidth=1, color="black", fill = "white") +
+  ylim(0, 5000)+
+  xlim(0, 40)+
+  theme_minimal()+
+  ggtitle("Distribution of total base-pairs per predicted stem-loop\n(after cutting the stem to max 20 bp)")
+
+ggpubr::ggarrange(tot.gg, cut.gg, 
+          labels = c("", ""),
+          nrow = 2)
+
+```
+Calculate the paired metric: 
+
+```{r}
+# calculate internal loops sum
+all_sl.df <- get_iloop_length_sum(all_sl.df)
+
+all_sl.df <- calculate_paired_metric(all_sl.df)
+
+ratio.gg <- ggplot(distinct(all_sl.df, id, paired_to_total_ratio) , aes(x=paired_to_total_ratio)) + 
+  geom_density(color="black") +
+  ggtitle("Distribution of paired metric values - STAU1 nonhybrids") +
+  theme_minimal()
+
+ratio.gg
+```
+
+
+***
+> Symmetry classification
+
+The *symmetry classification* is a measure that takes into account the relative position and numbers of bulges and internal loops in each predicted stem-loop structure. 
+
+We classify stem-loops as:
+
+Description | Label
+------------- | -------------
+Uninterrupted (no bulges or internal loops on either side) | Perfect duplex
+Symmetrical (vertical plane) | Symmetric - vertical
+Symmetrical (horizontal plane) | Symmetric - horizontal
+Non-Symmetrical | Asymmetry
+
+
+Obtain stem symmetry types:
+
+```{r}
+left_iloop_count.df <- all_sl.df %>%
+  group_by(id) %>%
+  dplyr::filter(element_type == "i" & L_start > 0) %>%
+  count()
+
+left_iloop_count.df <- left_iloop_count.df %>%
+  dplyr::rename(left_iloop_count = n)
+
+right_iloop_count.df <- all_sl.df %>%
+  group_by(id) %>%
+  dplyr::filter(element_type == "i" & R_start > 0) %>%
+  count()
+
+right_iloop_count.df <- right_iloop_count.df %>%
+  dplyr::rename(right_iloop_count = n)
+
+all_sl.df <- left_join(all_sl.df, left_iloop_count.df, by = "id")
+all_sl.df <- left_join(all_sl.df, right_iloop_count.df, by = "id")
+```
+
+
+```{r warning=FALSE}
+
+all_sl.df <- all_sl.df %>%
+    replace(is.na(.), 0) # replace NAs with zero to simplify filtering
+
+res.df <- all_sl.df %>%
+  group_by(id) %>%
+  mutate(stem_type = case_when(!any(element_type == "i") ~ "Perfect duplex",
+                               TRUE ~ "Interrupted stem")) %>%
+  ungroup()
+
+symmetry.df <- res.df %>%
+  group_by(id) %>%
+  dplyr::filter(element_type == "i") %>%
+  mutate(stem_type = case_when(stem_type == "Interrupted stem" & (right_iloop_count == left_iloop_count) & 
+                                 sort(unique(L_width)) == sort(unique(R_width)) ~ "Symmetric",
+                               stem_type == "Interrupted stem" & (right_iloop_count == left_iloop_count) & 
+                                 sort(unique(L_width)) != sort(unique(R_width)) ~ "Asymmetric",
+                               stem_type == "Interrupted stem" & (right_iloop_count != left_iloop_count) ~ "Asymmetric")) %>%
+  ungroup() %>%
+  dplyr::select(id, stem_type) %>%
+  distinct()
+
+perfect_duplex.df <- res.df %>%
+  dplyr::filter(stem_type == "Perfect duplex") %>%
+  dplyr::select(id, stem_type) %>%
+  distinct()
+
+symmetry.df <- rbind(symmetry.df, perfect_duplex.df)
+```
+
+```{r}
+# Get percentages of stem_types
+plot_stacked_barchart(symmetry.df, column = stem_type)
+```
+
+# Other RBPs
+
+## TDP43
+
+
+```{r}
+prob.file <- prob.files[str_detect(prob.files, "tardp")]
+shuff.file <- shuff.files[str_detect(prob.files, "tardp")]
+prob.name <- str_split(prob.file, pattern = "\\/")[[1]]
+prob.name <- prob.name[length(prob.name)]
+prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
+
+prefix <- basename(prob.file)
+prefix <- str_split(prefix, ".tsv")[[1]][1]
+```
+```{r}
+# Load metaprofile dataframes (df output from get_structure_metaprofile.R)
+
+prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+prob.df <- column_to_rownames(prob.df, var = "V1")
+prob.df <- drop_na(prob.df)
+colnames(prob.df) <- seq(1-(ncol(prob.df)+1)/2, (ncol(prob.df)-1)/2) # center colnames on zero
+
+```
+
+```{r}
+#plot_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,"_heatmap.pdf"))
+```
+
+```{r}
+prob.mean.df <- get_metaprofile_mean(prob.file)
+prob.mean.df$Sample <- prob.name
+
+if (shuffled == TRUE) {
+  #huff.file <- opt$shuffled
+  shuff.mean.df <- get_metaprofile_mean(shuff.file)
+  shuff.mean.df$Sample <- "Control (shuffled)"
+  data.df <- rbind(prob.mean.df, shuff.mean.df)
+  data.df$peaks_count <- nrow(prob.df)
+} else {
+  data.df <- prob.mean.df
+  data.df$peaks_count <- nrow(prob.df)
+}
+
+# plot the mean probability and standard error of the mean
+profile.gg <- plot_metaprofile(data.df)
+
+
+# ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
+
+profile.gg
+```
+
+## HUR
+
+```{r}
+prob.file <- prob.files[str_detect(prob.files, "hur")]
+shuff.file <- shuff.files[str_detect(prob.files, "hur")]
+prob.name <- str_split(prob.file, pattern = "\\/")[[1]]
+prob.name <- prob.name[length(prob.name)]
+prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
+
+prefix <- basename(prob.file)
+prefix <- str_split(prefix, ".tsv")[[1]][1]
+```
+```{r}
+# Load metaprofile dataframes (df output from get_structure_metaprofile.R)
+
+prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+prob.df <- column_to_rownames(prob.df, var = "V1")
+prob.df <- drop_na(prob.df)
+colnames(prob.df) <- seq(1-(ncol(prob.df)+1)/2, (ncol(prob.df)-1)/2) # center colnames on zero
+
+```
+
+```{r}
+#plot_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,"_heatmap.pdf"))
+```
+
+```{r}
+prob.mean.df <- get_metaprofile_mean(prob.file)
+prob.mean.df$Sample <- prob.name
+
+if (shuffled == TRUE) {
+  #huff.file <- opt$shuffled
+  shuff.mean.df <- get_metaprofile_mean(shuff.file)
+  shuff.mean.df$Sample <- "Control (shuffled)"
+  data.df <- rbind(prob.mean.df, shuff.mean.df)
+  data.df$peaks_count <- nrow(prob.df)
+} else {
+  data.df <- prob.mean.df
+  data.df$peaks_count <- nrow(prob.df)
+}
+
+# plot the mean probability and standard error of the mean
+profile.gg <- plot_metaprofile(data.df)
+
+
+# ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
+
+profile.gg
+```
+
+
