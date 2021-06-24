@@ -26,18 +26,11 @@ library(data.table)
 library(paletteer)
 library(ggthemes)
 library(cowplot)
-# library(ggpubr)
 library(ggplot2)
-library(ggrepel)
-library(forcats)
 library(scales)
 library(tidyverse, warn.conflicts = FALSE)
 library(stringr)
-library(stringi)
 library(Biostrings)
-library(tictoc)
-library(ggpubr)
-# theme_set(theme_bw())
 ```
 
 #### Functions
@@ -141,10 +134,10 @@ get_nucleotide_frequency <- function(duplexes.df) {
              G_freq_max_pur_arm = G_R, G_freq_min_pur_arm = G_L,
              C_freq_max_pur_arm = C_R, C_freq_min_pur_arm = C_L,
              U_freq_max_pur_arm = T_R, U_freq_min_pur_arm = T_L)
-  
-  stopifnot(nrow(nuc_freq_reordered.df) == nrow(duplexes.df))
     
   nuc_freq_reordered.df <- rbind(nuc_freq_max_pur_arm.df, nuc_freq_min_pur_arm.df)
+  stopifnot(nrow(nuc_freq_reordered.df) == nrow(duplexes.df))
+  
   nuc_freq_reordered.df <- nuc_freq_reordered.df %>%
     dplyr::select(-union(colnames(L_freq), colnames(R_freq)))
     
@@ -212,37 +205,40 @@ plot_stacked_barchart <- function(data.df, column, group=NULL, simplify=TRUE) {
 ```
 
 ```{r}
-plot_nucleotide_frequency <- function(data) {
+plot_nucleotide_frequency <- function(data.df) {
 
   # Prepare for plotting
-  high_pur.df <- data %>% 
-    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm)
+  high_pur.df <- data.df %>% 
+    dplyr::select(Experiment, name, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm)
   
   high_pur.df <- rowid_to_column(high_pur.df)
   long_high_pur.df <- high_pur.df %>% 
     gather(residue, frequency, A_freq_max_pur_arm:U_freq_max_pur_arm)
   long_high_pur.df$arm = "High purine arm"
   
-  low_pur.df <- data %>% 
-    dplyr::select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm)
+  low_pur.df <- data.df %>% 
+    dplyr::select(Experiment, name, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm)
+  
   low_pur.df <- rowid_to_column(low_pur.df)
+  
   long_low_pur.df <- low_pur.df %>% 
     gather(residue, frequency, A_freq_min_pur_arm:U_freq_min_pur_arm)
   long_low_pur.df$arm = "Low purine arm"
-  
   nuc_freq.df <- rbind(long_high_pur.df, long_low_pur.df)
-  nuc_freq.df$residue <- str_sub(nuc_freq.df$residue, 1,1) #trim string to get nucleotide (first) letter
+  nuc_freq.df$residue <- str_sub(nuc_freq.df$residue, 1,1) # trim string to get nucleotide (first) letter
   
   # Plot individual nucleotide frequencies
-  nuc_freq.gg <- ggplot(nuc_freq.df, aes(x=rowid, y=frequency, color = residue)) +
-    geom_smooth(se=F) + coord_flip() +
-    facet_grid(cols = vars(arm)) +
-    ylab("Frequency") +
-    xlab("ID") +
-    ylim(0, 1) +
-    scale_color_manual(values = c("darkgreen","dodgerblue4","goldenrod3","firebrick"))
+  nuc_freq.gg <- ggplot(nuc_freq.df, aes(y=rowid, x=frequency, color = residue)) +
+    geom_smooth(se=F, method = "loess", span = 0.4, orientation = "y") +
+    facet_grid(cols = vars(arm), rows = vars(Experiment), scales = "free_y") +
+    xlab("Frequency") +
+    ylab("ID (decreasing number of bp)") +
+    #ylim(0, 1) +
+    theme_minimal_grid() + 
+  theme(legend.position = "top") +
+    scale_color_manual(values = c("dodgerblue4","goldenrod3","firebrick", "darkgreen"))
   
-  return(nuc_freq.gg)
+  return(list(data = nuc_freq.df, plot = nuc_freq.gg))
   
 }
 ```
@@ -506,11 +502,13 @@ utr3_clusters.df <- utr3_clusters.df %>%
 
 Plot nucleotide frequency 
 
+ID = 1 - largest bp
+Short duplexes display higher GC content and long duplexes showed higher AU content, for both PARIS and STAU1.
 
 ```{r}
-nrow(utr3_clusters.df)
+plot_nucleotide_frequency(utr3_clusters.df)$plot +
+  ggtitle("Nucleotide frequencies in each arm")
 ```
-
 
 
 
@@ -518,4 +516,11 @@ nrow(utr3_clusters.df)
 > e. Alus
 
 # Supplementary figure
+
+***
+> Paired metric
+
+
+***
+> Symmetry
 
