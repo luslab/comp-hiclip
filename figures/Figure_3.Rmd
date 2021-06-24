@@ -1,0 +1,521 @@
+---
+title: "Figure 3"
+author: "Ira Iosub"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    theme: paper
+    highlight: monochrome
+    df_print: paged
+    code_folding: hide
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+---
+
+#### Libraries
+
+```{r include=FALSE}
+library(rtracklayer)
+library(primavera)
+library(data.table)
+library(paletteer)
+library(ggthemes)
+library(cowplot)
+# library(ggpubr)
+library(ggplot2)
+library(ggrepel)
+library(forcats)
+library(scales)
+library(tidyverse, warn.conflicts = FALSE)
+library(stringr)
+library(stringi)
+library(Biostrings)
+library(tictoc)
+library(ggpubr)
+# theme_set(theme_bw())
+```
+
+#### Functions
+
+```{r}
+get_basepairs_count <- function(data.df) {
+  
+  duplex_max.df <- data.df %>%
+    group_by(id) %>%
+    dplyr::filter(element_type == "s") %>%
+    summarise(total_paired = sum(L_width)) %>%
+    dplyr::select(id, total_paired)
+  
+  data.df <- left_join(data.df, duplex_max.df, by = "id")
+  
+  return(data.df)
+}
+
+
+
+get_paired_residues <- function(id, L_db, L_sequence, R_db, R_sequence) {
+  
+  l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
+  # l_start <- l_brackets[1]
+  # l_end <- l_brackets[length(l_brackets)]
+  # l_trimmed_db <- str_sub(L_db, l_start, l_end)
+  # l_trimmed_seq <- str_sub(L_sequence, l_start, l_end)
+  
+  r_brackets <- str_locate_all(R_db, pattern = "\\)")[[1]][,1]
+  # r_start <- r_brackets[1]
+  # r_end <- r_brackets[length(r_brackets)]
+  # r_trimmed_db <- str_sub(R_db, r_start, r_end)
+  # r_trimmed_seq <- str_sub(R_sequence, r_start, r_end)
+  
+  stopifnot(length(l_brackets) == length(r_brackets)) # check L and R arms of the duplex have an equal number of bp
+  
+  l_paired_residues <- paste(str_sub(L_sequence, start = l_brackets, end = l_brackets), collapse = '')
+  r_paired_residues <- paste(str_sub(R_sequence, start = r_brackets, end = r_brackets), collapse = '')
+  
+  results.ls <- list(id = id, l_paired_residues=l_paired_residues, r_paired_residues=r_paired_residues) # l_start =l_start, l_end = l_end, l_trimmed_db=l_trimmed_db, l_trimmed_seq=l_trimmed_seq,r_start=r_start, r_end=r_end, r_trimmed_db=r_trimmed_db, r_trimmed_seq=r_trimmed_seq,
+  
+  return(results.ls)
+  
+}
+```
+
+
+```{r}
+get_nucleotide_frequency <- function(duplexes.df) {
+  
+   # Separate L_db and R_db
+  duplexes.df <- duplexes.df %>%
+    separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
+  
+  # Extract the paired residues from each arm's sequence
+  duplexes.df <- duplexes.df %>%
+    rowwise() %>%
+    mutate(paired_regions = list(get_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
+    mutate(L_paired_residues = paired_regions$l_paired_residues,
+           R_paired_residues = paired_regions$r_paired_residues) %>%
+    ungroup() %>%
+    dplyr::select(-paired_regions)
+  
+  duplexes.df <- duplexes.df %>%
+      dplyr::filter(!is.na(L_paired_residues)) %>%
+      dplyr::filter(!is.na(R_paired_residues))
+  
+  # Calculate nucleotide frequencies for ech arm
+  L_seq <- DNAStringSet(duplexes.df$L_paired_residues)
+  R_seq <- DNAStringSet(duplexes.df$R_paired_residues)
+  R_seq <- Biostrings::reverse(R_seq) # Need to reverse the R arm paired sequence
+  
+  L_freq <- as.data.frame(oligonucleotideFrequency(L_seq, width = 1, as.prob=TRUE))
+  R_freq <- as.data.frame(oligonucleotideFrequency(R_seq, width = 1, as.prob=TRUE))
+  
+  colnames(L_freq) <- paste0(colnames(L_freq), "_L")
+  colnames(R_freq) <- paste0(colnames(R_freq), "_R")
+  duplexes.df <- dplyr::bind_cols(duplexes.df, L_freq, R_freq)
+  
+  # Purine content - assign maximal purine arm
+  duplexes.df <- duplexes.df %>%
+    rowwise() %>% 
+    mutate(L_pur = sum(c(A_L, G_L)), # purine total per hybrid
+            R_pur = sum(c(A_R, G_R))) %>%
+    mutate(max_pur = max(L_pur, R_pur)) %>%
+    mutate(maximal_purine_arm = case_when((max_pur == L_pur) ~ "L", # assign maximal purine arm
+                            TRUE ~ "R")) %>%
+    ungroup() %>%
+    select(-L_pur, -R_pur, -max_pur)
+  
+  # Reorient duplex frequencies based on maximal purine content (column "maximal_purine_arm")
+  nuc_freq_max_pur_arm.df <- duplexes.df %>%
+    dplyr::filter(maximal_purine_arm == "L") %>%
+    mutate(A_freq_max_pur_arm = A_L, A_freq_min_pur_arm = A_R,
+             G_freq_max_pur_arm = G_L, G_freq_min_pur_arm = G_R,
+             C_freq_max_pur_arm = C_L, C_freq_min_pur_arm = C_R,
+             U_freq_max_pur_arm = T_L, U_freq_min_pur_arm = T_R)
+  nuc_freq_min_pur_arm.df <- duplexes.df %>%
+    dplyr::filter(maximal_purine_arm == "R") %>%
+    mutate(A_freq_max_pur_arm = A_R, A_freq_min_pur_arm = A_L,
+             G_freq_max_pur_arm = G_R, G_freq_min_pur_arm = G_L,
+             C_freq_max_pur_arm = C_R, C_freq_min_pur_arm = C_L,
+             U_freq_max_pur_arm = T_R, U_freq_min_pur_arm = T_L)
+  
+  stopifnot(nrow(nuc_freq_reordered.df) == nrow(duplexes.df))
+    
+  nuc_freq_reordered.df <- rbind(nuc_freq_max_pur_arm.df, nuc_freq_min_pur_arm.df)
+  nuc_freq_reordered.df <- nuc_freq_reordered.df %>%
+    dplyr::select(-union(colnames(L_freq), colnames(R_freq)))
+    
+  return(nuc_freq_reordered.df)
+  
+}
+```
+
+
+```{r}
+plot_stacked_barchart <- function(data.df, column, group=NULL, simplify=TRUE) {
+  
+  if (!("id" %in% colnames(data.df))) {
+    data.df$id <- rownames(data.df)
+  } else {
+    next
+  }
+  
+  data_counts.df <- data.df %>%
+    dplyr::select(id, {{group}}, {{column}}) %>%
+    distinct() %>%
+    group_by({{group}}, {{column}}) %>%
+    summarise(counts = n()) %>%
+    arrange(desc({{column}})) %>%
+    mutate(percentage = scales::percent(counts / sum(counts))) %>%
+    mutate(percentage = as.numeric(sub("%","", percentage))) %>%
+    #mutate(percentage = counts*100 / sum(counts)) %>%
+    mutate(pos = cumsum(percentage) - percentage/2)
+  
+  
+  if (simplify) {
+    data_counts.df <- data_counts.df %>%
+      mutate(category = case_when((percentage < 1) ~ "Other",
+                                 (percentage >= 1) ~ {{column}}))
+    
+    data_counts.df <- data_counts.df %>%
+      group_by({{group}}, category) %>%
+      mutate(percentage = sum(percentage)) %>%
+      ungroup() %>%
+      dplyr::select(category, percentage, {{group}}) %>%
+      distinct() %>%
+      mutate(pos = cumsum(percentage) - percentage/2) 
+    
+  } else {
+    
+    data_counts.df <- data_counts.df %>%
+      mutate(category = {{column}})
+  }
+  
+  bar = ggplot() + geom_bar(aes(y = percentage, x = "", fill = category), data = data_counts.df,
+                            stat="identity", width = 0.5) +
+    geom_text(data = data_counts.df, aes(x = "", y = pos, label = paste0(round(percentage,1),"%")), size=3) +
+    facet_grid(cols = vars({{group}})) +
+    #facet_wrap(. ~ Experiment, scales = "free") +
+    paletteer::scale_fill_paletteer_d("rcartocolor::Earth", direction = -1) +
+    theme(legend.position="right", legend.direction="vertical",
+          legend.title = element_blank()) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Percentage") +
+    theme_minimal()
+  return(bar)
+  
+}
+
+```
+
+```{r}
+plot_nucleotide_frequency <- function(data) {
+
+  # Prepare for plotting
+  high_pur.df <- data %>% 
+    dplyr::select(id, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm)
+  
+  high_pur.df <- rowid_to_column(high_pur.df)
+  long_high_pur.df <- high_pur.df %>% 
+    gather(residue, frequency, A_freq_max_pur_arm:U_freq_max_pur_arm)
+  long_high_pur.df$arm = "High purine arm"
+  
+  low_pur.df <- data %>% 
+    dplyr::select(id, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm)
+  low_pur.df <- rowid_to_column(low_pur.df)
+  long_low_pur.df <- low_pur.df %>% 
+    gather(residue, frequency, A_freq_min_pur_arm:U_freq_min_pur_arm)
+  long_low_pur.df$arm = "Low purine arm"
+  
+  nuc_freq.df <- rbind(long_high_pur.df, long_low_pur.df)
+  nuc_freq.df$residue <- str_sub(nuc_freq.df$residue, 1,1) #trim string to get nucleotide (first) letter
+  
+  # Plot individual nucleotide frequencies
+  nuc_freq.gg <- ggplot(nuc_freq.df, aes(x=rowid, y=frequency, color = residue)) +
+    geom_smooth(se=F) + coord_flip() +
+    facet_grid(cols = vars(arm)) +
+    ylab("Frequency") +
+    xlab("ID") +
+    ylim(0, 1) +
+    scale_color_manual(values = c("darkgreen","dodgerblue4","goldenrod3","firebrick"))
+  
+  return(nuc_freq.gg)
+  
+}
+```
+#### Data
+
+```{r}
+# Clusters
+stau1.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/merged_clusters/merged_atlas.clusters.collapsed.mfe.tsv.gz")
+paris.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/all.atlas_clusters.gc.annotated.tsv.gz")
+
+
+paris.mfe.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz")
+
+# Structure annotation
+# stau1: all clusters
+stau1_forgi.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/merged_clusters/merged_atlas.clusters.collapsed.forgi.tsv.gz")
+# paris: only intra-genic 3'UTR
+paris_forgi.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/paris.3utr.all.atlas_clusters.gc.annotated.forgi.tsv.gz")
+
+# Clustered hybrids
+# stau1.hybrids.dt
+# paris.hybrids.dt
+```
+
+# Main figure
+
+## Fig 3 A
+
+### Summary of atlas (counts, locations, binding energies)
+
+***
+> STAU1 hiCLIP cluster counts
+
+The number of STAU1 clusters is `r nrow(stau1.dt)`
+
+```{r}
+nrow(stau1.dt)
+nrow(paris.dt)
+```
+
+***
+> STAU1 hiCLIP & PARIS overlaps
+
+```{r}
+ol <- find_valid_hybrid_overlaps(stau1.dt, paris.dt)
+stau1_paris.dt <- stau1.dt[unique(ol$queryHits)]
+nrow(stau1_paris.dt)
+
+```
+
+```{r}
+# The same cluster in STAU1 can overlap multiple PARIS clusters
+head(ol)
+```
+
+***
+> STAU1 hiCLIP locations
+
+```{r}
+stau1.region.df <- stau1.dt %>%
+  dplyr::select(name, L_region, R_region) %>%
+  pivot_longer(c(L_region, R_region), names_to = "arm", values_to = "region")
+
+plot_stacked_barchart(stau1.region.df, region, simplify = FALSE) +
+  theme_minimal_grid() + 
+  ggtitle("STAU1 duplex arms location")
+
+```
+
+
+```{r}
+stau1_duplex_regions.df <- stau1.dt %>%
+  rowwise() %>%
+  mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
+  ungroup()
+
+plot_stacked_barchart(stau1_duplex_regions.df, region_pairs, simplify = TRUE) +
+  ggtitle("STAU1 duplex locations") +
+  # scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(7)) +
+  theme_minimal_grid() 
+```
+
+
+***
+> STAU1 hiCLIP binding energy
+
+```{r}
+stau1.mfe.df <- pivot_longer(stau1.dt, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+stau1.mfe.df <- stau1.mfe.df %>%
+  mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
+                            (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
+
+stau1.mfe.gg <- ggplot(stau1.mfe.df, aes(x = MFE, linetype = Sample, color = Sample)) + 
+  geom_density() +
+  scale_linetype_manual(values=c("longdash", "solid")) +
+  scale_color_manual(values = colorRampPalette(c("#808080", "#004C99"))(2)) +
+  #scale_color_tableau(direction = -1) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  #theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)") +
+  ggtitle("STAU1 clusters binding energy") 
+
+stau1.mfe.gg
+# ggsave("stau1_clusters_MFE.pdf", stau1.mfe.gg, dpi=300, height = 7, width = 8)          
+```
+
+
+## Fig 3 B
+
+### Comparison with PARIS HEK293 (Lu et al. 2016)
+
+> Filter intragenic 3'UTR duplexes from both datasets
+
+To get more comparable datasets, we focused on the 3'UTR intragenic duplexes for both STAU1 and PARIS. 
+
+```{r}
+stau1.utr3.df <- stau1.dt %>%
+  dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3") %>%
+  mutate(Experiment = "STAU1")
+
+paris.utr3.df <- paris.mfe.dt %>%
+  dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3")%>%
+  mutate(Experiment = "PARIS")
+
+
+# Filter structure annotation files for the 3'UTR-3'UTR intragenic clusters
+utr3_stau1_forgi.df <- semi_join(stau1_forgi.dt, stau1.utr3.df, by = c("id" = "name"))
+utr3_paris_forgi.df <- semi_join(paris_forgi.dt, paris.utr3.df, by = c("id" = "name"))
+utr3_stau1_forgi.df$Experiment <- "STAU1"
+utr3_paris_forgi.df$Experiment <- "PARIS"
+
+# Append datasets
+utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df)
+```
+
+
+***
+> Overlap
+
+```{r}
+utr3_ol <- find_valid_hybrid_overlaps(stau1.utr3.df, paris.utr3.df)
+length(unique(utr3_ol$queryHits))
+```
+
+
+Clusters remaining in the STAU1 data: `{r} nrow(stau1.utr3.df)`
+Clusters remaining in the PARIS data: `{r} nrow(paris.utr3.df)`
+
+***
+> a. Stem lengths
+
+Compare the number of paired residues within each duplex
+
+```{r}
+# get base-pairs count
+utr3_stau1_forgi.df <- get_basepairs_count(utr3_stau1_forgi.df)
+utr3_paris_forgi.df <- get_basepairs_count(utr3_paris_forgi.df)
+
+utr3_forgi.df <- rbind(utr3_stau1_forgi.df, utr3_paris_forgi.df)
+utr3_bp.df <- utr3_forgi.df %>%
+  distinct(Experiment, id, total_paired)
+
+utr3_clusters.df <- left_join(utr3_clusters.df, utr3_bp.df, by = c("Experiment", c("name" = "id")))
+```
+
+```{r}
+total_paired.gg <- ggplot(utr3_clusters.df,
+                         aes(x = "", y=total_paired, fill=Experiment)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ggtitle("Number of base-pairs per duplex") +
+  ylab("Base-pairs per duplex (nt)")
+
+total_paired.gg
+```
+
+***
+> b. Hybrid spans
+
+```{r}
+utr3_clusters.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(duplex_span = R_start - L_end + 1) %>%
+  ungroup()
+
+ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  #scale_colour_brewer(palette="Dark2") +
+  scale_x_log10() + annotation_logticks() +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("Span (nt) ") +
+  ggtitle("Duplex spans")
+```
+
+
+***
+> c. Binding energy
+
+```{r}
+utr3_clusters_mfe.df <- pivot_longer(utr3_clusters.df, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+utr3_clusters_mfe.df <- utr3_clusters_mfe.df %>%
+  mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
+                            (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
+
+
+# Density plot
+mfe.dens.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Dark2") +
+  scale_linetype_manual(values=c("longdash", "solid")) +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  facet_grid(rows = vars(Experiment)) +
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("MFE (kcal/mol)") +
+  ggtitle("3'UTR-3'UTR clusters binding energy") 
+
+mfe.dens.gg
+
+# Violin plot
+utr3_clusters_mfe.df <- utr3_clusters_mfe.df %>%
+  dplyr::filter(Sample != "Shuffled control")
+
+
+mfe.violin.gg <- ggplot(utr3_clusters_mfe.df, aes(x = Experiment, y = MFE, fill = Experiment)) +
+  geom_violin() +
+  geom_boxplot(width=0.05) +
+  scale_fill_tableau() +
+  #scale_fill_brewer(palette="Blues") +
+  #scale_color_grey() +
+  #stat_summary(fun.y=median, geom="point", size=2, color="grey") +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("MFE (kcal/mol)") +
+  ggtitle("3'UTR-3'UTR clusters binding energy")
+
+
+mfe.violin.gg
+```
+
+***
+> d. Sequence content
+
+Calculate the nucleotide frequency for the paired residues in each dataset
+
+```{r}
+utr3_clusters.df <- get_nucleotide_frequency(utr3_clusters.df)
+utr3_clusters.df <- utr3_clusters.df %>%
+    dplyr::arrange(desc(Experiment), desc(total_paired))
+```
+
+Plot nucleotide frequency 
+
+
+```{r}
+nrow(utr3_clusters.df)
+```
+
+
+
+
+***
+> e. Alus
+
+# Supplementary figure
+
