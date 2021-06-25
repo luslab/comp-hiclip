@@ -673,70 +673,46 @@ utr3_clusters.df <- utr3_clusters.df %>%
 
 ```
 
-
-
 #### Extended symmetry clasification
 
 Description | Label
 ------------- | -------------
 Uninterrupted (no bulges or internal loops on either side) | Perfect duplex
-Symmetrical (vertical plane) | Symmetric
-Symmetrical (horizontal plane) | Symmetric
+Symmetrical (vertical axis, left-right mirror image) | Symmetric
+Balanced (equal number of internal loops of identical sizes, but not all of same size are opposite each other) | Balanced
 Non-Symmetrical | Asymmetry
 
 
 Obtain stem symmetry types:
 
 ```{r}
-# # Count the number of internal loops on either side of the arm
-# utr3_forgi.df <- utr3_forgi.df %>%
-#   replace(is.na(.), 0)
-# 
-# left_iloop_count.df <- utr3_forgi.df %>%
-#   group_by(Experiment, id) %>%
-#   dplyr::filter(element_type == "i" & L_start > 0) %>%
-#   count() %>%
-#   dplyr::rename(left_iloop_count = n)
-# 
-# right_iloop_count.df <- utr3_forgi.df %>%
-#   group_by(Experiment, id) %>%
-#   dplyr::filter(element_type == "i" & R_start > 0) %>%
-#   count() %>%
-#   dplyr::rename(right_iloop_count = n)
-# 
-# 
-# all_sl.df <- left_join(utr3_forgi.df, left_iloop_count.df, by = c("Experiment","id"))
-# all_sl.df <- left_join(all_sl.df, right_iloop_count.df, by = c("Experiment","id"))
-```
-
-
-
-```{r}
 # Get the complete set of internal loop wisdths for L and R arm 
+utr3_forgi.df <- utr3_forgi.df %>%
+    replace(is.na(.), 0) # replace NAs with zero to simplify filtering
+
 
 test <- utr3_forgi.df %>%
   dplyr::group_by(Experiment, id) %>%
   dplyr::filter(element_type == "i") %>%
-  summarize(L_i_widths = paste(sort((L_width)),collapse=","),
-            R_i_widths = paste(sort((R_width)),collapse=",")) %>%
+  summarize(L_i_widths_sorted = paste(sort((L_width)),collapse=","),
+            R_i_widths_sorted = paste(sort((R_width)),collapse=","),
+            L_i_widths = paste((L_width),collapse=","),
+            R_i_widths = paste((R_width),collapse=",")) %>%
   ungroup()
 
-
-test
+head(test)
 ```
 
 ```{r}
 utr3_clusters.df <- left_join(utr3_clusters.df, test, by = c("Experiment", c("name" = "id")))
 ```
 
-```{r}
-utr3_clusters.df
-```
+
 ```{r}
 symmetry.df <- utr3_clusters.df %>%
   rowwise() %>%
-  mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths == R_i_widths ~ "Symmetric",
-                                   stem_type == "Interrupted stem" & L_i_widths != R_i_widths ~ "Asymmetric",
+  mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths_sorted == R_i_widths_sorted ~ "Symmetric",
+                                   stem_type == "Interrupted stem" & L_i_widths_sorted != R_i_widths_sorted ~ "Asymmetric",
                                    stem_type == "Perfect duplex" ~ "Perfect duplex")) %>%
   ungroup()
 ```
@@ -747,5 +723,26 @@ symmetry.df <- utr3_clusters.df %>%
 plot_stacked_barchart(symmetry.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
   scale_fill_brewer(palette = "Blues") +
   theme_minimal_grid()
+```
+```{r}
+symmetry2.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths == R_i_widths ~ "Symmetric",
+                                   stem_type == "Interrupted stem" & L_i_widths_sorted != R_i_widths_sorted & L_i_widths != R_i_widths ~ "Asymmetric",
+                                   stem_type == "Interrupted stem" & L_i_widths != R_i_widths & L_i_widths_sorted == R_i_widths_sorted ~ "Balanced",
+                                   stem_type == "Perfect duplex" ~ "Perfect duplex")) %>%
+  ungroup()
+
+plot_stacked_barchart(symmetry2.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
+  scale_fill_brewer(palette = "Blues") +
+  theme_minimal_grid()
+```
+```{r}
+dplyr::filter(symmetry2.df, name == "C001-NBPF3:ENSG00000142794.18-NBPF3:ENSG00000142794.18")
+```
+
+```{r}
+dplyr::filter(utr3_forgi.df, id == "C001-NBPF3:ENSG00000142794.18-NBPF3:ENSG00000142794.18")
+
 ```
 
