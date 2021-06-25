@@ -36,22 +36,55 @@ library(Biostrings)
 #### Functions
 
 ```{r}
-get_basepairs_count <- function(data.df) {
+get_basepairs_count <- function(forgi.df) {
   
-  duplex_max.df <- data.df %>%
+  duplex_max.df <- forgi.df %>%
     group_by(id) %>%
     dplyr::filter(element_type == "s") %>%
     summarise(total_paired = sum(L_width)) %>%
     dplyr::select(id, total_paired)
   
-  data.df <- left_join(data.df, duplex_max.df, by = "id")
+  forgi.df <- left_join(forgi.df, duplex_max.df, by = "id")
   
-  return(data.df)
+  return(forgi.df)
+}
+
+get_unpaired_total <- function(forgi.df, group = NULL) {
+  
+  data_i.df <- forgi.df %>%
+    group_by({{group}}, id) %>%
+    dplyr::filter(element_type == "i") %>%
+    replace(is.na(.), 0) %>%
+    mutate(iloop_length_L = sum(L_width),
+           iloop_length_R = sum(R_width)) %>%
+    dplyr::select(id, {{group}}, iloop_length_L, iloop_length_R) %>%
+    ungroup() %>%
+    distinct() %>%
+    rowwise() %>%
+    mutate(total_unpaired = sum(iloop_length_L, iloop_length_R)) %>%
+    #dplyr::select(-c(iloop_length_L, iloop_length_R)) %>%
+    ungroup()
+   #data.df <- left_join(data.df, data_i.df, by = c(str(quote(group)), "id"))
+  
+  return(data_i.df)
+}
+
+get_paired_metric <- function(clusters.df, group = NULL) {
+  
+  paired_metric.df <- clusters.df %>%
+    dplyr::select({{group}}, name, total_paired, total_unpaired) %>%
+    replace(is.na(.), 0) %>%
+    distinct() %>%
+    rowwise() %>%
+    mutate(paired_to_total_ratio = total_paired*2/(total_paired*2 + total_unpaired)) %>%
+    ungroup() %>%
+    dplyr::select({{group}}, name, paired_to_total_ratio)
+  
+  return(paired_metric.df)
 }
 
 
-
-get_paired_residues <- function(id, L_db, L_sequence, R_db, R_sequence) {
+extract_paired_residues <- function(id, L_db, L_sequence, R_db, R_sequence) {
   
   l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
   # l_start <- l_brackets[1]
@@ -88,7 +121,7 @@ get_nucleotide_frequency <- function(duplexes.df) {
   # Extract the paired residues from each arm's sequence
   duplexes.df <- duplexes.df %>%
     rowwise() %>%
-    mutate(paired_regions = list(get_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
+    mutate(paired_regions = list(extract_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
     mutate(L_paired_residues = paired_regions$l_paired_residues,
            R_paired_residues = paired_regions$r_paired_residues) %>%
     ungroup() %>%
@@ -377,6 +410,8 @@ utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df)
 ```
 
 
+
+
 ***
 > Overlap
 
@@ -400,6 +435,7 @@ utr3_stau1_forgi.df <- get_basepairs_count(utr3_stau1_forgi.df)
 utr3_paris_forgi.df <- get_basepairs_count(utr3_paris_forgi.df)
 
 utr3_forgi.df <- rbind(utr3_stau1_forgi.df, utr3_paris_forgi.df)
+
 utr3_bp.df <- utr3_forgi.df %>%
   distinct(Experiment, id, total_paired)
 
@@ -511,7 +547,6 @@ plot_nucleotide_frequency(utr3_clusters.df)$plot +
 ```
 
 
-
 ***
 > e. Alus
 
@@ -519,6 +554,56 @@ plot_nucleotide_frequency(utr3_clusters.df)$plot +
 
 ***
 > Paired metric
+
+The *paired metric* is a measure that takes into account the ratio of paired residues to non-paired residues (bulges and internal loops) in each duplex. The formula is:
+
+$$
+\text{Paired Metric} = \frac{(n_p)*2}{(n_p)*2 + (L_u + R_u)}, \\
+\text{ } \\
+\text{where:} \\
+ n_p = \text{number of paired residues} \\
+ L_u = \text{number of unpaired residues left arm} \\
+ R_u = \text{number of unpaired residues right arm}
+$$
+
+Calculate the paired metric: 
+
+
+```{r}
+# Calculate paired metric
+unpaired.df <- get_unpaired_total(utr3_forgi.df, group = Experiment)
+utr3_clusters.df <- left_join(utr3_clusters.df, unpaired.df, by = c("Experiment", c("name" = "id")))
+
+
+paired_metric.df <- get_paired_metric(utr3_clusters.df, group = Experiment)
+utr3_clusters.df <- left_join(utr3_clusters.df, paired_metric.df, by = c("Experiment", "name"))
+
+```
+
+```{r}
+paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_to_total_ratio, color = Experiment)) + 
+  geom_density() +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  #facet_grid(rows = vars(Experiment)) +
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("Ratio (au)") +
+  ggtitle("3'UTR-3'UTR clusters paired metric") 
+
+  
+paired_metric.gg
+```
+```{r}
+dplyr::filter(utr3_clusters.df, Experiment == "PARIS")
+```
+```{r}
+dplyr::filter(unpaired.df, Experiment == "PARIS" & id == "C013-AL031428.1_LUZP1:ENSG00000169641.13_ENSG00000240553.1-AL031428.1_LUZP1:ENSG00000169641.13_ENSG00000240553.1")
+```
+```{r}
+unpaired.df <- get_unpaired_total(utr3_forgi.df, group = Experiment)
+
+```
 
 
 ***
