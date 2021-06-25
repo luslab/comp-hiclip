@@ -108,6 +108,55 @@ extract_paired_residues <- function(id, L_db, L_sequence, R_db, R_sequence) {
   return(results.ls)
   
 }
+
+
+correct_i_positions <- function(forgi.df) {
+  # Forgi output places all asymmetric internal loops and bulges on the left side, even when they should be on the right.
+  # If such cases exist, swap them to the right
+  # !!!THIS FUNCTION MUST BE APPLIED ON SINGLE DUPLEX STRUCTURES
+  
+  stem_L.df <- forgi.df %>%
+    group_by(Experiment, id) %>%
+    dplyr::filter(element_type == "s") %>%
+    mutate(stem_L_limit = max(L_end) ) %>%
+    dplyr::select(id, Experiment, stem_L_limit) %>%
+    ungroup() %>%
+    distinct()
+
+  forgi.df <- left_join(forgi.df, stem_L.df, by = c("Experiment", "id"))
+  
+  if (nrow(dplyr::filter(forgi.df, L_start > stem_L_limit)) == 0) {
+      
+    forgi.df <- forgi.df %>%
+        dplyr::select(-stem_L_limit)
+    
+  } else {
+      
+    forgi.df <- forgi.df %>%
+      rowwise() %>%
+      mutate(swap = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~  "yes", TRUE ~ "no"),
+              R_start = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~ as.double(L_start),
+                                  TRUE ~ as.double(R_start)),
+              R_end = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~ as.double(L_end),
+                                 TRUE ~ as.double(R_end)),
+              R_width = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~ as.double(L_width),
+                                   TRUE ~ as.double(R_width))) %>%
+      ungroup()
+    
+    forgi.df <- forgi.df %>%
+      rowwise() %>%
+      mutate(L_start = case_when(swap == "yes" ~ 0, 
+                                 TRUE ~ as.double(L_start)),
+             L_end = case_when(swap == "yes" ~ 0,
+                                   TRUE ~ as.double(L_end)),
+             L_width = case_when(swap == "yes" ~ 0,
+                                     TRUE ~ as.double(L_width))) %>%
+          ungroup() %>%
+          dplyr::select(-stem_L_limit, -swap)
+    
+      }
+  return(forgi.df)
+}
 ```
 
 
@@ -566,46 +615,137 @@ $$
  R_u = \text{number of unpaired residues right arm}
 $$
 
-Calculate the paired metric: 
 
+Correct internal loop and bulges positions:
+
+```{r}
+utr3_forgi.df <- correct_i_positions(utr3_forgi.df)
+```
+
+Calculate the paired metric: 
 
 ```{r}
 # Calculate paired metric
 unpaired.df <- get_unpaired_total(utr3_forgi.df, group = Experiment)
 utr3_clusters.df <- left_join(utr3_clusters.df, unpaired.df, by = c("Experiment", c("name" = "id")))
 
-
 paired_metric.df <- get_paired_metric(utr3_clusters.df, group = Experiment)
 utr3_clusters.df <- left_join(utr3_clusters.df, paired_metric.df, by = c("Experiment", "name"))
 
 ```
 
+
 ```{r}
-paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_to_total_ratio, color = Experiment)) + 
-  geom_density() +
+paired_metric_median <- utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Median = median(paired_to_total_ratio, na.rm=TRUE))
+
+paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_to_total_ratio, fill = Experiment)) + 
+  geom_density(alpha = 0.4) +
+  scale_fill_tableau() +
   scale_color_tableau() +
   theme_minimal_grid() + 
   #facet_grid(rows = vars(Experiment)) +
   theme(legend.position = "top") +
   ylab("Density") +
-  xlab("Ratio (au)") +
-  ggtitle("3'UTR-3'UTR clusters paired metric") 
+  xlab("Ratio (a.u.)") +
+  ggtitle("3'UTR-3'UTR clusters paired metric") +
+  geom_vline(data=paired_metric_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed")
 
   
 paired_metric.gg
 ```
-```{r}
-dplyr::filter(utr3_clusters.df, Experiment == "PARIS")
-```
-```{r}
-dplyr::filter(unpaired.df, Experiment == "PARIS" & id == "C013-AL031428.1_LUZP1:ENSG00000169641.13_ENSG00000240553.1-AL031428.1_LUZP1:ENSG00000169641.13_ENSG00000240553.1")
-```
-```{r}
-unpaired.df <- get_unpaired_total(utr3_forgi.df, group = Experiment)
-
-```
-
 
 ***
-> Symmetry
+> Symmetry classification
+The *symmetry classification* is a measure that takes into account the relative position and numbers of bulges and internal loops in each predicted stem-loop structure. 
+
+
+#### Proprtion of perfect duplexes
+
+```{r}
+utr3_clusters.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(stem_type = case_when(paired_to_total_ratio == 1 ~ "Perfect duplex",
+                               TRUE ~ "Interrupted stem")) %>%
+  ungroup()
+
+```
+
+
+
+#### Extended symmetry clasification
+
+Description | Label
+------------- | -------------
+Uninterrupted (no bulges or internal loops on either side) | Perfect duplex
+Symmetrical (vertical plane) | Symmetric
+Symmetrical (horizontal plane) | Symmetric
+Non-Symmetrical | Asymmetry
+
+
+Obtain stem symmetry types:
+
+```{r}
+# # Count the number of internal loops on either side of the arm
+# utr3_forgi.df <- utr3_forgi.df %>%
+#   replace(is.na(.), 0)
+# 
+# left_iloop_count.df <- utr3_forgi.df %>%
+#   group_by(Experiment, id) %>%
+#   dplyr::filter(element_type == "i" & L_start > 0) %>%
+#   count() %>%
+#   dplyr::rename(left_iloop_count = n)
+# 
+# right_iloop_count.df <- utr3_forgi.df %>%
+#   group_by(Experiment, id) %>%
+#   dplyr::filter(element_type == "i" & R_start > 0) %>%
+#   count() %>%
+#   dplyr::rename(right_iloop_count = n)
+# 
+# 
+# all_sl.df <- left_join(utr3_forgi.df, left_iloop_count.df, by = c("Experiment","id"))
+# all_sl.df <- left_join(all_sl.df, right_iloop_count.df, by = c("Experiment","id"))
+```
+
+
+
+```{r}
+# Get the complete set of internal loop wisdths for L and R arm 
+
+test <- utr3_forgi.df %>%
+  dplyr::group_by(Experiment, id) %>%
+  dplyr::filter(element_type == "i") %>%
+  summarize(L_i_widths = paste(sort((L_width)),collapse=","),
+            R_i_widths = paste(sort((R_width)),collapse=",")) %>%
+  ungroup()
+
+
+test
+```
+
+```{r}
+utr3_clusters.df <- left_join(utr3_clusters.df, test, by = c("Experiment", c("name" = "id")))
+```
+
+```{r}
+utr3_clusters.df
+```
+```{r}
+symmetry.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths == R_i_widths ~ "Symmetric",
+                                   stem_type == "Interrupted stem" & L_i_widths != R_i_widths ~ "Asymmetric",
+                                   stem_type == "Perfect duplex" ~ "Perfect duplex")) %>%
+  ungroup()
+```
+
+
+```{r}
+# Get percentages of stem_types
+plot_stacked_barchart(symmetry.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
+  scale_fill_brewer(palette = "Blues") +
+  theme_minimal_grid()
+```
 
