@@ -27,6 +27,8 @@ suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(reshape2))
 suppressPackageStartupMessages(library(broom))
 suppressPackageStartupMessages(library(ggpubr))
+suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(cowplot))
 suppressPackageStartupMessages(library(grid))
 suppressPackageStartupMessages(library(RColorBrewer))
 suppressPackageStartupMessages(library(cluster))
@@ -217,7 +219,10 @@ select_first_stem_loop <- function(forgi.df) {
   
   return(first_stem_loop.df)
 }
+```
 
+
+```{r}
 correct_iloop_positions <- function(stem_loop.df, reference_point = "h0") {
   
   # Forgi output places all asymmetric internal loops and bulges on the left side, even when they should be on the right.
@@ -457,8 +462,10 @@ calculate_paired_metric <- function(data.df) {
   return(data.df)
   
 }
+```
 
 
+```{r}
 plot_stacked_barchart <- function(data.df, column, group=NULL) {
   
   data_counts.df <- data.df %>%
@@ -472,9 +479,10 @@ plot_stacked_barchart <- function(data.df, column, group=NULL) {
     #mutate(percentage = counts*100 / sum(counts)) %>%
     mutate(pos = cumsum(percentage) - percentage/2)
   
-  bar = ggplot() + geom_bar(aes(y = percentage, x = "", fill = {{column}}), alpha = 0.8, data = data_counts.df,
+  bar = ggplot() + geom_bar(aes(y = percentage, x = "", fill = {{column}}), data = data_counts.df,
                             stat="identity", width = 0.5) +
-    geom_text(data = data_counts.df, aes(x = "", y = pos, label = paste0(round(percentage,1),"%")), size=3) +
+    ggrepel::geom_text_repel(data = data_counts.df, aes(x = "", y = pos, label = paste0(round(percentage,1),"%")), size=3, nudge_x = 0.3,
+                                 segment.size = 0.5, segment.color = '#515A5A') +
     facet_grid(cols = vars({{group}})) +
     #facet_wrap(. ~ Experiment, scales = "free") +
     paletteer::scale_fill_paletteer_d("rcartocolor::Earth", direction = -1) +
@@ -483,6 +491,7 @@ plot_stacked_barchart <- function(data.df, column, group=NULL) {
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
     ylab("Percentage") +
     theme_minimal()
+  
   return(bar)
   
 }
@@ -517,7 +526,7 @@ get_duplex_arms <- function(forgi, rnafold) {
 #### Functions: overlap with clusters from hybrid reads
 
 ```{r}
-#Functions that convert forgi output to genomic and transcriptomic coordinates
+# Functions that convert forgi output to genomic and transcriptomic coordinates
 
 resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
   
@@ -585,9 +594,13 @@ get_collapsed_clusters <- function(hybrids.dt, percent_overlap = 0.5) {
 > Annotation data
 
 ```{r}
-txdb <- paste0(getwd(),"/gencode.v33.txdb.sqlite")
+data.dir <- "/Users/iosubi/Documents/projects/computational_hiCLIP/rbps"
+```
+
+```{r}
+txdb <- paste0(data.dir,"/gencode.v33.txdb.sqlite")
 gencode.txdb <- AnnotationDbi::loadDb(txdb)
-human.gtf <- paste0(getwd(), "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_id used by Tosca
+human.gtf <- paste0(data.dir, "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_id used by Tosca
 
 ```
 
@@ -596,7 +609,7 @@ human.gtf <- paste0(getwd(), "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_i
 > Annotated peaks
 
 ```{r}
-bed.files <- list.files(getwd(),path = , pattern = "annot.bed.gz", full.names = TRUE)
+bed.files <- list.files(path = data.dir, pattern = "annot.bed.gz", full.names = TRUE)
 stau1.bedfile <- bed.files[str_detect(bed.files, "stau1")]
 print(stau1.bedfile)
 ```
@@ -606,8 +619,8 @@ print(stau1.bedfile)
 > Probablility profiles
 
 ```{r}
-prob.files <- list.files(getwd(), pattern = "rnaplfold_prob.tsv.gz", full.names = TRUE)
-shuff.files <- list.files(getwd(), pattern = "rnaplfold.shuffled_prob.tsv.gz", full.names = TRUE)
+prob.files <- list.files(data.dir, pattern = "rnaplfold_prob.tsv.gz", full.names = TRUE)
+shuff.files <- list.files(data.dir, pattern = "rnaplfold.shuffled_prob.tsv.gz", full.names = TRUE)
 
 shuffled <- TRUE
 ```
@@ -617,8 +630,8 @@ shuffled <- TRUE
 > Structure annotation data
 
 ```{r}
-forgi.df <- fread("stau1.forgi.tsv.gz", data.table = FALSE)
-rnafold.df <- fread("stau1.rnafold.tsv.gz", data.table = FALSE)
+forgi.df <- fread(paste0(data.dir,"/stau1.forgi.tsv.gz"), data.table = FALSE)
+rnafold.df <- fread(paste0(data.dir,"/stau1.rnafold.tsv.gz"), data.table = FALSE)
 rnafold.df <- rowid_to_column(rnafold.df, "id") # the order of rnafold output is the same as that of forgi output
 rnafold.df$id <- paste0("ID", rnafold.df$id, sep="")
 rnafold.df <- dplyr::select(rnafold.df, c(id, sequence, mea_structure))
@@ -659,7 +672,22 @@ peaks.gr[queryHits(overlap)]$type <- regions.gr[subjectHits(overlap)]$type
 ```{r}
 peak_regions.df <- as.data.frame(peaks.gr)
 peak_regions.df$id <- rownames(peak_regions.df)
-plot_stacked_barchart(peak_regions.df, column = type)
+peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type) +
+  guides(fill=guide_legend(title="Region")) +
+  #theme_minimal_grid() + 
+  theme_pander() + scale_colour_pander() +
+  #theme_bw() +
+  ggtitle("STAU1 binding peaks location") +
+  theme(legend.position = "right") +
+  scale_y_continuous(position = "right") +
+  coord_flip() +
+    geom_text(data = peak_regions.df, 
+              aes(x = 1.4, y = 92, label = paste0("n = ", nrow(peak_regions.df))), inherit.aes = FALSE, size = 4) 
+  
+
+peak_regions.gg
+
+# ggsave(paste0(data.dir, "/peak_regions.pdf"), peak_regions.gg, dpi = 300, width = 8, height = 3)
 ```
 
 ### STAU1 unpaired probability metaprofile

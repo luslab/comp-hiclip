@@ -271,7 +271,7 @@ plot_stacked_barchart <- function(data.df, column, group=NULL, simplify=TRUE) {
   
   bar = ggplot() + geom_bar(aes(y = percentage, x = "", fill = category), data = data_counts.df,
                             stat="identity", width = 0.5) +
-    geom_text(data = data_counts.df, aes(x = "", y = pos, label = paste0(round(percentage,1),"%")), size=3) +
+    geom_text(data = data_counts.df, aes(x = "", y = pos, label=paste0(round(percentage, 1),"%")), size = 3) + # label=paste0(round(percentage, 2),"%"))
     facet_grid(cols = vars({{group}})) +
     #facet_wrap(. ~ Experiment, scales = "free") +
     paletteer::scale_fill_paletteer_d("rcartocolor::Earth", direction = -1) +
@@ -280,6 +280,7 @@ plot_stacked_barchart <- function(data.df, column, group=NULL, simplify=TRUE) {
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
     ylab("Percentage") +
     theme_minimal()
+  
   return(bar)
   
 }
@@ -402,7 +403,66 @@ plot_stacked_barchart(stau1_duplex_regions.df, region_pairs, simplify = TRUE) +
   # scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(7)) +
   theme_minimal_grid() 
 ```
+#### Intragenic vs intergenic
 
+```{r}
+stau1.dt <- stau1.dt %>%
+  rowwise() %>%
+  mutate(type = case_when(L_gene_id == R_gene_id ~ "Intragenic",
+                          TRUE ~ "Intergenic"))
+
+plot_stacked_barchart(stau1.dt, column = type, simplify = FALSE)
+```
+
+
+***
+> PARIS locations
+
+#### Intragenic vs intergenic
+
+```{r}
+paris.dt <- paris.dt %>%
+  rowwise() %>%
+  mutate(type = case_when(L_gene_id == R_gene_id ~ "Intragenic",
+                          TRUE ~ "Intergenic"))
+
+plot_stacked_barchart(paris.dt, column = type, simplify = FALSE)
+```
+
+```{r}
+intra_paris.dt <- paris.dt %>%
+  dplyr::filter(type == "Intragenic")
+
+intra_paris_duplex_regions.df <- intra_paris.dt %>%
+  rowwise() %>%
+  mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
+  ungroup()
+
+paris_regions.gg <- plot_stacked_barchart(intra_paris_duplex_regions.df, region_pairs, simplify = TRUE) +
+  ggtitle("PARIS duplex locations") +
+  scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(9)) +
+  theme_minimal_grid() 
+
+#paris_regions.gg
+```
+
+```{r}
+# Filter out intronic regions 
+intra_paris.dt <- intra_paris.dt %>%
+  dplyr::filter(L_region != "intron" & R_region != "intron")
+
+intra_paris_duplex_regions.df <- intra_paris.dt %>%
+  rowwise() %>%
+  mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
+  ungroup()
+
+paris_regions.gg <- plot_stacked_barchart(intra_paris_duplex_regions.df, region_pairs, simplify = TRUE) +
+  ggtitle("PARIS duplex locations") +
+  scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(9)) +
+  theme_minimal_grid() 
+
+paris_regions.gg
+```
 
 ***
 > STAU1 hiCLIP binding energy
