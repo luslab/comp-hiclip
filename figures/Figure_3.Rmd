@@ -330,6 +330,7 @@ plot_nucleotide_frequency <- function(data.df) {
   
 }
 ```
+
 #### Data
 
 ```{r}
