@@ -49,6 +49,8 @@ theme_set(theme_bw() +
 #### Functions: metaprofiles and clustering
 
 ```{r}
+convert_probability <- function(x, na.rm = FALSE) (1 - x)
+
 get_sem <- function(x) sd(x)/sqrt(length(x))
 
 get_metaprofile_mean <- function(filename) {
@@ -56,6 +58,10 @@ get_metaprofile_mean <- function(filename) {
   prob.df <- read.csv(filename, sep="\t")
   colnames(prob.df) <- seq(1:ncol(prob.df)) - (ncol(prob.df)+1)/2
   prob.df <- drop_na(prob.df, 0) # remove peaks sites with NAs at the xl site
+  
+  # Convert unpaired probability to paired probability
+  prob.df <- prob.df %>%
+  mutate_if(is.numeric, convert_probability)
   
   prob.mean <- prob.df %>% 
     summarise(across(where(is.numeric), mean))
@@ -95,7 +101,7 @@ plot_metaprofile <- function(data.df) {
 run_kmeans <- function(data, k) {
   
   set.seed(123)
-  data.kmeans <- kmeans(data, centers = k, iter.max=20)
+  data.kmeans <- kmeans(data, centers = k, iter.max = 20)
   data <- augment(data.kmeans, data) #%>% arrange(.cluster)
   data <- data %>% add_count(.cluster, name = "cluster_size") %>%
     column_to_rownames(var = ".rownames")
@@ -113,8 +119,9 @@ plot_cluster_heatmap <- function(cluster.df, plot.title, plot.name) {
   mat_colors <- list(group = col_pal)
   names(mat_colors$group) <- unique(annotation.df$.cluster)
   heatmap <- pheatmap(clust.mx,cluster_cols = FALSE, cluster_rows = FALSE, show_rownames = FALSE,
-                      gaps_row = gaps_row, fontsize_col = 3.5,annotation_row = annotation.df, border_color=FALSE,
-                      annotation_colors = list(.cluster=mat_colors$group), angle_col="45",
+                      color =  colorRampPalette((brewer.pal(n = 7, name = "RdYlBu")))(100),
+                      gaps_row = gaps_row, fontsize_col = 3.5, annotation_row = annotation.df, border_color = FALSE,
+                      annotation_colors = list(.cluster = mat_colors$group), angle_col = "45",
                       main = plot.title, filename = plot.name)
   return(heatmap)
   
@@ -390,46 +397,6 @@ get_iloop_length_sum <- function(data.df) {
   data.df <- left_join(data.df, data_i.df, by = "id")
   
   return(data.df)
-}
-
-
-
-crop_stem <- function(data, idx, threshold = 20) {
-  
-  data.df <- data %>% 
-    dplyr::filter(idx == id)
-  data.df <- rowid_to_column(data.df, var = "position")
-  
-  stems.df <- data.df %>%
-    dplyr::filter(element_type == "s") %>%
-    mutate(stem_cumsum = cumsum(L_width))
-  
-  nonstems.df <- anti_join(data.df, stems.df, by = "position")
-  nonstems.df$stem_cumsum <- 0
-  nonstems.df$stem_cumsum_cut <- 0
-  
-  # update L_width so only the first 20 paired res are taken
-  stems.df <- stems.df %>%
-    mutate(L_width = case_when((stem_cumsum > threshold) ~ as.double(L_width) - (as.double(stem_cumsum) - threshold),
-                               TRUE ~ as.double(L_width))) %>%
-    mutate(stem_cumsum_cut = case_when((stem_cumsum > threshold) ~ threshold,
-                                    TRUE ~ as.double(stem_cumsum))) %>%
-    dplyr::filter(stem_cumsum_cut <= threshold)
-  
-  # rejoin
-  remerged.df <- rbind(stems.df, nonstems.df)
-  remerged.df <- dplyr::arrange(remerged.df, position)
-  
-  max_stem_cumsum <- stems.df %>%
-    slice_max(stem_cumsum_cut, n=1)
-  
-  max_stem_cumsum <- min(max_stem_cumsum$position)
-  # print(max_stem_cumsum)
-  
-  remerged.df <- remerged.df %>%
-    dplyr::filter(position <= max_stem_cumsum) 
-
-  return(remerged.df)
 }
 
 
@@ -730,7 +697,7 @@ peak_regions.gg
 
 
 ```{r}
-ggsave(paste0(data.dir, "/peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
+# ggsave(paste0(data.dir, "/peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
 
 ### STAU1 unpaired probability metaprofile
@@ -761,13 +728,12 @@ prob.df <- drop_na(prob.df)
 
 ```
 
-
 ```{r}
 prob.mean.df <- get_metaprofile_mean(prob.file)
 prob.mean.df$Sample <- prob.name
 
 if (shuffled == TRUE) {
-  #huff.file <- opt$shuffled
+
   shuff.mean.df <- get_metaprofile_mean(shuff.file)
   shuff.mean.df$Sample <- "Control (shuffled)"
   data.df <- rbind(prob.mean.df, shuff.mean.df)
@@ -776,7 +742,10 @@ if (shuffled == TRUE) {
   data.df <- prob.mean.df
   data.df$peaks_count <- nrow(prob.df)
 }
+```
 
+
+```{r}
 # plot the mean probability and standard error of the mean
 profile.gg <- plot_metaprofile(data.df)
 profile.gg
@@ -784,8 +753,10 @@ profile.gg
 
 
 ```{r}
-ggsave(paste0(data.dir,"/",prefix,"_metaprofile.pdf"), profile.gg, width = 4, height = 4)
-ggsave(paste0(data.dir,"/",prefix,"_metaprofile.png"), profile.gg, width = 4, height = 4)
+# ggsave(paste0(data.dir,"/",prefix,"_metaprofile.pdf"), profile.gg, width = 4, height = 4)
+
+#ggsave(paste0(data.dir,"/",prefix,"_metaprofile_paired.pdf"), profile.gg, width = 4, height = 4)
+
 ```
 
 
@@ -809,6 +780,10 @@ Number of clusters for K-means clustering: `{r} n_clusters`
 
 # Focus on the -50 to +75 nt relative to peak starts:
 prob.df <- prob.df %>% dplyr::select("-50":"75")
+
+# Convert unpaired probablity to paired probability
+prob.df <- prob.df %>%
+  mutate_if(is.numeric, convert_probability)
 
 # Focus on the +10 to +75 nt relative to peak starts:
 prob_downstream.df <- prob.df %>% dplyr::select("10":"75")
@@ -839,7 +814,7 @@ prob.df <- prob.df %>%
 
 
 ```{r}
-plot_cluster_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(data.dir,"/",prefix,"_kmeans_minus50.png"))
+plot_cluster_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(data.dir,"/",prefix,"_kmeans_minus50_paired.png"))
 ```
 
 
@@ -852,19 +827,16 @@ prob.df <- rownames_to_column(prob.df, var = "id")
 
 Metaprofiles for each cluster: 
 
-```{r fig3b1, fig.height = 4.5, fig.width = 1, fig.align = "center"}
-clusters.gg
-#ggsave(paste0(data.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg)
-#ggsave(paste0(data.dir,"/",prefix,"_cluster_profiles.png"), clusters.gg)
 
-```
 
 ```{r}
 clusters.gg <- clusters.gg +
   scale_y_continuous(position = "right") +
   theme(strip.background = element_blank(), strip.text.x = element_blank())
 
-ggsave(paste0(data.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 12)
+clusters.gg
+
+# ggsave(paste0(data.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 12)
 ```
 
 Clusters 1,3,4 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
@@ -931,12 +903,6 @@ length(unique(all_sl.df$id))
 
 ***
 > Description of the stem-loops near the xl site
-
-```{r}
-length(unique(all_sl.df$id))
-
-```
-
 
 Obtain number of base-pairs for each structure (ID) and filter out stem-loops with *less than 10 bp*. 
 
@@ -1053,7 +1019,7 @@ all_sl.df <- get_duplex_arms(all_sl.df, rnafold.df)
 
 ```{r}
 # check all structures have arms db added
-TRUE %in% is.na(all_sl.df$L_db)
+stopifnot(TRUE %in% is.na(all_sl.df$L_db) == FALSE)
 ```
 
 ```{r}
@@ -1145,8 +1111,13 @@ stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_ge
 
 ```{r}
 # Export tables
-# write_tsv(forgi.reformated.gc.df, paste0(prefix, "_gc.txt"), quote = FALSE)
-# write_tsv(forgi.reformated.tx.df, paste0(prefix, "_tx.txt"), quote = FALSE)
+#write_tsv(forgi.reformated.gc.df, paste0(prefix, "_gc.txt"), quote = FALSE)
+#write_tsv(forgi.reformated.tx.df, paste0(prefix, "_tx.txt"), quote = FALSE)
+```
+
+
+```{r}
+original <- forgi.reformated.gc.df
 ```
 
 ***
