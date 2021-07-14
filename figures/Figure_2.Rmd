@@ -471,10 +471,11 @@ plot_pie_chart <- function(data.df, column, group = NULL) {
   pie <- ggplot(data_counts.df, aes(x="", y=counts, fill={{column}})) +
     geom_bar(stat = "identity", width = 0.05, color="black") +
     coord_polar("y", start=0) +
-    scale_fill_brewer(palette = "Blues", direction = -4) +
+    scale_fill_brewer(palette = "Blues", direction = -1) +
     facet_grid(cols = vars({{group}})) +
-    ggrepel::geom_label_repel(aes(label = paste0(percentage,"%")), size=3.5, show.legend = F, position = position_stack(vjust = .5)) +
-    ggtitle(paste0("Structure types within ", d," nt of peak starts\nClusters 1, 3, 4: ", "n = ", sum(data_counts.df$counts),""))+
+    ggrepel::geom_label_repel(aes(label = paste0(percentage,"%")), size = 3.5, show.legend = FALSE, position = position_stack(vjust = .5)) +
+    ggrepel::geom_label_repel(aes(label = counts), size = 2.5, show.legend = FALSE, position = position_stack(vjust = .3)) +
+    ggtitle(paste0("Clusters 1, 3, 4: ", "n = ", sum(data_counts.df$counts),""))+
     guides(fill = guide_legend(title = "Structure type")) +
     theme_void() # remove background, grid, numeric labels
   
@@ -484,7 +485,6 @@ plot_pie_chart <- function(data.df, column, group = NULL) {
 
 
 ```
-
 
 
 #### Functions: overlap with clusters from hybrid reads
@@ -550,7 +550,7 @@ get_duplex_arms <- function(forgi, rnafold) {
 
 ```
 
-#### Functions: clustering
+#### Functions: hybrids clustering
 
 ```{r}
 get_collapsed_clusters <- function(hybrids.dt, percent_overlap = 0.5) {
@@ -584,11 +584,10 @@ get_collapsed_clusters <- function(hybrids.dt, percent_overlap = 0.5) {
 data.dir <- "/Users/iosubi/Documents/projects/computational_hiCLIP/rbps"
 ```
 
-```{r}
+```{r warning=FALSE}
 txdb <- paste0(data.dir,"/gencode.v33.txdb.sqlite")
 gencode.txdb <- AnnotationDbi::loadDb(txdb)
 human.gtf <- paste0(data.dir, "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_id used by Tosca
-
 ```
 
 
@@ -922,7 +921,7 @@ all_sl.df <- all_sl.df %>%
 After filtering out stems with less than 10 bp, there are `r length(unique(first_sl.df$id))` remaining predicted structures.
 
 ```{r}
-# structures
+# Number of stem-loops
 length(unique(all_sl.df$id))
 ```
 
@@ -934,11 +933,11 @@ all_sl.df <- all_sl.df %>%
 ```
 
 ```{r}
-# peaks
+# Number of peaks with stem-loops
 length(unique(all_sl.df$peak_id))
 ```
 
-## Fig 2 C
+## Fig 2 D
 
 ### Examples of STAU1 stem-loops predicted from nonhybrid reads
 
@@ -947,7 +946,7 @@ length(unique(all_sl.df$peak_id))
 dplyr::filter(first_sl.df, id == "ID17880")
 ```
 
-## Fig 2 D
+## Fig 2 E
 
 ### Overlap with duplexes from STAU1 hybrid reads
 
@@ -1077,8 +1076,6 @@ stopifnot(abs(arms.df$R_max - arms.df$R_min) ==
 ```
 
 ```{r}
-# Write out tables
-
 # Transcriptomic (similar to Tosca hybrids table):
 forgi.reformated.tx.df <- data.frame(id=arms.df$id, name=arms.df$name, orientation = NA, type = "intragenic", hybrid_selection = NA, L_seqnames = arms.df$fasta_id,
                                      L_read_start = arms.df$L_min, L_read_end = arms.df$L_max, L_start = arms.df$L_tx_start, L_end = arms.df$L_tx_end, L_width = NA, L_strand = "+", 
@@ -1107,17 +1104,6 @@ stopifnot(abs(forgi.reformated.gc.df$L_genomic_end - forgi.reformated.gc.df$L_ge
             abs(forgi.reformated.gc.df$L_end - forgi.reformated.gc.df$L_start))
 stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_genomic_start) ==
             abs(forgi.reformated.gc.df$R_end - forgi.reformated.gc.df$R_start))
-```
-
-```{r}
-# Export tables
-#write_tsv(forgi.reformated.gc.df, paste0(prefix, "_gc.txt"), quote = FALSE)
-#write_tsv(forgi.reformated.tx.df, paste0(prefix, "_tx.txt"), quote = FALSE)
-```
-
-
-```{r}
-original <- forgi.reformated.gc.df
 ```
 
 ***
@@ -1190,7 +1176,7 @@ nonhyb_count <- nrow(count(all_sl.df, id))
 hyb_clusters_count <- nrow(all.collapsed)
 nonhyb_ol_count <- nrow(nonhyb_overlapped.dt)
 
-olap_counts <- c(Nonhybrids = nonhyb_count-nonhyb_ol_count, Hybrid.clusters = hyb_clusters_count-nonhyb_ol_count, "Nonhybrids&Hybrid.clusters" = nonhyb_ol_count)
+olap_counts <- c(Predicted_stem_loop_duplexes_min_10_bp = nonhyb_count-nonhyb_ol_count, hiCLIP_duplexes = hyb_clusters_count-nonhyb_ol_count, "Predicted_stem_loop_duplexes_min_10_bp&hiCLIP_duplexes" = nonhyb_ol_count)
 
 
 # pdf(file=pase0(data.dir,"/overlap.pdf"), onefile=FALSE) 
@@ -1202,7 +1188,7 @@ upset(fromExpression(olap_counts),
       text.scale = 1.1,
       point.size = 2.8,
       line.size = 1,
-      mainbar.y.label = "Overlaps",
+      mainbar.y.label = "Intersection cont",
       sets.x.label = "Total duplexes",
       empty.intersections = "off"
       )
@@ -1229,8 +1215,8 @@ nonhyb_nolinker_overlapped.dt <- nonhyb.dt[unique(ol_nolinker$queryHits)]
 
 ```{r}
 # nonhyb_count <- nrow(count(all_sl.df, id))
-linker_clusters_count <- nrow(linker.collapsed)
-nolinker_clusters_count <- nrow(nolinker.collapsed)
+linker_clusters_count <- nrow(linker.collapsed.dt)
+nolinker_clusters_count <- nrow(nolinker.collapsed.dt)
 
 nonhyb_linker_ol_count <- nrow(nonhyb_linker_overlapped.dt)
 nonhyb_nolinker_ol_count <- nrow(nonhyb_nolinker_overlapped.dt)
@@ -1250,27 +1236,12 @@ upset(fromExpression(olap_counts),
 
 ```
 
-
-
- 
-### Export data
-
-```{r}
-# forgi
-fwrite(all_sl.df, "stau1_nonhybrid.processed.forgi.tsv.gz", sep = "\t", col.names = TRUE)
-
-# hybrids
-write_tsv(forgi.reformated.gc.df, "stau1_nonhybrid.gc.txt", quote = FALSE)
-write_tsv(forgi.reformated.tx.df, "stau1_nonhybrid.tx.txt", quote = FALSE)
-```
-
-
-# Supplementary figure / Extras
+## Fig 2 C
 
 ***
 > Types of structures downstream STAU1 peaks
 
-The *Stem and xl unpaired* (37.1%) were further characterised. 
+The *Stem and xl unpaired* were further characterised. 
 
 ```{r}
 #plot_stacked_barchart(forgi.df, duplex_type)
@@ -1285,161 +1256,46 @@ forgi.df <- forgi.df %>%
 
 #plot_stacked_barchart(forgi.df, structure_definition)
 ```
-```{r}
-# as pie chart
-pie.gg <- plot_pie_chart(forgi.df, structure_definition)
-pie.gg  
-# ggsave(paste0(data.dir,"/pie.pdf"), pie.gg, dpi = 300, width = 4, height = 4 )
-```
 
-***
-> Label structures based on number of base-paired residues
 
 ```{r}
-all_sl.df <- all_sl.df %>%
-  group_by(id) %>%
-  mutate(stem_label = case_when((total_paired < 20) ~ "< 20 nt",
-                                 (total_paired >= 20) ~ ">= 20 nt")) %>%
+z.df <- forgi.df %>%
+  rowwise() %>%
+  mutate(structure_definition = case_when(structure_definition == "Valid putative stem-loop structures" & id %in% all_sl.df$peak_id ~ "Peaks with predicted stem-loop duplexes >= 10 bp",
+                                          structure_definition == "Valid putative stem-loop structures" & !(id %in% all_sl.df$peak_id) ~ "Peaks with predicted stem-loop duplexes < 10 bp",
+                                          structure_definition == "No structure or the first stem\nspans a multi-loop" ~ "Peaks with no predicted stem-loop duplexes")) %>%
   ungroup()
-```
 
-***
-> Hairpin length
+pie.gg <- plot_pie_chart(z.df, structure_definition)
+pie.gg  
+# ggsave(paste0(data.dir,"/pie.pdf"), pie.gg, dpi = 300, width = 6, height = 6 )
+```
+## Fig 2 E
+
+### Hairpin length
 
 Hairpin lengths for stem-loops >= 10 bp
 
 ```{r}
 hairpin.df <- all_sl.df %>%
   dplyr::filter(element_type == "h")
-```
 
-
-```{r}
 h0.gg <- ggplot(hairpin.df, aes(x=hairpin_length)) + 
-  geom_histogram(binwidth=1, color="black", fill = "white") +
-  #facet_grid(~stem_label) +
+  geom_histogram(binwidth=1, color="black", fill = "#DEEBF7") +
   theme_minimal()+
-  ggtitle("Distribution of hairpin loop sizes") +
+  #ggtitle("Distribution of hairpin loop sizes") +
   xlab("Hairpin loop size (nt)") +
   ylab("Count")
 
 h0.gg
-```
-```{r}
-#ggsave(paste0(data.dir,"/hairpin_length.pdf"), h0.gg, width = 4, height = 4, dpi = 300)
+# ggsave(paste0(data.dir,"/hairpin_length.pdf"), h0.gg, width = 4, height = 4, dpi = 300)
 ```
 
-
-
-Calculate the paired metric: 
-
-```{r}
-get_unpaired_total <- function(forgi.df, group = NULL) {
-  
-  data_i.df <- forgi.df %>%
-    group_by({{group}}, id) %>%
-    dplyr::filter(element_type == "i") %>%
-    replace(is.na(.), 0) %>%
-    mutate(iloop_length_L = sum(L_width),
-           iloop_length_R = sum(R_width)) %>%
-    dplyr::select(id, {{group}}, iloop_length_L, iloop_length_R) %>%
-    ungroup() %>%
-    distinct() %>%
-    rowwise() %>%
-    mutate(total_unpaired = sum(iloop_length_L, iloop_length_R)) %>%
-    #dplyr::select(-c(iloop_length_L, iloop_length_R)) %>%
-    ungroup()
-   #data.df <- left_join(data.df, data_i.df, by = c(str(quote(group)), "id"))
-  
-  return(data_i.df)
-}
-
-```
-
-
-```{r}
-# calculate internal loops sum
-iloop.df <- get_unpaired_total(all_sl.df)
-```
-
-```{r}
-all_sl.df <- left_join(all_sl.df, iloop.df, by = "id")
-```
-
-```{r}
-get_paired_metric <- function(forgi.df, group = NULL) {
-  
-  paired_metric.df <- forgi.df %>%
-    dplyr::select({{group}}, id, total_paired, total_unpaired) %>%
-    replace(is.na(.), 0) %>%
-    distinct() %>%
-    rowwise() %>%
-    mutate(paired_to_total_ratio = total_paired*2/(total_paired*2 + total_unpaired)) %>%
-    ungroup() %>%
-    dplyr::select({{group}}, id, paired_to_total_ratio)
-  
-  return(paired_metric.df)
-}
-```
-
-```{r}
-test.df <- get_paired_metric(all_sl.df)
-```
-
-
-```{r}
-test.df$Experiment <- "Nonhybrids"
-```
-
-
-
-
-```{r}
-ratio.gg <- ggplot(distinct(test.df, Experiment,id, paired_to_total_ratio) , aes(x="",y=paired_to_total_ratio, fill = Experiment)) + 
-  geom_violin() +
-  scale_fill_brewer(palette = "Blues", direction = -4) +
-  theme_minimal() +
-  geom_boxplot(width=0.05, fill="white") +
-  ggtitle("Paired metric") +
-  theme_minimal()
-
-ratio.gg
-```
-```{r}
-#ggsave(paste0(data.dir, "/paired_ratio.pdf"), ratio.gg, width = 3, height = 5)
-```
-
-## Cropped stem version
-
-![Descriptive features](pm.png)
-
-***
-> Paired metric
-
-The *paired metric* is a measure that takes into account the ratio of paired residues to non-paired residues (bulges and internal loops) in each duplex. The formula is:
-
-$$
-\text{Paired Metric} = \frac{(n_p)*2}{(n_p)*2 + (L_u + R_u)}, \\
-\text{ } \\
-\text{where:} \\
- n_p = \text{number of paired residues} \\
- L_u = \text{number of unpaired residues left arm} \\
- R_u = \text{number of unpaired residues right arm}
-$$
-
-Before caluclating the paired metric, for each structure, we subset the structure containing and up to 20 base-pairs long.
-A similar approach will be applied to the STAU1 hybrids data and PARIS to allow comparison of the structural context most proximal to STAU1 binding sites versus a non-STAU1 specifc atlas of in vivo structures + to compare STAU1 predicted structures from nonhybrid reads with the duplexes from hybrid reads.
-
-```{r}
-res.ls <- lapply(unique(all_sl.df$id), crop_stem, data = all_sl.df)
-all_sl.df <- rbindlist(res.ls)
-```
-
-Before cropping, the median number of bp per stem-loop structure is `r median(first_sl.df$total_paired)`.
+The median number of bp per stem-loop structure is `r median(first_sl.df$total_paired)`.
 The mean is `r mean(first_sl.df$total_paired)`bp.
 The longest stem is `r max(first_sl.df$total_paired)` bp long.
 
-The following plots show the distributions of number of bp per structure before, and after cutting the stem. 
+The following plots show the distributions of number of bp per structure
 
 ```{r}
 tot.gg <- ggplot(dplyr::distinct(all_sl.df, id, stem_label, total_paired), aes(x=total_paired)) + 
@@ -1447,127 +1303,24 @@ tot.gg <- ggplot(dplyr::distinct(all_sl.df, id, stem_label, total_paired), aes(x
   ylim(0, 5000)+
   xlim(0, 40)+
   theme_minimal()+
-  ggtitle("Distribution of total base-pairs per predicted stem-loop (before cutting the stem) ")
-
-
-max_segmented.df <- all_sl.df %>%
-  group_by(id) %>%
-  slice_max(stem_cumsum_cut, n=1) %>%
-  ungroup() %>%
-  distinct(id, stem_label, stem_cumsum, stem_cumsum_cut, total_paired)
-
-
-cut.gg <- ggplot(max_segmented.df, aes(x=stem_cumsum_cut)) + 
-  geom_histogram(binwidth=1, color="black", fill = "white") +
-  ylim(0, 5000)+
-  xlim(0, 40)+
-  theme_minimal()+
-  ggtitle("Distribution of total base-pairs per predicted stem-loop\n(after cutting the stem to max 20 bp)")
-
-ggpubr::ggarrange(tot.gg, cut.gg, 
-          labels = c("", ""),
-          nrow = 2)
-
+  ggtitle("Total base-pairs per predicted stem-loop (before cutting the stem) ")
+tot.gg
 ```
-Calculate the paired metric: 
+
+
+### Export all tables
 
 ```{r}
-# calculate internal loops sum
-all_sl.df <- get_iloop_length_sum(all_sl.df)
-```
+# forgi
+fwrite(all_sl.df, paste0(data.dir,"/stau1_nonhybrid.processed.forgi.tsv.gz"), sep = "\t", col.names = TRUE)
 
-```{r}
-all_sl.df
-```
-
-```{r}
-all_sl.df <- calculate_paired_metric(all_sl.df)
-
-ratio.gg <- ggplot(distinct(all_sl.df, id, paired_to_total_ratio) , aes(x=paired_to_total_ratio)) + 
-  geom_density(color="black") +
-  ggtitle("Distribution of paired metric values - STAU1 nonhybrids") +
-  theme_minimal()
-
-ratio.gg
+# hybrids
+write_tsv(forgi.reformated.gc.df, paste0(data.dir,"/stau1_nonhybrid.gc.txt"), quote = FALSE)
+write_tsv(forgi.reformated.tx.df, paste0(data.dir,"/stau1_nonhybrid.tx.txt"), quote = FALSE)
 ```
 
 
-***
-> Symmetry classification
-
-The *symmetry classification* is a measure that takes into account the relative position and numbers of bulges and internal loops in each predicted stem-loop structure. 
-
-We classify stem-loops as:
-
-Description | Label
-------------- | -------------
-Uninterrupted (no bulges or internal loops on either side) | Perfect duplex
-Symmetrical (vertical plane) | Symmetric - vertical
-Symmetrical (horizontal plane) | Symmetric - horizontal
-Non-Symmetrical | Asymmetry
-
-
-Obtain stem symmetry types:
-
-```{r}
-left_iloop_count.df <- all_sl.df %>%
-  group_by(id) %>%
-  dplyr::filter(element_type == "i" & L_start > 0) %>%
-  count()
-
-left_iloop_count.df <- left_iloop_count.df %>%
-  dplyr::rename(left_iloop_count = n)
-
-right_iloop_count.df <- all_sl.df %>%
-  group_by(id) %>%
-  dplyr::filter(element_type == "i" & R_start > 0) %>%
-  count()
-
-right_iloop_count.df <- right_iloop_count.df %>%
-  dplyr::rename(right_iloop_count = n)
-
-all_sl.df <- left_join(all_sl.df, left_iloop_count.df, by = "id")
-all_sl.df <- left_join(all_sl.df, right_iloop_count.df, by = "id")
-```
-
-
-```{r warning=FALSE}
-
-all_sl.df <- all_sl.df %>%
-    replace(is.na(.), 0) # replace NAs with zero to simplify filtering
-
-res.df <- all_sl.df %>%
-  group_by(id) %>%
-  mutate(stem_type = case_when(!any(element_type == "i") ~ "Perfect duplex",
-                               TRUE ~ "Interrupted stem")) %>%
-  ungroup()
-
-symmetry.df <- res.df %>%
-  group_by(id) %>%
-  dplyr::filter(element_type == "i") %>%
-  mutate(stem_type = case_when(stem_type == "Interrupted stem" & (right_iloop_count == left_iloop_count) & 
-                                 sort(unique(L_width)) == sort(unique(R_width)) ~ "Symmetric",
-                               stem_type == "Interrupted stem" & (right_iloop_count == left_iloop_count) & 
-                                 sort(unique(L_width)) != sort(unique(R_width)) ~ "Asymmetric",
-                               stem_type == "Interrupted stem" & (right_iloop_count != left_iloop_count) ~ "Asymmetric")) %>%
-  ungroup() %>%
-  dplyr::select(id, stem_type) %>%
-  distinct()
-
-perfect_duplex.df <- res.df %>%
-  dplyr::filter(stem_type == "Perfect duplex") %>%
-  dplyr::select(id, stem_type) %>%
-  distinct()
-
-symmetry.df <- rbind(symmetry.df, perfect_duplex.df)
-```
-
-```{r}
-# Get percentages of stem_types
-plot_stacked_barchart(symmetry.df, column = stem_type)
-```
-
-# Other RBPs
+# Supplementary figure / Other RBPs
 
 ## TDP43
 
