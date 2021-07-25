@@ -40,8 +40,9 @@ suppressPackageStartupMessages(library(GenomicFeatures))
 suppressPackageStartupMessages(library(rtracklayer))
 suppressPackageStartupMessages(library(UpSetR))
 suppressPackageStartupMessages(library(parallel))
-# suppressPackageStartupMessages(library(Biostrings))
-
+suppressPackageStartupMessages(library(viridis))
+library(gginnards)
+library(factoextra)
 theme_set(theme_bw() +
             theme(legend.position = "top"))
 ```
@@ -97,7 +98,10 @@ plot_metaprofile <- function(data.df) {
   
   return(profile.gg)
 }
+```
 
+
+```{r}
 run_kmeans <- function(data, k) {
   
   set.seed(123)
@@ -108,8 +112,10 @@ run_kmeans <- function(data, k) {
   return(data)
   
 }
+```
 
 
+```{r}
 plot_cluster_heatmap <- function(cluster.df, plot.title, plot.name) {
   
   cluster.df <- cluster.df %>% arrange(.cluster)
@@ -119,21 +125,26 @@ plot_cluster_heatmap <- function(cluster.df, plot.title, plot.name) {
   mat_colors <- list(group = col_pal)
   names(mat_colors$group) <- unique(annotation.df$.cluster)
   heatmap <- pheatmap(clust.mx,cluster_cols = FALSE, cluster_rows = FALSE, show_rownames = FALSE,
-                      color =  colorRampPalette((brewer.pal(n = 7, name = "RdYlBu")))(100),
+                      #color =  colorRampPalette((brewer.pal(n = 7, name = "RdYlBu")))(100),
+                      color = turbo(200,direction = -1),
                       gaps_row = gaps_row, fontsize_col = 3.5, annotation_row = annotation.df, border_color = FALSE,
                       annotation_colors = list(.cluster = mat_colors$group), angle_col = "45",
                       main = plot.title, filename = plot.name)
   return(heatmap)
   
 }
+```
 
 
+```{r}
 # cl = dataframe containing nt position probabilities +  a "cluster" column and a "cluster_size" column
 plot_cluster_mean <- function(cl, left_flank) {
   
   clust.m <- melt(cl)
   clust.mean <- dcast(clust.m, cluster ~ variable, mean)
+  
   clust.mean.m <- melt(clust.mean, id=c("cluster","cluster_size")) # arrange the df to long format for facet_wrap plotting
+  
   clust.mean.profiles <- ggplot(data = clust.mean.m, aes(x = as.numeric(variable)-left_flank, y = value, color=cluster)) +
     geom_line() +
     geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
@@ -145,7 +156,7 @@ plot_cluster_mean <- function(cl, left_flank) {
     theme(text = element_text(size=14),
           strip.text = element_text(size=10, face = "bold"),
           plot.title = element_text(size = 14, face = "bold"),
-          axis.text.x = element_text(angle=60, hjust = 1)) +
+          axis.text.x = element_text(angle = 60, hjust = 1)) +
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
   # rename legend title and add the number of observations in each cluster:
   clust.mean.profiles <- clust.mean.profiles +
@@ -345,8 +356,8 @@ separate_stem_loops <- function(forgi.df) {
   multi.df <- rbind(first_multi.df, second_multi.df)
   
   multi.df <- multi.df %>%
-    replace(is.na(.), 0) %>%
-    dplyr::select(-first_m, -h0_pos, -h1_pos, -first_stem_end, -second_stem_end)
+    replace(is.na(.), 0) #%>%
+    #dplyr::select(-first_m, -h0_pos, -h1_pos, -first_stem_end, -second_stem_end)
   
   return(multi.df)
 }
@@ -451,7 +462,7 @@ plot_stacked_barchart <- function(data.df, column, group=NULL) {
     ylab("Percentage") +
     theme_minimal()
   
-  return(bar)
+  return(list(plot = bar, data = data_counts.df))
   
 }
 
@@ -479,7 +490,7 @@ plot_pie_chart <- function(data.df, column, group = NULL) {
     guides(fill = guide_legend(title = "Structure type")) +
     theme_void() # remove background, grid, numeric labels
   
-  return(pie)
+  return(list(plot = pie, data = data_counts.df))
 }
 
 
@@ -629,6 +640,18 @@ xl <- 1  # position of the crosslink sites in the forgi and RNAfold outputs
 
 ```
 
+***
+> Hybrids data
+
+```{r}
+# Linker
+linker.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets/linker/linker.clusters.mfe.tsv.gz")
+
+# No linker
+nolinker.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets/nolinker/all.hybrids.tsv.gz")
+nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
+```
+
 
 # Main figure
 
@@ -658,25 +681,26 @@ peaks.gr[queryHits(overlap)]$type <- regions.gr[subjectHits(overlap)]$type
 ```{r}
 peak_regions.df <- as.data.frame(peaks.gr)
 peak_regions.df$id <- rownames(peak_regions.df)
-peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type) +
-  guides(fill=guide_legend(title="Region")) +
-  #theme_minimal_grid() + 
-  theme_pander() + scale_colour_pander() +
-  #theme_bw() +
-  ggtitle("STAU1 binding peaks location") +
-  theme(legend.position = "right") +
-  scale_y_continuous(position = "right") +
-  coord_flip() +
-    geom_text(data = peak_regions.df, 
-              aes(x = 1.4, y = 92, label = paste0("n = ", nrow(peak_regions.df))), inherit.aes = FALSE, size = 4) 
-  
-
-peak_regions.gg
+# peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type) +
+#   guides(fill=guide_legend(title="Region")) +
+#   #theme_minimal_grid() + 
+#   theme_pander() + scale_colour_pander() +
+#   #theme_bw() +
+#   ggtitle("STAU1 binding peaks location") +
+#   theme(legend.position = "right") +
+#   scale_y_continuous(position = "right") +
+#   coord_flip() +
+#     geom_text(data = peak_regions.df, 
+#               aes(x = 1.4, y = 92, label = paste0("n = ", nrow(peak_regions.df))), inherit.aes = FALSE, size = 4) 
+#   
+# 
+# peak_regions.gg
 
 # ggsave(paste0(data.dir, "/peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
+
 ```{r}
-peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type) +
+peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type)$plot +
   guides(fill=guide_legend(title="Region")) +
   theme_minimal_grid() + 
   #theme_pander() + scale_colour_pander() +
@@ -691,8 +715,6 @@ peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type) +
 
 peak_regions.gg
 ```
-
-
 
 
 ```{r}
@@ -737,6 +759,7 @@ if (shuffled == TRUE) {
   shuff.mean.df$Sample <- "Control (shuffled)"
   data.df <- rbind(prob.mean.df, shuff.mean.df)
   data.df$peaks_count <- nrow(prob.df)
+  
 } else {
   data.df <- prob.mean.df
   data.df$peaks_count <- nrow(prob.df)
@@ -747,13 +770,15 @@ if (shuffled == TRUE) {
 ```{r}
 # plot the mean probability and standard error of the mean
 profile.gg <- plot_metaprofile(data.df)
+profile.gg <- append_layers(profile.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
+
 profile.gg
 ```
 
 
 ```{r}
-# ggsave(paste0(data.dir,"/",prefix,"_metaprofile.pdf"), profile.gg, width = 4, height = 4)
-
+#ggsave(paste0(data.dir,"/",prefix,"_metaprofile.pdf"), profile.gg, width = 4, height = 4)
 #ggsave(paste0(data.dir,"/",prefix,"_metaprofile_paired.pdf"), profile.gg, width = 4, height = 4)
 
 ```
@@ -763,20 +788,10 @@ profile.gg
 
 ### STAU1 unpaired probability clusters
 
-
 ```{r}
 # ==========
 # K-means clustering
 # ==========
-
-n_clusters <- 5
-```
-
-Number of clusters for K-means clustering: `{r} n_clusters`
-
-
-```{r}
-
 # Focus on the -50 to +75 nt relative to peak starts:
 prob.df <- prob.df %>% dplyr::select("-50":"75")
 
@@ -788,74 +803,159 @@ prob.df <- prob.df %>%
 prob_downstream.df <- prob.df %>% dplyr::select("10":"75")
 ```
 
+Find the optimal number of clusters
 
 ```{r}
-# K-means clustering - "euclidean" dist, 5 clusters
+set.seed(123)
+silhouette.gg <- fviz_nbclust(prob_downstream.df, kmeans, method="silhouette")
+
+silhouette.gg
+
+# ggsave(paste0(data.dir,"/silhouette_2k.pdf"), silhouette.gg, dpi = 300, width = 4, height = 4)
+```
+
+```{r}
+n_clusters <- 2
+```
+
+Number of clusters for K-means clustering: `{r} n_clusters`
+
+```{r}
+# K-means clustering - "euclidean" dist, 2 clusters
 set.seed(123)
 kmeans.df <- run_kmeans(prob_downstream.df, n_clusters)
 ```
 
-
 ```{r warning=FALSE, message=FALSE}
-col_pal <- brewer.pal(n_clusters, "Dark2")
-#plot_cluster_heatmap(kmeans.df, plot.title = prob.name, plot.name = paste0(prefix,"_kmeans.pdf"))
-
 # join cluster information to the data containing the -50: +75 nt positions 
 stopifnot(rownames(kmeans.df) == rownames(prob.df))
 prob.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
 prob.df$cluster_size <- kmeans.df$cluster_size
 
-clusters.gg <- plot_cluster_mean(prob.df, 51)
+prob.df$cluster <- plyr::mapvalues(prob.df$cluster, from=c(2, 1), to=c(0, 1))
+prob.df <- dplyr::arrange(prob.df, cluster)
+prob.df$cluster <- factor(prob.df$cluster, levels = c(0, 1))
+```
 
-prob.df <- prob.df %>%
-  dplyr::rename(.cluster = cluster)
+```{r warning=FALSE, message=FALSE}
+col_pal <- brewer.pal(n_clusters, "Dark2")
+clusters.gg <- plot_cluster_mean(prob.df, 51)
+clusters.gg
+```
+
+```{r}
+# Subcluster cluster 1
+cluster1.df <- prob.df %>%
+  dplyr::filter(cluster == 1) %>%
+  dplyr::select(-cluster, -cluster_size) 
+
+# Focus on the +10 to +75 nt relative to peak starts:
+cluster1.df_downstream.df <- cluster1.df %>%
+  dplyr::select("10":"75")
+
+# Find the optimal number of clusters.
+set.seed(123)
+silhouette_cl1.gg <- fviz_nbclust(cluster1.df_downstream.df, run_kmeans, method="silhouette")
+silhouette_cl1.gg
+# ggsave(paste0(data.dir,"/silhouette_cluster1.pdf"), silhouette_cl1.gg, dpi = 300, width = 4, height = 4)
 ```
 
 
 ```{r}
-plot_cluster_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(data.dir,"/",prefix,"_kmeans_minus50_paired.png"))
+# K-means clustering - "euclidean" dist, 3 clusters
+set.seed(123)
+kmeans.df <- run_kmeans(cluster1.df_downstream.df, 3)
+# join cluster information to the data containing the -50: +75 nt positions 
+stopifnot(rownames(kmeans.df) == rownames(cluster1.df))
+cluster1.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
+cluster1.df$cluster_size <- kmeans.df$cluster_size
+```
+
+```{r}
+cluster1.df$cluster <- plyr::mapvalues(cluster1.df$cluster, from=c(3, 2, 1), to=c(3, 1, 2))
+cluster1.df$cluster <- factor(cluster1.df$cluster, levels = c(1, 2, 3))
+
+cluster1.df <- cluster1.df %>%
+  dplyr::rename(.cluster = cluster)
+```
+
+```{r}
+# Select cluster 0 and join
+cluster0.df <- prob.df %>%
+  dplyr::filter(cluster == "0") %>%
+  dplyr::rename(.cluster = cluster)
+
+# Merge back cluster 0 and the subclusters of cluster 1
+clusters.df <- rbind(cluster0.df, cluster1.df)
+clusters.df$.cluster <- factor(clusters.df$.cluster, levels = c(0, 1, 2, 3))
+
+stopifnot(nrow(prob.df) == nrow(clusters.df)) # Chekc same size as original prob df
+```
+
+```{r}
+col_pal <- brewer.pal(4, "Dark2")
+plot_cluster_heatmap(clusters.df, plot.title = prob.name, plot.name = paste0(data.dir,"/",prefix,"_kmeans_minus50_paired_4clusters.png"))
 ```
 
 
 ```{r}
 # Export clusters data
-prob.df <- rownames_to_column(prob.df, var = "id")
-#fwrite(prob.df, paste0(prefix,"_clusters.tsv.gz"), sep = "\t")
+clusters.df <- rownames_to_column(clusters.df, var = "id")
+# fwrite(clusters.df, paste0(data.dir, "/", prefix,"_clusters.tsv.gz"), sep = "\t")
 ```
-
 
 Metaprofiles for each cluster: 
 
+```{r warning=FALSE, message=FALSE}
+clusters.df <- clusters.df %>%
+  dplyr::rename(cluster = .cluster)
 
-
-```{r}
-clusters.gg <- clusters.gg +
+clusters.gg <- plot_cluster_mean(clusters.df, 51) +
   scale_y_continuous(position = "right") +
   theme(strip.background = element_blank(), strip.text.x = element_blank())
+clusters.gg <- append_layers(clusters.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
 
 clusters.gg
+#ggsave(paste0(data.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 12)
 
-# ggsave(paste0(data.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 12)
 ```
 
-Clusters 1,3,4 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
+Clusters 1,2,3 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
 
+## Fig 2 C
 
-#### Structure annotation analyses
+### Structure annotation analyses
 
-Filter the forgi annotation data for peaks (IDs) in clusters 1, 3 and 4.
+Filter the forgi annotation data for peaks (IDs) in clusters 1, 2 and 3.
 
 
 ```{r}
-prob.df <- prob.df %>%
-  dplyr::filter(.cluster == 1 | .cluster == 3 | .cluster == 4)
+clust_prob.df <- clusters.df %>%
+  dplyr::filter(cluster == 1 | cluster == 2 | cluster == 3)
 
-forgi.df <- semi_join(forgi.df, prob.df, by = "id")
-rnafold.df <- semi_join(rnafold.df, prob.df, by = "id")
+forgi.df <- semi_join(forgi.df, clust_prob.df, by = "id")
+rnafold.df <- semi_join(rnafold.df, clust_prob.df, by = "id")
 ```
 
-There are `r length(unique(forgi.df$id))` peaks in clusters 1,3,4.
+There are `r length(unique(forgi.df$id))` peaks in clusters 1,2,3.
 
+
+#### Calculate mean distance from xl site for each cluster
+
+```{r}
+xl_dist.df <- forgi.df %>%
+  dplyr::filter(element == "s0") %>%
+  dplyr::select(id, L_start) %>%
+  distinct() %>%
+  mutate(distance = L_start - xl + 1)
+
+xl_dist.df <- left_join(xl_dist.df, dplyr::select(clust_prob.df, id, cluster), by = "id")
+xl_dist_mean.df <- xl_dist.df %>%
+  group_by(cluster) %>%
+    dplyr::summarize(mean_distance = mean(distance, na.rm=TRUE))
+xl_dist_mean.df
+```
 
 Classify structures based on their distance from xl site, whether they span multi-loops, and whether the first stem-loop is fused to another stem-loop:
 
@@ -863,15 +963,23 @@ Classify structures based on their distance from xl site, whether they span mult
 forgi.df <- classify_structures(forgi.df, xl = xl, d = d)
 ```
 
+```{r}
+#plot_stacked_barchart(forgi.df, duplex_type)$data
+```
+
 
 Analyse the single stems closest to the xl sites
 
-The percentage peaks with such stem-loops downstream is: `r length(unique(dplyr::filter(forgi.df, duplex_type == "Stem and xl unpaired\n(no multiloops, single stems)")$id))*100/length(unique(forgi.df$id))`
+The percentage peaks with such stem-loops downstream is: `r length(unique(dplyr::filter(forgi.df, duplex_type == "Stem and xl unpaired\n(no multiloops, single stems)" | duplex_type == "Stem and xl unpaired\n(no multiloops, long single stems)")$id))*100/length(unique(forgi.df$id))`
 
 
 ```{r}
 first_sl.df <- select_first_stem_loop(forgi.df)
+
+stopifnot(nrow(dplyr::filter(first_sl.df, element == "h1")) == 0)
+
 first_sl.df <- correct_i_positions(first_sl.df)
+first_sl.df$peak_id <- first_sl.df$id
 length(unique(first_sl.df$id))
 ```
 
@@ -882,26 +990,57 @@ Analyse the multiple, "fused" stems closest to the xl sites
 
 ```{r}
 multi_sl.df <- separate_stem_loops(forgi.df)
+
+# There are some null multiloop structures that contain junctions, extract them
+junctions_first_stem.df <- multi_sl.df %>%
+  dplyr::filter(stem_position == "first" & (element == "h1" | element == "h2"))
+
+junctions_second_stem.df <- multi_sl.df %>%
+  dplyr::filter(stem_position == "second" & (element == "h2"| element == "h3"))
+
+junctions.df <- rbind(junctions_first_stem.df, junctions_second_stem.df)
+
+# remove junction-containing structures
+multi_sl.df <- anti_join(multi_sl.df, junctions.df, by = "id")
+
 length(unique(multi_sl.df$id))
 ```
 
-```{r} 
-# single_multi_sl.df <- multi_sl.df %>%
-#   group_by(id) %>%
-#   dplyr::filter(!any(element %in% c("h1")))
+```{r}
+multi_sl.df <- multi_sl.df %>%
+  rowwise() %>%
+  mutate(peak_id = str_split(id, "_")[[1]][1]) %>%
+  ungroup()
+
+length(unique(multi_sl.df$peak_id))
 ```
 
+
+
+```{r}
+# Re-annotate duplex types to account for the null multi-loops identified above
+forgi.df <- forgi.df %>%
+  mutate(duplex_type = case_when(duplex_type == "Stem and xl unpaired\n(no multiloops, 1st or all multiloops are null)" & 
+                                   id %in% junctions_first_stem.df$id ~ "Stem and xl unpaired\n(multiloops)",
+                                 TRUE ~ duplex_type)) 
+ 
+```
+
+```{r}
+# plot_stacked_barchart(forgi.df, duplex_type)$data
+```
 
 #### Merge all stem-loops
 
 ```{r}
+multi_sl.df <- multi_sl.df %>%
+  dplyr::select(colnames(first_sl.df))
+
 all_sl.df <- rbind(first_sl.df, multi_sl.df)
 length(unique(all_sl.df$id))
+length(unique(all_sl.df$peak_id))
 ```
 
-
-***
-> Description of the stem-loops near the xl site
 
 Obtain number of base-pairs for each structure (ID) and filter out stem-loops with *less than 10 bp*. 
 
@@ -923,30 +1062,141 @@ After filtering out stems with less than 10 bp, there are `r length(unique(first
 ```{r}
 # Number of stem-loops
 length(unique(all_sl.df$id))
+# Number of peaks with stem-loops
+length(unique(all_sl.df$peak_id))
 ```
 
+> Classification of structures
+
+The *Stem and xl unpaired* were further characterised. 
+
+
 ```{r}
-all_sl.df <- all_sl.df %>%
-  rowwise() %>%
-  mutate(peak_id = str_split(id, "_")[[1]][1]) %>%
+forgi.df <- forgi.df %>%
+  mutate(structure_definition = case_when(duplex_type %in% c("No stem", "Stem and xl paired", "Stem and xl unpaired\n(multiloops)") ~ "No structure or the first stem\nspans a multi-loop",
+                                          TRUE ~ "Valid putative stem-loop structures")) %>%
   ungroup()
 ```
 
+
 ```{r}
-# Number of peaks with stem-loops
-length(unique(all_sl.df$peak_id))
+# plot_stacked_barchart(forgi.df, structure_definition)$data
+```
+
+
+```{r}
+z.df <- forgi.df %>%
+  mutate(structure_definition = case_when(structure_definition == "Valid putative stem-loop structures" & id %in% all_sl.df$peak_id ~ "Peaks with predicted stem-loop duplexes >= 10 bp",
+                                          structure_definition == "Valid putative stem-loop structures" & !(id %in% all_sl.df$peak_id) ~ "Peaks with predicted stem-loop duplexes < 10 bp",
+                                          structure_definition == "No structure or the first stem\nspans a multi-loop" ~ "Peaks with no predicted stem-loop duplexes"))
+
+pie.gg <- plot_pie_chart(z.df, structure_definition)
+pie.gg  
+# ggsave(paste0(data.dir,"/pie.pdf"), pie.gg, dpi = 300, width = 6, height = 6 )
+```
+```{r}
+plot_stacked_barchart(z.df, structure_definition)$data
+```
+### Types of predicted structures
+
+
+```{r}
+# how many peaks with 2 fused stem-loops?
+
+two_stems.df <- all_sl.df %>%
+  dplyr::filter(str_detect(id, "_2")) 
+
+fused_stems.df <- all_sl.df %>%
+  dplyr::filter(peak_id %in% unique(two_stems.df$peak_id)) %>%
+  dplyr::select(id, peak_id) %>%
+  distinct()
+
+fused_stems.df <- fused_stems.df %>% dplyr::arrange(id)
+
+x <- fused_stems.df %>%
+  ungroup() %>%
+  group_by(peak_id) %>%
+  mutate(count = n()) %>%
+  dplyr::filter(count == 2)
+
+length(unique(x$peak_id))
+```
+
+```{r}
+# how many peaks with perfect stem loops?
+
+all_sl.df <- all_sl.df %>%
+  group_by(id) %>%
+  mutate(stem_type = case_when(any(element_type == "i") ~ "Stem with bulges",
+                               TRUE ~ "Perfect stem")) %>%
+  ungroup()
+
+all_sl.df %>%
+  dplyr::select(id, peak_id, stem_type) %>%
+  distinct() %>%
+  group_by(stem_type) %>%
+  count(vars = "id")
 ```
 
 ## Fig 2 D
 
 ### Examples of STAU1 stem-loops predicted from nonhybrid reads
 
-
 ```{r}
-dplyr::filter(first_sl.df, id == "ID17880")
+dplyr::filter(first_sl.df, id == "")
 ```
 
+
 ## Fig 2 E
+
+### Hairpin length
+
+Hairpin lengths for stem-loops >= 10 bp
+
+```{r}
+hairpin.df <- all_sl.df %>%
+  dplyr::filter(element_type == "h") %>%
+  distinct()
+```
+
+
+```{r}
+hairpin_median <- hairpin.df %>%
+  ungroup() %>%
+  dplyr::summarize(Median = median(hairpin_length, na.rm=TRUE))
+hairpin_median
+```
+
+
+```{r}
+max(hairpin.df$hairpin_length)
+```
+
+```{r}
+quantile(hairpin.df$hairpin_length, c(.25, .50, .75, 1))
+```
+
+
+```{r}
+h0.gg <- ggplot(hairpin.df, aes(x=hairpin_length)) + 
+  #geom_histogram(bins = 45, color="black", fill = "#DEEBF7") +
+  geom_density(color = "black", fill = "#DEEBF7") +
+  theme_minimal() +
+  geom_vline(data=hairpin_median, aes(xintercept=Median),
+             linetype="dashed") +
+  scale_x_log10(breaks=c(3,5,7, 10,30)) + 
+  annotation_logticks(sides = "b") +
+  #ggtitle("Distribution of hairpin loop sizes") +
+  xlab("Hairpin loop size (nt)") +
+  ylab("Density")
+
+h0.gg
+# ggsave(paste0(data.dir,"/hairpin_length.pdf"), h0.gg, width = 4, height = 4, dpi = 300)
+```
+
+
+
+## Fig 2 F
 
 ### Overlap with duplexes from STAU1 hybrid reads
 
@@ -1003,12 +1253,6 @@ peaks.df <- peaks.gc.df %>%
 
 ```
 
-
-Some gene names are not present in the human annotation gtf e.g
-
-```{r}
-human.gr$fasta_id[str_detect(human.gr$fasta_id, "ENSG00000184992.13")]
-```
 
 #### Obtain the start and end of the first predicted stem-loop of each ID from the forgi positions
 
@@ -1111,14 +1355,6 @@ stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_ge
 
 #### Cluster the linker and no linker hybrids
 
-```{r}
-# Linker
-linker.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets/linker/linker.clusters.mfe.tsv.gz")
-
-# No linker
-nolinker.dt <- fread("/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets/nolinker/all.hybrids.tsv.gz")
-nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
-```
 
 ```{r}
 # keep common columns
@@ -1145,7 +1381,10 @@ all.hybrids.dt <- all.hybrids.dt[!grepl("tRNA", L_seqnames)]
 all.hybrids.dt <- all.hybrids.dt[!grepl("tRNA", R_seqnames)]
 
 nrow(all.hybrids.dt)
+```
 
+
+```{r}
 # ==========
 # Cluster
 # ==========
@@ -1170,7 +1409,6 @@ nonhyb_overlapped.dt <- nonhyb.dt[unique(ol$queryHits)]
 ```
 
 
-
 ```{r}
 nonhyb_count <- nrow(count(all_sl.df, id))
 hyb_clusters_count <- nrow(all.collapsed)
@@ -1178,8 +1416,7 @@ nonhyb_ol_count <- nrow(nonhyb_overlapped.dt)
 
 olap_counts <- c(Predicted_stem_loop_duplexes_min_10_bp = nonhyb_count-nonhyb_ol_count, hiCLIP_duplexes = hyb_clusters_count-nonhyb_ol_count, "Predicted_stem_loop_duplexes_min_10_bp&hiCLIP_duplexes" = nonhyb_ol_count)
 
-
-# pdf(file=pase0(data.dir,"/overlap.pdf"), onefile=FALSE) 
+#pdf(file=paste0(data.dir,"/overlap.pdf"), onefile=FALSE) 
 
 upset(fromExpression(olap_counts),
       order.by = "freq",
@@ -1193,7 +1430,7 @@ upset(fromExpression(olap_counts),
       empty.intersections = "off"
       )
 
-# dev.off()
+#dev.off()
 ```
 
 #### Find overlaps with linker and nolinker clusters individually
@@ -1236,78 +1473,6 @@ upset(fromExpression(olap_counts),
 
 ```
 
-## Fig 2 C
-
-***
-> Types of structures downstream STAU1 peaks
-
-The *Stem and xl unpaired* were further characterised. 
-
-```{r}
-#plot_stacked_barchart(forgi.df, duplex_type)
-```
-
-```{r}
-forgi.df <- forgi.df %>%
-  rowwise() %>%
-  mutate(structure_definition = case_when(duplex_type %in% c("No stem", "Stem and xl paired", "Stem and xl unpaired\n(multiloops)") ~ "No structure or the first stem\nspans a multi-loop",
-                                          TRUE ~ "Valid putative stem-loop structures")) %>%
-  ungroup()
-
-#plot_stacked_barchart(forgi.df, structure_definition)
-```
-
-
-```{r}
-z.df <- forgi.df %>%
-  rowwise() %>%
-  mutate(structure_definition = case_when(structure_definition == "Valid putative stem-loop structures" & id %in% all_sl.df$peak_id ~ "Peaks with predicted stem-loop duplexes >= 10 bp",
-                                          structure_definition == "Valid putative stem-loop structures" & !(id %in% all_sl.df$peak_id) ~ "Peaks with predicted stem-loop duplexes < 10 bp",
-                                          structure_definition == "No structure or the first stem\nspans a multi-loop" ~ "Peaks with no predicted stem-loop duplexes")) %>%
-  ungroup()
-
-pie.gg <- plot_pie_chart(z.df, structure_definition)
-pie.gg  
-# ggsave(paste0(data.dir,"/pie.pdf"), pie.gg, dpi = 300, width = 6, height = 6 )
-```
-## Fig 2 E
-
-### Hairpin length
-
-Hairpin lengths for stem-loops >= 10 bp
-
-```{r}
-hairpin.df <- all_sl.df %>%
-  dplyr::filter(element_type == "h")
-
-h0.gg <- ggplot(hairpin.df, aes(x=hairpin_length)) + 
-  geom_histogram(binwidth=1, color="black", fill = "#DEEBF7") +
-  theme_minimal()+
-  #ggtitle("Distribution of hairpin loop sizes") +
-  xlab("Hairpin loop size (nt)") +
-  ylab("Count")
-
-h0.gg
-# ggsave(paste0(data.dir,"/hairpin_length.pdf"), h0.gg, width = 4, height = 4, dpi = 300)
-```
-
-The median number of bp per stem-loop structure is `r median(first_sl.df$total_paired)`.
-The mean is `r mean(first_sl.df$total_paired)`bp.
-The longest stem is `r max(first_sl.df$total_paired)` bp long.
-
-The following plots show the distributions of number of bp per structure
-
-```{r}
-tot.gg <- ggplot(dplyr::distinct(all_sl.df, id, stem_label, total_paired), aes(x=total_paired)) + 
-  geom_histogram(binwidth=1, color="black", fill = "white") +
-  ylim(0, 5000)+
-  xlim(0, 40)+
-  theme_minimal()+
-  ggtitle("Total base-pairs per predicted stem-loop (before cutting the stem) ")
-tot.gg
-```
-
-
 ### Export all tables
 
 ```{r}
@@ -1321,6 +1486,27 @@ write_tsv(forgi.reformated.tx.df, paste0(data.dir,"/stau1_nonhybrid.tx.txt"), qu
 
 
 # Supplementary figure / Other RBPs
+
+The median number of bp per stem-loop structure is `r median(all_sl.df$total_paired)`.
+The mean is `r mean(all_sl.df$total_paired)`bp.
+The longest stem is `r max(all_sl.df$total_paired)` bp long.
+
+The following plots show the distributions of number of bp per structure
+
+```{r}
+colnames(all_sl.df)
+```
+
+
+```{r}
+tot.gg <- ggplot(dplyr::distinct(all_sl.df, id, total_paired), aes(x=total_paired)) + 
+  geom_histogram(binwidth=1, color="black", fill = "white") +
+  ylim(0, 300)+
+  xlim(0, 40)+
+  theme_minimal()+
+  ggtitle("Total base-pairs per predicted stem-loop (before cutting the stem) ")
+tot.gg
+```
 
 ## TDP43
 
@@ -1385,6 +1571,7 @@ prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
 prefix <- basename(prob.file)
 prefix <- str_split(prefix, ".tsv")[[1]][1]
 ```
+
 ```{r}
 # Load metaprofile dataframes (df output from get_structure_metaprofile.R)
 
@@ -1423,4 +1610,9 @@ profile.gg <- plot_metaprofile(data.df)
 profile.gg
 ```
 
+
+```{r}
+arms.df %>%
+  dplyr::filter(str_detect(R_db, "\\("))
+```
 
