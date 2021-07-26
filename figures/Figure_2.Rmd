@@ -41,8 +41,8 @@ suppressPackageStartupMessages(library(rtracklayer))
 suppressPackageStartupMessages(library(UpSetR))
 suppressPackageStartupMessages(library(parallel))
 suppressPackageStartupMessages(library(viridis))
-library(gginnards)
-library(factoextra)
+suppressPackageStartupMessages(library(gginnards))
+suppressPackageStartupMessages(library(factoextra))
 theme_set(theme_bw() +
             theme(legend.position = "top"))
 ```
@@ -93,8 +93,7 @@ plot_metaprofile <- function(data.df) {
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
     ylab("Mean probability") +
     labs(linetype = "Sample") +
-    geom_text(data = data.df, 
-              aes(x = 55,y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4) 
+    geom_text(aes(x = 55,y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4) 
   
   return(profile.gg)
 }
@@ -741,39 +740,39 @@ print(prefix)
 ```{r}
 # Load metaprofile dataframes (df output from get_structure_metaprofile.R)
 
-prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
-prob.df <- column_to_rownames(prob.df, var = "V1")
+stau1.prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+stau1.prob.df <- column_to_rownames(stau1.prob.df, var = "V1")
 
-colnames(prob.df) <- seq(1-(ncol(prob.df)+1)/2, (ncol(prob.df)-1)/2) # center column names on zero
-prob.df <- drop_na(prob.df)
+colnames(stau1.prob.df) <- seq(1-(ncol(stau1.prob.df)+1)/2, (ncol(stau1.prob.df)-1)/2) # center column names on zero
+stau1.prob.df <- drop_na(stau1.prob.df)
 
 ```
 
 ```{r}
-prob.mean.df <- get_metaprofile_mean(prob.file)
-prob.mean.df$Sample <- prob.name
+stau1.prob.mean.df <- get_metaprofile_mean(prob.file)
+stau1.prob.mean.df$Sample <- prob.name
 
 if (shuffled == TRUE) {
 
-  shuff.mean.df <- get_metaprofile_mean(shuff.file)
-  shuff.mean.df$Sample <- "Control (shuffled)"
-  data.df <- rbind(prob.mean.df, shuff.mean.df)
-  data.df$peaks_count <- nrow(prob.df)
+  stau1.shuff.mean.df <- get_metaprofile_mean(shuff.file)
+  stau1.shuff.mean.df$Sample <- "Control (shuffled)"
+  stau1.data.df <- rbind(stau1.prob.mean.df, stau1.shuff.mean.df)
+  stau1.data.df$peaks_count <- nrow(stau1.prob.df)
   
 } else {
-  data.df <- prob.mean.df
-  data.df$peaks_count <- nrow(prob.df)
+  stau1.data.df <- stau1.prob.mean.df
+  stau1.data.df$peaks_count <- nrow(stau1.prob.df)
 }
 ```
 
 
 ```{r}
 # plot the mean probability and standard error of the mean
-profile.gg <- plot_metaprofile(data.df)
-profile.gg <- append_layers(profile.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+stau1.profile.gg <- plot_metaprofile(stau1.data.df)
+stau1.profile.gg <- append_layers(stau1.profile.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
            alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
 
-profile.gg
+stau1.profile.gg
 ```
 
 
@@ -1521,42 +1520,39 @@ prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
 prefix <- basename(prob.file)
 prefix <- str_split(prefix, ".tsv")[[1]][1]
 ```
+
 ```{r}
 # Load metaprofile dataframes (df output from get_structure_metaprofile.R)
 
-prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
-prob.df <- column_to_rownames(prob.df, var = "V1")
-prob.df <- drop_na(prob.df)
-colnames(prob.df) <- seq(1-(ncol(prob.df)+1)/2, (ncol(prob.df)-1)/2) # center colnames on zero
+tardp.prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+tardp.prob.df <- column_to_rownames(tardp.prob.df, var = "V1")
+tardp.prob.df <- drop_na(tardp.prob.df)
+colnames(tardp.prob.df) <- seq(1-(ncol(tardp.prob.df)+1)/2, (ncol(tardp.prob.df)-1)/2) # center colnames on zero
 
 ```
 
-```{r}
-#plot_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,"_heatmap.pdf"))
-```
 
 ```{r}
-prob.mean.df <- get_metaprofile_mean(prob.file)
-prob.mean.df$Sample <- prob.name
+tardp.prob.mean.df <- get_metaprofile_mean(prob.file)
+tardp.prob.mean.df$Sample <- prob.name
 
 if (shuffled == TRUE) {
-  #huff.file <- opt$shuffled
-  shuff.mean.df <- get_metaprofile_mean(shuff.file)
-  shuff.mean.df$Sample <- "Control (shuffled)"
-  data.df <- rbind(prob.mean.df, shuff.mean.df)
-  data.df$peaks_count <- nrow(prob.df)
+ 
+  tardp.shuff.mean.df <- get_metaprofile_mean(shuff.file)
+  tardp.shuff.mean.df$Sample <- "Control (shuffled)"
+  tardp.data.df <- rbind(tardp.prob.mean.df, tardp.shuff.mean.df)
+   tardp.data.df$peaks_count <- nrow(tardp.prob.df)
 } else {
-  data.df <- prob.mean.df
-  data.df$peaks_count <- nrow(prob.df)
+   tardp.data.df <- tardp.prob.mean.df
+   tardp.data.df$peaks_count <- nrow(tardp.prob.df)
 }
 
 # plot the mean probability and standard error of the mean
-profile.gg <- plot_metaprofile(data.df)
-
-
+tardp.profile.gg <- plot_metaprofile(tardp.data.df)
+tardp.profile.gg <- append_layers(tardp.profile.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
+tardp.profile.gg
 # ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
-
-profile.gg
 ```
 
 ## HUR
@@ -1575,44 +1571,122 @@ prefix <- str_split(prefix, ".tsv")[[1]][1]
 ```{r}
 # Load metaprofile dataframes (df output from get_structure_metaprofile.R)
 
-prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
-prob.df <- column_to_rownames(prob.df, var = "V1")
-prob.df <- drop_na(prob.df)
-colnames(prob.df) <- seq(1-(ncol(prob.df)+1)/2, (ncol(prob.df)-1)/2) # center colnames on zero
+hur.prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+hur.prob.df <- column_to_rownames(hur.prob.df, var = "V1")
+hur.prob.df <- drop_na(hur.prob.df)
+colnames(hur.prob.df) <- seq(1-(ncol(hur.prob.df)+1)/2, (ncol(hur.prob.df)-1)/2) # center colnames on zero
 
 ```
 
-```{r}
-#plot_heatmap(prob.df, plot.title = prob.name, plot.name = paste0(prefix,"_heatmap.pdf"))
-```
 
 ```{r}
-prob.mean.df <- get_metaprofile_mean(prob.file)
-prob.mean.df$Sample <- prob.name
+hur.prob.mean.df <- get_metaprofile_mean(prob.file)
+hur.prob.mean.df$Sample <- prob.name
 
 if (shuffled == TRUE) {
-  #huff.file <- opt$shuffled
-  shuff.mean.df <- get_metaprofile_mean(shuff.file)
-  shuff.mean.df$Sample <- "Control (shuffled)"
-  data.df <- rbind(prob.mean.df, shuff.mean.df)
-  data.df$peaks_count <- nrow(prob.df)
+ 
+  hur.shuff.mean.df <- get_metaprofile_mean(shuff.file)
+  hur.shuff.mean.df$Sample <- "Control (shuffled)"
+  hur.data.df <- rbind(hur.prob.mean.df, hur.shuff.mean.df)
+  hur.data.df$peaks_count <- nrow(hur.prob.df)
 } else {
-  data.df <- prob.mean.df
-  data.df$peaks_count <- nrow(prob.df)
+  hur.data.df <- hur.prob.mean.df
+  hur.data.df$peaks_count <- nrow(hur.prob.df)
 }
 
 # plot the mean probability and standard error of the mean
-profile.gg <- plot_metaprofile(data.df)
-
+hur.profile.gg <- plot_metaprofile(hur.data.df)
+hur.profile.gg <- append_layers(hur.profile.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
+hur.profile.gg
 
 # ggsave(paste0(prefix,"_metaprofile.pdf"), profile.gg)
+```
 
-profile.gg
+
+# Combine all RBPs (Figure 1 A)
+
+```{r}
+hur.data.df$Experiment <- as.factor("HuR")
+tardp.data.df$Experiment <- as.factor("TDP43")
+stau1.data.df$Experiment <- as.factor("STAU1")
+
+merged.data.df <- rbind(stau1.data.df, hur.data.df, tardp.data.df)
+```
+
+```{r}
+merged.data.df
 ```
 
 
 ```{r}
-arms.df %>%
-  dplyr::filter(str_detect(R_db, "\\("))
+merged.gg <- ggplot(merged.data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
+    geom_ribbon(aes(ymin=(mean_prob-std_prob), ymax=(mean_prob+std_prob)), color = "grey80", fill = "grey80") +
+    geom_line(aes(linetype = Sample)) +
+    scale_linetype_manual(values=c("longdash", "solid","solid", "solid" ))+
+    scale_color_manual(values=c('#E69F00', '#222222', '#222222', '#222222'))+
+    geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
+    ylim(c(0.40, 0.60))+
+    xlab("Distance relative to the peak start (nt)")+
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Mean probability") +
+    labs(linetype = "Sample") +
+    geom_text(aes(x = 55, y = 0.59,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4) +
+  facet_grid(rows = vars(Experiment))
+
+merged.gg <-
+  append_layers(merged.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
+merged.gg <- merged.gg + theme(strip.background = element_blank())
+merged.gg
 ```
+```{r}
+#ggsave(paste0(data.dir,"/RBPs_metaprofile_paired.pdf"), merged.gg, width = 3, height = 5)
+```
+
+
+
+## All in one plot
+
+```{r}
+data.df <- merged.data.df %>%
+  dplyr::filter(!((Sample == "Control (shuffled)" & Experiment == "HuR") | (Sample == "Control (shuffled)" & Experiment == "TDP43")))
+```
+
+```{r}
+stau1.counts <- unique(stau1.data.df$peaks_count)
+hur.counts <- unique(hur.data.df$peaks_count)
+tardp.counts <- unique(tardp.data.df$peaks_count)
+```
+
+```{r}
+merged.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
+  scale_fill_manual(values=c('#222222','#E69F00', '#CD5C5C', '#A569BD')) +
+  scale_color_manual(values=c('#222222','#E69F00', '#CD5C5C', '#A569BD')) +
+  geom_ribbon(aes(ymin=(mean_prob-std_prob), ymax=(mean_prob+std_prob), fill = Sample), alpha = 0.3, color = NA) +
+  geom_line(aes(linetype = Sample)) +
+  scale_linetype_manual(values=c("longdash", "solid","solid", "solid" )) +
+  geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
+  ylim(c(0.40, 0.60)) +
+  xlab("Distance relative to the peak start (nt)") +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Mean probability") +
+    labs(linetype = "Sample") +
+    # geom_text(aes(x = 55, y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 3) 
+  geom_text(aes(x = -80, y = 0.43,label = paste0("n = ", hur.counts)), inherit.aes = FALSE, size = 4, color = "#E69F00") +
+  geom_text(aes(x = -80, y = 0.415,label = paste0("n = ", hur.counts)), inherit.aes = FALSE, size = 4, color = "#CD5C5C") +
+  geom_text(aes(x = -80, y = 0.40,label = paste0("n = ", tardp.counts)), inherit.aes = FALSE, size = 4, color = "#A569BD") 
+  #facet_grid(~Experiment)
+
+merged.gg <-
+  append_layers(merged.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
+merged.gg <- merged.gg + theme(strip.background = element_blank())
+merged.gg
+
+# ggsave(paste0(data.dir,"/RBPs_metaprofile_paired_v2.pdf"), merged.gg, width = 4, height = 4)
+```
+
+
+
 
