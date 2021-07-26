@@ -45,10 +45,11 @@ nrow(linker.dt)
 nrow(nonhybrid.dt)
 
 all.hybrids.dt <- rbind(linker.dt, nolinker.dt)
-nrow(all.hybrids.dt)
+nrow(all.hybrids.dt) # linker and no linker
+
+all.hybrids.dt <- rbind(all.hybrids.dt, nonhybrid.dt)
 
 #all.hybrids.dt[, c("cluster", "cluster_hybrid_count"):=NULL]
-
 
 # ==========
 # Remove rRNA and tRNA hybrids
@@ -84,11 +85,11 @@ nrow(all.collapsed)
 # Annotate clusters
 # ==========
 
-all.collapsed.dt <- primavera::convert_coordinates(all.collapsed, genes.gr)
-all.collapsed.dt <- primavera::annotate_hybrids(all.collapsed.dt, regions.gr)
+all.collapsed.dt <- convert_coordinates(all.collapsed, genes.gr)
+all.collapsed.dt <- annotate_hybrids(all.collapsed.dt, regions.gr)
 
-all.clusters.dt <- primavera::convert_coordinates(all.clusters.dt, genes.gr)
-all.clusters.dt <- primavera::annotate_hybrids(all.clusters.dt, regions.gr)
+all.clusters.dt <- convert_coordinates(all.clusters.dt, genes.gr)
+all.clusters.dt <- annotate_hybrids(all.clusters.dt, regions.gr)
 
 # ==========
 # Export tables
