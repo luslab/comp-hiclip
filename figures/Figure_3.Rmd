@@ -840,7 +840,7 @@ paired_metric.gg
 # ggsave(paste0(data.dir, "paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 7, height = 4)
 ```
 
-## Fig 3 F
+## Fig 3 G
 
 ***
 > Number of bulges
@@ -862,7 +862,6 @@ utr3_clusters.df <- utr3_clusters.df %>%
     replace(is.na(.), 0)
 ```
 
-
 ```{r}
 # Wilcox.test
 stau1.bulge.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$bulge_count
@@ -875,8 +874,7 @@ mean(paris.bulge.ls)
 # wilcox.test(stau1.bulge.ls, paris.bulge.ls, alternative = "two.sided")
 ```
 
-
-```{r}
+```{r message=FALSE}
 # Boxplot
 bulges.gg <- ggplot(utr3_clusters.df,
                          aes(x = Experiment, y=bulge_count, fill=Experiment)) +
@@ -891,12 +889,14 @@ bulges.gg <- ggplot(utr3_clusters.df,
   geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
 bulges.gg
-ggsave(paste0(data.dir, "bulge_count.pdf"), bulges.gg, dpi = 300, width = 4, height = 6)
+# ggsave(paste0(data.dir, "bulge_count.pdf"), bulges.gg, dpi = 300, width = 4, height = 6)
 ```
-## Figure 3 G
+## Fig 3 H
 
 ***
 > Symmetry classification
+
+
 The *symmetry classification* is a measure that takes into account the relative position and numbers of bulges and internal loops in each predicted stem-loop structure
 
 
@@ -908,7 +908,6 @@ utr3_clusters.df <- utr3_clusters.df %>%
   mutate(stem_type = case_when(paired_percentage == 100 ~ "Perfect duplex",
                                TRUE ~ "Interrupted stem")) %>%
   ungroup()
-
 ```
 
 #### Extended symmetry clasification
@@ -919,7 +918,6 @@ Uninterrupted (no bulges or internal loops on either side) | Perfect duplex
 Symmetrical (vertical axis, left-right mirror image) | Symmetric
 Balanced (equal number of internal loops of identical sizes on either side, but not all of same size are opposite each other) | Asymmetric
 Non-Symmetrical | Asymmetric
-
 
 Obtain stem symmetry types:
 
@@ -953,7 +951,6 @@ unique(symmetry.df$symmetry_type)
 stopifnot(nrow(dplyr::filter(symmetry.df, is.na(symmetry_type))) == 0)
 ```
 
-
 ```{r warning=FALSE}
 # Get percentages of stem_types
 symmetry.gg <- plot_stacked_barchart(symmetry.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
@@ -964,12 +961,48 @@ symmetry.gg <- plot_stacked_barchart(symmetry.df, column = symmetry_type, group 
 symmetry.gg 
 # ggsave(paste0(data.dir, "symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
 ```
+# Supplementary figure
+
+***
+> Bulge spacing
+
+The spacing between bulges is the width of stems between bulges
 
 ```{r}
-symmetry.gg
+bulge_spacing.df <- utr3_forgi.df %>%
+  ungroup() %>%
+  group_by(Experiment, id) %>%
+  dplyr::filter(any(element_type =="i")) %>%
+  dplyr::filter(element_type == "s") %>%
+  dplyr::filter(!element == "s0") %>%
+  dplyr::filter(!element_number == max(element_number))
 ```
 
-# Supplementary figure
+Calculate median spacing per structure
+
+```{r}
+median_bulge_spacing.df <- bulge_spacing.df %>% 
+  summarise(bulge_spacing_median=median(L_width), .groups = "keep")
+```
+
+
+```{r message=FALSE}
+# Boxplot
+bulge_s.gg <- ggplot(median_bulge_spacing.df,
+                         aes(x = Experiment, y=bulge_spacing_median, fill=Experiment)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  #ggtitle("Bulges per duplex") +
+  ylab("Median spacing between bulges (nt)") 
+  # geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
+  #           position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
+bulge_s.gg
+ggsave(paste0(data.dir, "bulge_spacing.pdf"), bulge_s.gg, dpi = 300, width = 4, height = 6)
+```
 
 ***
 > Sequence content
