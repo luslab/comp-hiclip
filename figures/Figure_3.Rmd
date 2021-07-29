@@ -585,7 +585,7 @@ span_mean
 
 ```{r}
 duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
-  geom_density(alpha = 0.8) +
+  geom_density(alpha = 0.8, adjust = 1.5) +
   #scale_colour_brewer(palette="Dark2") +
   scale_x_log10() + annotation_logticks() +
   scale_color_tableau() +
