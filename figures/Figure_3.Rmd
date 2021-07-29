@@ -609,6 +609,41 @@ duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experime
 duplex_span.gg
 ```
 
+We can fit a 2-component Gaussian mixture model to the bimodal STAU1 distribution
+
+```{r}
+suppressPackageStartupMessages(library(mixtools))
+set.seed(42)
+
+# http://tinyheero.github.io/2015/10/13/mixture-model.html
+# 
+#' Plot a Mixture Component
+#' 
+#' @param x Input data
+#' @param mu Mean of component
+#' @param sigma Standard deviation of component
+#' @param lam Mixture weight of component
+
+plot_mix_comps <- function(x, mu, sigma, lam) {
+  lam * dnorm(x, mu, sigma)
+}
+
+mixmdl <- normalmixEM(log10(utr3_clusters.df$duplex_span), k = 2)
+ggplot() +
+  geom_histogram(data = data.frame(x = mixmdl$x), aes(x, ..density..), bins = 100, fill = "grey75") +
+  stat_function(data = data.frame(x = mixmdl$x), geom = "line", fun = plot_mix_comps,
+                args = list(mixmdl$mu[1], mixmdl$sigma[1], lam = mixmdl$lambda[1]),
+                colour = "red", lwd = 1.5) +
+  stat_function(data = data.frame(x = mixmdl$x), geom = "line", fun = plot_mix_comps,
+                args = list(mixmdl$mu[2], mixmdl$sigma[2], lam = mixmdl$lambda[2]),
+                colour = "blue", lwd = 1.5) +
+  scale_x_continuous(labels = c(1, 10, 100, 1000, 10000)) +
+  labs(x = "Duplex span (nt)",
+       y = "Density") +
+  theme_minimal_grid()
+```
+
+This gives us two distributions with mean duplex spans of `r round(10^mixmdl$mu, 3)[1]` and `r round(10^mixmdl$mu, 3)[2]` and lambdas of `r round(mixmdl$lambda, 3)[1]` and `r round(mixmdl$lambda, 3)[2]` respectively.
 
 ```{r}
 # ggsave(paste0(data.dir, "duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
