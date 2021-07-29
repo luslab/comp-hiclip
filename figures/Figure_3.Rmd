@@ -624,7 +624,7 @@ plot_mix_comps <- function(x, mu, sigma, lam) {
   lam * dnorm(x, mu, sigma)
 }
 
-mixmdl <- normalmixEM(log10(utr3_clusters.df$duplex_span), k = 2)
+mixmdl <- normalmixEM(log10(utr3_clusters.df[utr3_clusters.df$Experiment == "STAU1", ]$duplex_span), k = 2)
 ggplot() +
   geom_histogram(data = data.frame(x = mixmdl$x), aes(x, ..density..), bins = 100, fill = "grey75") +
   stat_function(data = data.frame(x = mixmdl$x), geom = "line", fun = plot_mix_comps,
