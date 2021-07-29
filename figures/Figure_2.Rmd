@@ -111,10 +111,7 @@ run_kmeans <- function(data, k) {
   return(data)
   
 }
-```
 
-
-```{r}
 plot_cluster_heatmap <- function(cluster.df, plot.title, plot.name) {
   
   cluster.df <- cluster.df %>% arrange(.cluster)
@@ -132,10 +129,7 @@ plot_cluster_heatmap <- function(cluster.df, plot.title, plot.name) {
   return(heatmap)
   
 }
-```
 
-
-```{r}
 # cl = dataframe containing nt position probabilities +  a "cluster" column and a "cluster_size" column
 plot_cluster_mean <- function(cl, left_flank) {
   
@@ -232,10 +226,7 @@ select_first_stem_loop <- function(forgi.df) {
   
   return(first_stem_loop.df)
 }
-```
 
-
-```{r}
 correct_i_positions <- function(forgi.df) {
   # Forgi output places all asymmetric internal loops and bulges on the left side, even when they should be on the right.
   # If such cases exist, swap them to the right
@@ -284,10 +275,7 @@ correct_i_positions <- function(forgi.df) {
   return(forgi.df)
 }
 
-```
 
-
-```{r}
 separate_stem_loops <- function(forgi.df) {
   
   # Analyse the multiple, "fused" stems closest to the xl sites
@@ -360,10 +348,7 @@ separate_stem_loops <- function(forgi.df) {
   
   return(multi.df)
 }
-```
 
-
-```{r}
 # forgi - descriptive functions
 get_basepairs_count <- function(data.df) {
   
@@ -706,10 +691,9 @@ peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type)$plot +
   #theme_bw() +
   #ggtitle("STAU1 binding peaks location") +
   theme(legend.position = "top") +
-  scale_y_continuous(position = "right") +
-  coord_flip() +
-    geom_text(data = peak_regions.df, 
-              aes(x = 0.65, y = 90, label = paste0("n = ", nrow(peak_regions.df))), inherit.aes = FALSE, size = 6) 
+  scale_y_continuous(position = "right")
+  #coord_flip() +
+  #  geom_text(data = peak_regions.df, aes(x = 0.65, y = 90, label = paste0("n = ", nrow(peak_regions.df))), inherit.aes = FALSE, size = 6) 
   
 
 peak_regions.gg
@@ -717,7 +701,7 @@ peak_regions.gg
 
 
 ```{r}
-# ggsave(paste0(data.dir, "/peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
+# ggsave(paste0(data.dir, "/peak_regions_vertical.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
 
 ### STAU1 unpaired probability metaprofile
@@ -778,7 +762,7 @@ stau1.profile.gg
 
 ```{r}
 #ggsave(paste0(data.dir,"/",prefix,"_metaprofile.pdf"), profile.gg, width = 4, height = 4)
-#ggsave(paste0(data.dir,"/",prefix,"_metaprofile_paired.pdf"), profile.gg, width = 4, height = 4)
+#ggsave(paste0(data.dir,"/",prefix,"_metaprofile_paired.pdf"), stau1.profile.gg, width = 4, height = 4)
 
 ```
 
@@ -792,14 +776,14 @@ stau1.profile.gg
 # K-means clustering
 # ==========
 # Focus on the -50 to +75 nt relative to peak starts:
-prob.df <- prob.df %>% dplyr::select("-50":"75")
+stau1.prob.df <- stau1.prob.df %>% dplyr::select("-50":"75")
 
 # Convert unpaired probablity to paired probability
-prob.df <- prob.df %>%
+stau1.prob.df <- stau1.prob.df %>%
   mutate_if(is.numeric, convert_probability)
 
 # Focus on the +10 to +75 nt relative to peak starts:
-prob_downstream.df <- prob.df %>% dplyr::select("10":"75")
+prob_downstream.df <- stau1.prob.df %>% dplyr::select("10":"75")
 ```
 
 Find the optimal number of clusters
@@ -827,24 +811,24 @@ kmeans.df <- run_kmeans(prob_downstream.df, n_clusters)
 
 ```{r warning=FALSE, message=FALSE}
 # join cluster information to the data containing the -50: +75 nt positions 
-stopifnot(rownames(kmeans.df) == rownames(prob.df))
-prob.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
-prob.df$cluster_size <- kmeans.df$cluster_size
+stopifnot(rownames(kmeans.df) == rownames(stau1.prob.df))
+stau1.prob.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
+stau1.prob.df$cluster_size <- kmeans.df$cluster_size
 
-prob.df$cluster <- plyr::mapvalues(prob.df$cluster, from=c(2, 1), to=c(0, 1))
-prob.df <- dplyr::arrange(prob.df, cluster)
-prob.df$cluster <- factor(prob.df$cluster, levels = c(0, 1))
+stau1.prob.df$cluster <- plyr::mapvalues(stau1.prob.df$cluster, from=c(2, 1), to=c(0, 1))
+stau1.prob.df <- dplyr::arrange(stau1.prob.df, cluster)
+stau1.prob.df$cluster <- factor(stau1.prob.df$cluster, levels = c(0, 1))
 ```
 
 ```{r warning=FALSE, message=FALSE}
 col_pal <- brewer.pal(n_clusters, "Dark2")
-clusters.gg <- plot_cluster_mean(prob.df, 51)
+clusters.gg <- plot_cluster_mean(stau1.prob.df, 51)
 clusters.gg
 ```
 
 ```{r}
 # Subcluster cluster 1
-cluster1.df <- prob.df %>%
+cluster1.df <- stau1.prob.df %>%
   dplyr::filter(cluster == 1) %>%
   dplyr::select(-cluster, -cluster_size) 
 
@@ -880,7 +864,7 @@ cluster1.df <- cluster1.df %>%
 
 ```{r}
 # Select cluster 0 and join
-cluster0.df <- prob.df %>%
+cluster0.df <- stau1.prob.df %>%
   dplyr::filter(cluster == "0") %>%
   dplyr::rename(.cluster = cluster)
 
@@ -888,7 +872,7 @@ cluster0.df <- prob.df %>%
 clusters.df <- rbind(cluster0.df, cluster1.df)
 clusters.df$.cluster <- factor(clusters.df$.cluster, levels = c(0, 1, 2, 3))
 
-stopifnot(nrow(prob.df) == nrow(clusters.df)) # Chekc same size as original prob df
+stopifnot(nrow(stau1.prob.df) == nrow(clusters.df)) # Chekc same size as original prob df
 ```
 
 ```{r}
@@ -1090,8 +1074,14 @@ z.df <- forgi.df %>%
                                           structure_definition == "No structure or the first stem\nspans a multi-loop" ~ "Peaks with no predicted stem-loop duplexes"))
 
 pie.gg <- plot_pie_chart(z.df, structure_definition)
-pie.gg  
-# ggsave(paste0(data.dir,"/pie.pdf"), pie.gg, dpi = 300, width = 6, height = 6 )
+pie.gg
+```
+
+
+
+```{r}
+#ggplot2::ggsave(filename = "pie", plot = pie.gg, device = "pdf")
+ggsave(paste0(data.dir,"/",prefix,"pie.pdf"), pie.gg, width = 4, height = 4)
 ```
 ```{r}
 plot_stacked_barchart(z.df, structure_definition)$data
@@ -1141,9 +1131,31 @@ all_sl.df %>%
 
 ### Examples of STAU1 stem-loops predicted from nonhybrid reads
 
+
 ```{r}
-dplyr::filter(first_sl.df, id == "")
+
+# Perfect stem 
+perfect_stems.df  <- all_sl.df %>%
+  dplyr::filter(stem_type == "Perfect stem")
+
+perfect_stems.df <- perfect_stems.df %>%
+  dplyr::filter(element_type == "s" & L_width == 12 & hairpin_length <= 5)
+
+perfect_stems.df
 ```
+
+```{r}
+dplyr::filter(first_sl.df, id == "ID17880")
+```
+```{r}
+ex1.df <- rnafold.df %>%
+  dplyr::filter(id == "ID17880")
+```
+
+```{r}
+ex1.df
+```
+
 
 
 ## Fig 2 E
@@ -1348,6 +1360,27 @@ stopifnot(abs(forgi.reformated.gc.df$L_genomic_end - forgi.reformated.gc.df$L_ge
 stopifnot(abs(forgi.reformated.gc.df$R_genomic_end - forgi.reformated.gc.df$R_genomic_start) ==
             abs(forgi.reformated.gc.df$R_end - forgi.reformated.gc.df$R_start))
 ```
+
+
+
+```{r}
+# Export bed file
+forgi.reformated.gc.dt <- data.table(forgi.reformated.gc.df)
+
+export_genomic_bed(forgi.reformated.gc.dt, paste0(data.dir, "/predicted_duplexes.bed"))
+
+```
+
+```{r}
+dplyr::filter(forgi.reformated.gc.df, name == "ID17880")
+```
+```{r}
+dplyr::filter(arms.df, id == "ID17880")
+
+# chr8	26656048	26656077	ID17880||||	0	+	26656048	26656077	0	2	12,12	0,17
+
+```
+
 
 ***
 > Calculate overlap with STAU1 duplexes from hybrid reads
