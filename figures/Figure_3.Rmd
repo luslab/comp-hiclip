@@ -581,15 +581,7 @@ span_mean <- utr3_clusters.df %>%
     dplyr::summarize(Mean = mean(duplex_span, na.rm=TRUE))
 span_mean
 ```
-```{r}
-# Test distributions are different
-stau1.span.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$duplex_span
-paris.span.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$duplex_span
 
-# Kolmogorov-Smirnov test
-span.pval <- ks.test(stau1.span.ls, paris.span.ls, exact = F)$p.val
-span.pval
-```
 
 ```{r}
 duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
@@ -607,7 +599,11 @@ duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experime
   annotate("text", label = paste0("p = ", span.pval), x = 100, y = 0.65)
 
 duplex_span.gg
+# ggsave(paste0(data.dir, "duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
+# adjust = 1.5
 ```
+```{r}
+# Extract data for gauss mixture model
 
 We can fit a 2-component Gaussian mixture model to the bimodal STAU1 distribution
 
@@ -650,9 +646,7 @@ This gives us two distributions with mean duplex spans of `r round(10^mixmdl$mu,
 ```
 
 ```{r}
-# dgof::ks.test(stau1.span.ls, paris.span.ls, simulate = TRUE, B=10000)
-#KSgeneral::disc_ks_test(stau1.span.ls, ecdf(paris.span.ls), exact = T)
-#Matching::ks.boot(stau1.span.ls, paris.span.ls, nboots=1000)
+fwrite(stau1.duplex.span.df, paste0(data.dir,"stau1_duplex_span.tsv.gz"), sep = "\t")
 ```
 
 
@@ -732,19 +726,6 @@ utr3_clusters.df <- utr3_clusters.df %>%
   ungroup()
 ```
 
-```{r}
-#mean(utr3_clusters.df$normalised_mfe_zscore)
-#mean(utr3_clusters.df$mfe_zscore < -1.96)
-#pval = pnorm(utr3_clusters.df$normalised_mfe_zscore)
-
-#nrow(dplyr::filter(utr3_clusters.df, normalised_mfe_zscore < -2))/nrow(utr3_clusters.df)
-#stau1.zscore.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$normalised_mfe_zscore
-#paris.zscore.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$normalised_mfe_zscore
-
-#length(stau1.zscore.ls[stau1.zscore.ls < -2])/length(stau1.zscore.ls)
-#length(paris.zscore.ls[paris.zscore.ls < -2])/length(paris.zscore.ls)
-```
-
 
 ```{r}
 # Test
@@ -772,6 +753,18 @@ wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)
 ```
 
 ```{r}
+wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val
+```
+
+
+```{r}
+mfe_median <- utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Median = median(normalised_mfe, na.rm=TRUE))
+mfe_median
+```
+
+```{r}
 # Density plot
 utr3_clusters_mfe.df <- pivot_longer(utr3_clusters.df, cols = c(normalised_mfe, normalised_mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
 
@@ -790,18 +783,20 @@ mfe.dens.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, colo
   facet_grid(rows = vars(Experiment)) +
   theme(legend.position = "right") +
   ylab("Density") +
-  xlab("Normalised hybridisation energy (kcal/mol)") 
+  xlab("Normalised hybridisation energy (kcal/mol)") +
+  geom_vline(data=mfe_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed")
   #xlab("MFE (kcal/mol)") +
   #ggtitle("3'UTR-3'UTR clusters binding energy") 
 
 mfe.dens.gg
-# ggsave(paste0(data.dir, "mfe_dens.pdf"), mfe.dens.gg, dpi = 300, width = 4, height = 6)
+# ggsave(paste0(data.dir, "mfe_dens.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
 ```
 
 ## Fig 3 F
 
 ***
-> Paired metric
+> Proportion of paired residues
 
 The *paired metric* is a measure that takes into account the ratio of paired residues to non-paired residues (bulges and internal loops) in each duplex. The formula is:
 
@@ -813,7 +808,6 @@ $$
  L_u = \text{number of unpaired residues left arm} \\
  R_u = \text{number of unpaired residues right arm}
 $$
-
 
 Correct internal loop and bulges positions:
 
@@ -856,23 +850,25 @@ paired_ratio.pval
 ```
 
 ```{r}
-paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, fill = Experiment)) + 
-  geom_density(alpha = 0.4) +
+paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = Experiment)) + 
+  geom_density() +
   scale_fill_tableau() +
   scale_color_tableau() +
   theme_minimal_grid() + 
-  #facet_grid(rows = vars(Experiment)) +
   theme(legend.position = "top") +
   ylab("Density") +
-  xlab("Percentage of paired residues") +
+  xlab("Paired residues (%)") +
   #ggtitle("3'UTR-3'UTR clusters paired metric") +
   geom_vline(data=paired_percentage_median, aes(xintercept=Median, color=Experiment),
              linetype="dashed") +
   annotate("text", label = paste0("p = ", paired_ratio.pval), x = 80, y = 0.07)
-  #annotate("text", x = 90, y = 1, paste0("p = ", paired_ratio.pval))
 
 paired_metric.gg
-# ggsave(paste0(data.dir, "paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 7, height = 4)
+```
+
+
+```{r}
+ggsave(paste0(data.dir, "paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
 ```
 
 ## Fig 3 G
@@ -996,6 +992,12 @@ symmetry.gg <- plot_stacked_barchart(symmetry.df, column = symmetry_type, group 
 symmetry.gg 
 # ggsave(paste0(data.dir, "symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
 ```
+
+```{r}
+dplyr::filter(symmetry.df, stem_type == "Interrupted stem", bulge_count == 2)
+```
+
+
 # Supplementary figure
 
 ***
