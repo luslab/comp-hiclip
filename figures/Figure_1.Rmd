@@ -1,0 +1,278 @@
+---
+title: "Figure 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(pheatmap)
+library(viridis)
+library(RColorBrewer)
+
+
+library(primavera)
+library(rtracklayer)
+library(data.table)
+library(ggplot2)
+library(scales)
+library(ggthemes)
+library(cowplot)
+library(UpSetR)
+```
+
+```{r}
+plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_1"
+
+ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899")
+```
+
+
+# Load data
+
+```{r}
+# Linker
+# linker.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/linker.clusters.mfe.tsv.gz")
+linker.dt <- rbindlist(list(
+  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lph.hybrids.dedup.tsv.gz")[, sample := "stau1_high"],
+  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lpl.hybrids.dedup.tsv.gz")[, sample := "stau1_low"]),
+                       use.names = TRUE)
+# Add calculations
+linker.dt[, `:=` (L_end = L_start + L_width - 1,
+                  R_end = R_start + R_width - 1)]
+linker.dt[, type := ifelse(L_seqnames == R_seqnames, "intragenic", "intergenic")]
+linker.dt[, orientation := "linker"]
+
+genes.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz")
+regions.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/regions.gtf.gz")
+
+linker.dt <- convert_coordinates(hybrids.dt = linker.dt, genes.gr = genes.gr)
+linker.dt <- annotate_hybrids(hybrids.dt = linker.dt, regions.gr = regions.gr)
+
+# No linker
+nolinker.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nolinker/atlas/all.hybrids.tsv.gz")
+nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
+
+hybrids.dt <- rbindlist(list(nolinker.dt, linker.dt),
+                        use.names = TRUE,
+                        fill = TRUE)
+hybrids.dt[, exp := ifelse(orientation == "linker", "Linker", "Direct")]
+hybrids.dt[sample == "stau1_high", sample := "High RNase"]
+hybrids.dt[sample == "stau1_low", sample := "Low RNase"]
+
+hybrids.dt[, type := ifelse(type == "intragenic", "intramolecular", "intermolecular")]
+
+```
+
+## 1B - Counts
+
+```{r}
+p <- ggplot(hybrids.dt[, .N, by = .(exp, sample)], aes(x = exp, y = N, fill = sample)) +
+  geom_col(width = 0.5) +
+  coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
+  scale_fill_tableau() +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "",
+       y = "Number of hybrids",
+       fill = "")
+
+ggsave(p, filename = file.path(plot.path, "linker_nolinker_counts.pdf"), width = 7, height = 4)
+
+p
+```
+
+There are `r nrow(nolinker.dt)/nrow(linker.dt)` times as many hybrids recovered without a linker
+
+## 1C - Intra-inter
+
+```{r}
+p <- ggplot(hybrids.dt[, .N, by = .(exp, type)], aes(x = exp, y = N, fill = type)) +
+  geom_col(width = 0.5, position = "fill") +
+  coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
+  scale_y_continuous(label = percent) +
+  scale_fill_tableau(palette = "Seattle Grays") +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "",
+       y = "Percentage of hybrids",
+       fill = "")
+
+ggsave(p, filename = file.path(plot.path, "linker_nolinker_interintra.pdf"), width = 7, height = 4)
+
+p
+```
+
+
+```{r}
+round(prop.table(table(hybrids.dt[exp == "Direct"]$type)) * 100, 1)
+round(prop.table(table(hybrids.dt[exp == "Linker"]$type)) * 100, 1)
+```
+
+## 1D - Regions
+
+```{r}
+arms.dt <- rbindlist(list(hybrids.dt[, exp, L_region], hybrids.dt[, exp, R_region]), use.names = FALSE)
+arms.dt$L_region <- factor(arms.dt$L_region, levels = rev(c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA")))
+
+p <- ggplot(arms.dt[, .N, by = .(L_region, exp)], aes(x = exp, y = N, fill = L_region)) +
+  geom_col(width = 0.5, position = "fill") +
+  coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
+  scale_y_continuous(label = percent) +
+  scale_fill_tableau(palette = "Miller Stone", direction = -1) +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "",
+       y = "Percentage of hybrids",
+       fill = "")
+
+ggsave(p, filename = file.path(plot.path, "linker_nolinker_regions.pdf"), width = 7, height = 4)
+
+p
+```
+
+```{r}
+round(prop.table(table(arms.dt[exp == "Direct"]$L_region)) * 100, 1)
+round(prop.table(table(arms.dt[exp == "Linker"]$L_region)) * 100, 1)
+```
+
+## 1E - Duplexes
+
+### Linkers
+
+```{r}
+atlas.hybrids.dt <- linker.dt[, total_count := .N, by = .(L_seqnames, R_seqnames)]
+atlas.hybrids.dt <- atlas.hybrids.dt[L_seqnames == R_seqnames]
+atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
+atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
+atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
+atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
+atlas.hybrids.dt <- atlas.hybrids.dt[!grepl("tRNA", L_seqnames)]
+atlas.hybrids.dt <- atlas.hybrids.dt[!grepl("tRNA", R_seqnames)]
+
+linker.list <- split(atlas.hybrids.dt, by = c("L_seqnames", "R_seqnames"))
+linker.list <- linker.list[elementNROWS(linker.list) > 1]
+linker.clusters.list <- parallel::mclapply(linker.list, cluster_hybrids, percent_overlap = 0.5, mc.cores = 4)
+tic()
+linker.clusters.list <- lapply(linker.list, cluster_hybrids, percent_overlap = 0.5)
+toc()
+linker.clusters.dt <- rbindlist(linker.clusters.list, use.names = TRUE, fill = TRUE)
+```
+
+```{r}
+dt <- data.table(exp = c("Linker", "Direct"),
+                 counts = c(nrow(linker.clusters.dt[L_seqnames == R_seqnames][!L_seqnames %in% c("tRNA", "rDNA", "rRNA_5S")][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)]),
+                            nrow(nolinker.dt[L_seqnames == R_seqnames][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)])))
+
+p <- ggplot(dt, aes(x = exp, y = counts)) +
+  geom_col(width = 0.5) +
+  scale_fill_tableau() +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "",
+       y = "Number of clusters",
+       fill = "")
+
+ggsave(p, filename = "linker_nolinker_cluster_counts.pdf", width = 5, height = 7)
+```
+
+# 1F - hybridisation energy
+
+```{r}
+linker.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/linker/linker.clusters.mfe.tsv.gz")
+
+mfe.dt <- rbindlist(list(nolinker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mean_shuffled_mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Direct", mfe = "Shuffled")],
+                         nolinker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Direct", mfe = "Duplex")],
+                         linker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mean_shuffled_mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Linker", mfe = "Shuffled")],
+                         linker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Linker", mfe = "Duplex")]))
+
+setnames(mfe.dt, "V1", "energy")
+
+p <- ggplot(mfe.dt, aes(x = energy, colour = exp, linetype = mfe)) +
+  geom_density(size = 1) +
+  scale_colour_manual(values = ht_colours) +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "Hybridisation energy",
+       y = "Density",
+       colour = "",
+       linetype = "")  
+
+ggsave(p, filename = file.path(plot.path, "linker_nolinker_mfe.pdf"), width = 7, height = 4)
+
+p
+```
+
+# 1G - Overlaps
+
+```{r}
+linker.clusters <- collapse_clusters(linker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "wide")
+nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "wide")
+
+linker.clusters <- primavera::reorient_hybrids(linker.clusters)
+nolinker.clusters <- primavera::reorient_hybrids(nolinker.clusters)
+
+bedpe.colnames <- c("L_seqnames", "L_start", "L_end", "R_seqnames", "R_start", "R_end", "name", "count", "L_strand", "R_strand")
+
+linker.bedpe.dt <- linker.clusters[, ..bedpe.colnames]
+linker.bedpe.dt[, `:=`(
+  L_start = L_start - 1,
+  R_start = R_start - 1
+)]
+nolinker.bedpe.dt <- nolinker.clusters[, ..bedpe.colnames]
+nolinker.bedpe.dt[, `:=`(
+  L_start = L_start - 1,
+  R_start = R_start - 1
+)]
+
+linker.bedpe <- tempfile(tmpdir = getwd(), fileext = ".bedpe")
+nolinker.bedpe <- tempfile(tmpdir = getwd(), fileext = ".bedpe")
+ol <- tempfile(tmpdir = getwd(), fileext = ".bedpe")
+
+fwrite(linker.bedpe.dt, file = linker.bedpe, sep = "\t", col.names = FALSE)
+fwrite(nolinker.bedpe.dt, file = nolinker.bedpe, sep = "\t", col.names = FALSE)
+
+cmd <- paste("bedtools pairtopair -rdn -a", linker.bedpe, "-b", nolinker.bedpe, ">", ol)
+system(cmd)
+bedpe.dt <- fread(ol, col.names = c(paste0(bedpe.colnames, ".x"), paste0(bedpe.colnames, ".y")))
+
+file.remove(linker.bedpe)
+file.remove(nolinker.bedpe)
+file.remove(ol)
+
+upset.input <- c("Linker" = nrow(linker.clusters) - nrow(bedpe.dt),
+               "Direct" = nrow(nolinker.clusters) - nrow(bedpe.dt),
+               "Linker&Direct" = nrow(bedpe.dt))
+
+pdf(file.path(plot.path, "linker_nolinker_upset.pdf"), width = 7, height = 5)
+upset(fromExpression(upset.input), 
+      order.by = "freq",
+      mainbar.y.label = "Intersecting number of duplexes",
+      sets.x.label = "Total number of duplexes")s
+dev.off()
+```
+
+# 1H - Duplex span
+
+```{r}
+linker.clusters <- collapse_clusters(linker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "median")
+nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "median")
+
+nolinker.clusters[, loop := R_start - L_end - 1][, exp := "Linker"]
+linker.clusters[, loop := R_start - L_end - 1][, exp := "Direct"]
+
+intragenic.clusters.dt <- rbindlist(list(nolinker.clusters, linker.clusters))[L_seqnames == R_seqnames]
+
+p <- ggplot(intragenic.clusters.dt, aes(x = loop, colour = exp)) +
+  geom_density(size = 1) +
+  scale_colour_manual(values = ht_colours) +
+  scale_x_log10(label = comma) + annotation_logticks() +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "Duplex span",
+       y = "Density",
+       colour = "",
+       linetype = "")  
+
+ggsave(p, filename = file.path(plot.path, "intragenic_linker_nolinker_duplex_span.pdf"), width = 7, height = 4)
+
+p
+```
+
