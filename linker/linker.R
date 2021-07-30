@@ -104,6 +104,9 @@ B.hybrid <- split_read(fq = fq, adapter = linker)
 B_minus1.hybrid <- split_read(fq = B.hybrid$nolinker, adapter = substr(linker, 1, nchar(linker) - 1))
 B_minus2.hybrid <- split_read(fq = B_minus1.hybrid$nolinker, adapter = substr(linker, 1, nchar(linker) - 2))
 
+message(length(B.hybrid$hybrid)/2, " reads with full length linker adapters")
+message((length(B_minus1.hybrid$hybrid) + length(B_minus2.hybrid$hybrid))/2, " reads with truncated linker adapters")
+
 hybrid.fq <- append(B.hybrid$hybrid, 
                     B_minus1.hybrid$hybrid,
                     B_minus2.hybrid$hybrid)
