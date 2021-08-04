@@ -1,0 +1,1111 @@
+---
+title: "Figure 3"
+author: "Ira Iosub"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+  html_notebook:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+    theme: paper
+    highlight: monochrome
+    df_print: paged
+    code_folding: hide
+  html_document:
+    toc: yes
+    toc_depth: '3'
+    df_print: paged
+---
+
+#### Libraries
+
+```{r include=FALSE}
+suppressPackageStartupMessages(library(rtracklayer))
+suppressPackageStartupMessages(library(primavera))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(paletteer))
+suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(cowplot))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(tidyverse, warn.conflicts = FALSE))
+suppressPackageStartupMessages(library(stringr))
+suppressPackageStartupMessages(library(Biostrings))
+```
+
+#### Functions
+
+```{r}
+get_basepairs_count <- function(forgi.df) {
+  
+  duplex_max.df <- forgi.df %>%
+    group_by(id) %>%
+    dplyr::filter(element_type == "s") %>%
+    summarise(total_paired = sum(L_width)) %>%
+    dplyr::select(id, total_paired)
+  
+  forgi.df <- left_join(forgi.df, duplex_max.df, by = "id")
+  
+  return(forgi.df)
+}
+
+get_unpaired_total <- function(forgi.df, group = NULL) {
+  
+  data_i.df <- forgi.df %>%
+    group_by({{group}}, id) %>%
+    dplyr::filter(element_type == "i") %>%
+    replace(is.na(.), 0) %>%
+    mutate(iloop_length_L = sum(L_width),
+           iloop_length_R = sum(R_width)) %>%
+    dplyr::select(id, {{group}}, iloop_length_L, iloop_length_R) %>%
+    ungroup() %>%
+    distinct() %>%
+    rowwise() %>%
+    mutate(total_unpaired = sum(iloop_length_L, iloop_length_R)) %>%
+    #dplyr::select(-c(iloop_length_L, iloop_length_R)) %>%
+    ungroup()
+   #data.df <- left_join(data.df, data_i.df, by = c(str(quote(group)), "id"))
+  
+  return(data_i.df)
+}
+
+get_paired_metric <- function(clusters.df, group = NULL) {
+  
+  paired_metric.df <- clusters.df %>%
+    dplyr::select({{group}}, name, total_paired, total_unpaired) %>%
+    replace(is.na(.), 0) %>%
+    distinct() %>%
+    rowwise() %>%
+    mutate(paired_to_total_ratio = total_paired*2/(total_paired*2 + total_unpaired)) %>%
+    ungroup() %>%
+    dplyr::select({{group}}, name, paired_to_total_ratio)
+  
+  return(paired_metric.df)
+}
+
+
+extract_paired_residues <- function(id, L_db, L_sequence, R_db, R_sequence) {
+  
+  l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
+  # l_start <- l_brackets[1]
+  # l_end <- l_brackets[length(l_brackets)]
+  # l_trimmed_db <- str_sub(L_db, l_start, l_end)
+  # l_trimmed_seq <- str_sub(L_sequence, l_start, l_end)
+  
+  r_brackets <- str_locate_all(R_db, pattern = "\\)")[[1]][,1]
+  # r_start <- r_brackets[1]
+  # r_end <- r_brackets[length(r_brackets)]
+  # r_trimmed_db <- str_sub(R_db, r_start, r_end)
+  # r_trimmed_seq <- str_sub(R_sequence, r_start, r_end)
+  
+  stopifnot(length(l_brackets) == length(r_brackets)) # check L and R arms of the duplex have an equal number of bp
+  
+  l_paired_residues <- paste(str_sub(L_sequence, start = l_brackets, end = l_brackets), collapse = '')
+  r_paired_residues <- paste(str_sub(R_sequence, start = r_brackets, end = r_brackets), collapse = '')
+  
+  results.ls <- list(id = id, l_paired_residues=l_paired_residues, r_paired_residues=r_paired_residues) # l_start =l_start, l_end = l_end, l_trimmed_db=l_trimmed_db, l_trimmed_seq=l_trimmed_seq,r_start=r_start, r_end=r_end, r_trimmed_db=r_trimmed_db, r_trimmed_seq=r_trimmed_seq,
+  
+  return(results.ls)
+  
+}
+
+
+correct_i_positions <- function(forgi.df) {
+  # Forgi output places all asymmetric internal loops and bulges on the left side, even when they should be on the right.
+  # If such cases exist, swap them to the right
+  # !!!THIS FUNCTION MUST BE APPLIED ON SINGLE DUPLEX STRUCTURES
+  
+  stem_L.df <- forgi.df %>%
+    group_by(Experiment, id) %>%
+    dplyr::filter(element_type == "s") %>%
+    mutate(stem_L_limit = max(L_end) ) %>%
+    dplyr::select(id, Experiment, stem_L_limit) %>%
+    ungroup() %>%
+    distinct()
+
+  forgi.df <- left_join(forgi.df, stem_L.df, by = c("Experiment", "id"))
+  
+  if (nrow(dplyr::filter(forgi.df, L_start > stem_L_limit)) == 0) {
+      
+    forgi.df <- forgi.df %>%
+        dplyr::select(-stem_L_limit)
+    
+  } else {
+      
+    forgi.df <- forgi.df %>%
+      rowwise() %>%
+      mutate(swap = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~  "yes", TRUE ~ "no"),
+              R_start = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~ as.double(L_start),
+                                  TRUE ~ as.double(R_start)),
+              R_end = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~ as.double(L_end),
+                                 TRUE ~ as.double(R_end)),
+              R_width = case_when((element_type == "i") & (as.double(L_start) > stem_L_limit) ~ as.double(L_width),
+                                   TRUE ~ as.double(R_width))) %>%
+      ungroup()
+    
+    forgi.df <- forgi.df %>%
+      rowwise() %>%
+      mutate(L_start = case_when(swap == "yes" ~ 0, 
+                                 TRUE ~ as.double(L_start)),
+             L_end = case_when(swap == "yes" ~ 0,
+                                   TRUE ~ as.double(L_end)),
+             L_width = case_when(swap == "yes" ~ 0,
+                                     TRUE ~ as.double(L_width))) %>%
+          ungroup() %>%
+          dplyr::select(-stem_L_limit, -swap)
+    
+      }
+  return(forgi.df)
+}
+```
+
+
+```{r}
+get_nucleotide_frequency <- function(duplexes.df) {
+  
+   # Separate L_db and R_db
+  duplexes.df <- duplexes.df %>%
+    separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
+  
+  # Extract the paired residues from each arm's sequence
+  duplexes.df <- duplexes.df %>%
+    rowwise() %>%
+    mutate(paired_regions = list(extract_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
+    mutate(L_paired_residues = paired_regions$l_paired_residues,
+           R_paired_residues = paired_regions$r_paired_residues) %>%
+    ungroup() %>%
+    dplyr::select(-paired_regions)
+  
+  duplexes.df <- duplexes.df %>%
+      dplyr::filter(!is.na(L_paired_residues)) %>%
+      dplyr::filter(!is.na(R_paired_residues))
+  
+  # Calculate nucleotide frequencies for ech arm
+  L_seq <- DNAStringSet(duplexes.df$L_paired_residues)
+  R_seq <- DNAStringSet(duplexes.df$R_paired_residues)
+  R_seq <- Biostrings::reverse(R_seq) # Need to reverse the R arm paired sequence
+  
+  L_freq <- as.data.frame(oligonucleotideFrequency(L_seq, width = 1, as.prob=TRUE))
+  R_freq <- as.data.frame(oligonucleotideFrequency(R_seq, width = 1, as.prob=TRUE))
+  
+  colnames(L_freq) <- paste0(colnames(L_freq), "_L")
+  colnames(R_freq) <- paste0(colnames(R_freq), "_R")
+  duplexes.df <- dplyr::bind_cols(duplexes.df, L_freq, R_freq)
+  
+  # Purine content - assign maximal purine arm
+  duplexes.df <- duplexes.df %>%
+    rowwise() %>% 
+    mutate(L_pur = sum(c(A_L, G_L)), # purine total per hybrid
+            R_pur = sum(c(A_R, G_R))) %>%
+    mutate(max_pur = max(L_pur, R_pur)) %>%
+    mutate(maximal_purine_arm = case_when((max_pur == L_pur) ~ "L", # assign maximal purine arm
+                            TRUE ~ "R")) %>%
+    ungroup() %>%
+    dplyr::select(-L_pur, -R_pur, -max_pur)
+  
+  # Reorient duplex frequencies based on maximal purine content (column "maximal_purine_arm")
+  nuc_freq_max_pur_arm.df <- duplexes.df %>%
+    dplyr::filter(maximal_purine_arm == "L") %>%
+    mutate(A_freq_max_pur_arm = A_L, A_freq_min_pur_arm = A_R,
+             G_freq_max_pur_arm = G_L, G_freq_min_pur_arm = G_R,
+             C_freq_max_pur_arm = C_L, C_freq_min_pur_arm = C_R,
+             U_freq_max_pur_arm = T_L, U_freq_min_pur_arm = T_R)
+  nuc_freq_min_pur_arm.df <- duplexes.df %>%
+    dplyr::filter(maximal_purine_arm == "R") %>%
+    mutate(A_freq_max_pur_arm = A_R, A_freq_min_pur_arm = A_L,
+             G_freq_max_pur_arm = G_R, G_freq_min_pur_arm = G_L,
+             C_freq_max_pur_arm = C_R, C_freq_min_pur_arm = C_L,
+             U_freq_max_pur_arm = T_R, U_freq_min_pur_arm = T_L)
+    
+  nuc_freq_reordered.df <- rbind(nuc_freq_max_pur_arm.df, nuc_freq_min_pur_arm.df)
+  stopifnot(nrow(nuc_freq_reordered.df) == nrow(duplexes.df))
+  
+  nuc_freq_reordered.df <- nuc_freq_reordered.df %>%
+    dplyr::select(-union(colnames(L_freq), colnames(R_freq)))
+    
+  return(nuc_freq_reordered.df)
+  
+}
+```
+
+
+```{r}
+plot_stacked_barchart <- function(data.df, column, group=NULL, simplify=TRUE) {
+  
+  if (!("id" %in% colnames(data.df))) {
+    data.df$id <- rownames(data.df)
+  } else {
+    next
+  }
+  
+  data_counts.df <- data.df %>%
+    dplyr::select(id, {{group}}, {{column}}) %>%
+    distinct() %>%
+    group_by({{group}}, {{column}}) %>%
+    summarise(counts = n()) %>%
+    arrange(desc({{column}})) %>%
+    mutate(percentage = scales::percent(counts / sum(counts), accuracy = 0.01)) %>%
+    mutate(percentage = as.numeric(sub("%","", percentage))) %>%
+    ungroup() %>%
+    group_by({{group}}) %>%
+    #mutate(percentage = counts*100 / sum(counts)) %>%
+    mutate(pos = cumsum(percentage) - percentage/2)
+  
+  
+  if (simplify) {
+    data_counts.df <- data_counts.df %>%
+      mutate(category = case_when((percentage < 1) ~ "Other",
+                                 (percentage >= 1) ~ {{column}}))
+    
+    data_counts.df <- data_counts.df %>%
+      group_by({{group}}, category) %>%
+      mutate(percentage = sum(percentage)) %>%
+      ungroup() %>%
+      dplyr::select(category, percentage, {{group}}) %>%
+      distinct() %>%
+      arrange(desc(category)) %>%
+      mutate(pos = cumsum(percentage) - percentage/2) 
+    
+  } else {
+    
+    data_counts.df <- data_counts.df %>%
+      mutate(category = {{column}})
+  }
+  
+  bar = ggplot() + 
+    geom_bar(aes(y = percentage, x = "", fill = category), data = data_counts.df,
+                            stat="identity", width = 0.5, color="black") +
+    ggrepel::geom_text_repel(data = data_counts.df, aes(x = "", y = pos, label=paste0(round(percentage, 1),"%")), size=5, nudge_x = 0.4,
+                                 segment.size = 0.5, segment.color = '#515A5A') + # label=paste0(round(percentage, 2),"%"))
+    facet_grid(cols = vars({{group}})) +
+    #facet_wrap(. ~ Experiment, scales = "free") +
+    paletteer::scale_fill_paletteer_d("rcartocolor::Earth", direction = -1) +
+    theme(legend.position="right", legend.direction="vertical",
+          legend.title = element_blank()) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Percentage") +
+    theme_minimal()
+  
+  return(bar)
+  
+}
+
+```
+
+```{r}
+plot_nucleotide_frequency <- function(data.df) {
+
+  # Prepare for plotting
+  high_pur.df <- data.df %>% 
+    dplyr::select(Experiment, name, A_freq_max_pur_arm, G_freq_max_pur_arm, C_freq_max_pur_arm, U_freq_max_pur_arm)
+  
+  high_pur.df <- rowid_to_column(high_pur.df)
+  long_high_pur.df <- high_pur.df %>% 
+    gather(residue, frequency, A_freq_max_pur_arm:U_freq_max_pur_arm)
+  long_high_pur.df$arm = "High purine arm"
+  
+  low_pur.df <- data.df %>% 
+    dplyr::select(Experiment, name, A_freq_min_pur_arm, G_freq_min_pur_arm, C_freq_min_pur_arm, U_freq_min_pur_arm)
+  
+  low_pur.df <- rowid_to_column(low_pur.df)
+  
+  long_low_pur.df <- low_pur.df %>% 
+    gather(residue, frequency, A_freq_min_pur_arm:U_freq_min_pur_arm)
+  long_low_pur.df$arm = "Low purine arm"
+  nuc_freq.df <- rbind(long_high_pur.df, long_low_pur.df)
+  nuc_freq.df$residue <- str_sub(nuc_freq.df$residue, 1,1) # trim string to get nucleotide (first) letter
+  
+  # Plot individual nucleotide frequencies
+  nuc_freq.gg <- ggplot(nuc_freq.df, aes(y=rowid, x=frequency, color = residue)) +
+    geom_smooth(se=F, method = "loess", span = 0.4, orientation = "y") +
+    facet_grid(cols = vars(arm), rows = vars(Experiment), scales = "free_y") +
+    xlab("Frequency") +
+    ylab("ID (decreasing number of bp)") +
+    #ylim(0, 1) +
+    theme_minimal_grid() + 
+  theme(legend.position = "top") +
+    scale_color_manual(values = c("dodgerblue4","goldenrod3","firebrick", "darkgreen"))
+  
+  return(list(data = nuc_freq.df, plot = nuc_freq.gg))
+  
+}
+```
+
+#### Data
+
+```{r}
+# Clusters
+stau1.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/merged_clusters/merged_atlas.clusters.collapsed.mfe.tsv.gz")
+paris.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/all.atlas_clusters.gc.annotated.tsv.gz")
+
+
+paris.mfe.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz")
+
+# Structure annotation
+# stau1: all clusters
+stau1_forgi.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/merged_clusters/merged_atlas.clusters.collapsed.forgi.tsv.gz")
+# paris: only intra-genic 3'UTR
+paris_forgi.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/paris.3utr.all.atlas_clusters.gc.annotated.forgi.tsv.gz")
+
+# Clustered hybrids
+# stau1.hybrids.dt
+# paris.hybrids.dt
+```
+
+```{r}
+data.dir <- "~/Documents/projects/computational_hiCLIP/newest_datasets/"
+```
+
+# Main figure
+
+## Fig 3 A
+
+### Summary of atlas (counts, locations, binding energies)
+
+***
+> STAU1 hiCLIP cluster counts
+
+The number of STAU1 clusters is `r nrow(stau1.dt)`
+
+```{r}
+nrow(stau1.dt)
+nrow(paris.dt) # includes tRNA and rRNA
+```
+
+```{r}
+# Exclude rRNA and tRNA
+paris.dt <- paris.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
+paris.dt <- paris.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
+paris.dt <- paris.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
+paris.dt <- paris.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
+paris.dt <- paris.dt[!grepl("tRNA", L_seqnames)]
+paris.dt <- paris.dt[!grepl("tRNA", R_seqnames)]
+```
+
+```{r}
+nrow(paris.dt) 
+```
+## Fig 3 A
+
+## Fig 3 B
+
+***
+> Duplex locations
+
+```{r}
+stau1.region.df <- stau1.dt %>%
+  dplyr::select(name, L_region, R_region) %>%
+  pivot_longer(c(L_region, R_region), names_to = "arm", values_to = "region")
+
+plot_stacked_barchart(stau1.region.df, region, simplify = FALSE) +
+  theme_minimal_grid() + 
+  ggtitle("STAU1") +
+  guides(fill=guide_legend(title="Duplex arm location"))
+
+```
+
+
+```{r}
+# stau1_duplex_regions.df <- stau1.dt %>%
+#   rowwise() %>%
+#   mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
+#   ungroup()
+
+# plot_stacked_barchart(stau1_duplex_regions.df, region_pairs, simplify = TRUE) +
+#   ggtitle("STAU1 duplex locations") +
+#   # scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(7)) +
+#   theme_minimal_grid() 
+```
+
+#### Intramolecular vs intermolecular
+
+```{r}
+stau1.dt <- stau1.dt %>%
+  mutate(type = case_when(L_gene_id == R_gene_id ~ "Intragenic",
+                          TRUE ~ "Intergenic"))
+
+plot_stacked_barchart(stau1.dt, column = type, simplify = FALSE)
+```
+
+#### Intramolecular locations
+
+```{r warning=FALSE}
+intra_stau1.dt <- stau1.dt %>%
+  dplyr::filter(type == "Intragenic")
+
+# Filter out intronic regions 
+intra_stau1.dt <- intra_stau1.dt %>%
+  dplyr::filter(L_region != "intron" & R_region != "intron")
+
+stau1_duplex_regions.df <- intra_stau1.dt %>%
+  rowwise() %>%
+  mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
+  ungroup()
+
+stau1.regions.gg <- plot_stacked_barchart(stau1_duplex_regions.df, region_pairs, simplify = TRUE) +
+  ggtitle("STAU1") +
+  #scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(5)) +
+  scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#F1948A","#999999","#17A589","#56B4E9"))(5)) +
+  theme_minimal_grid() +
+  guides(fill=guide_legend(title="Duplex location"))
+  
+stau1.regions.gg
+#ggsave(paste0(data.dir, "stau_regions.pdf"), stau1.regions.gg, width = 4, height = 5, dpi = 300)
+```
+
+```{r}
+nrow(intra_stau1.dt)
+```
+
+***
+> PARIS locations
+
+#### Intragenic vs intergenic
+
+```{r}
+paris.dt <- paris.dt %>%
+  mutate(type = case_when(L_gene_id == R_gene_id ~ "Intragenic",
+                          TRUE ~ "Intergenic"))
+```
+
+
+```{r}
+paris_intra_inter.gg <- plot_stacked_barchart(paris.dt, column = type, simplify = FALSE) +
+  #scale_fill_manual(values = colorRampPalette(c("#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(2)) +
+  theme_minimal_grid() +
+  theme(legend.position = "top")
+  # geom_text(data = paris.dt, 
+  #             aes(x = 1.4, y = 92, label = paste0("n = ", nrow(paris.dt))), inherit.aes = FALSE, size = 4) 
+
+paris_intra_inter.gg
+# ggsave(paste0(data.dir, "paris_intra_inter.pdf"), paris_intra_inter.gg, width = 2.5, height = 5, dpi = 300)
+```
+
+## Fig 3 B
+
+```{r}
+intra_paris.dt <- paris.dt %>%
+  dplyr::filter(type == "Intragenic")
+
+# Filter out intronic regions 
+intra_paris.dt <- intra_paris.dt %>%
+  dplyr::filter(L_region != "intron" & R_region != "intron")
+
+intra_paris_duplex_regions.df <- intra_paris.dt %>%
+  rowwise() %>%
+  mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
+  ungroup()
+
+nrow(intra_paris.dt)
+```
+
+
+```{r}
+paris_regions.gg <- plot_stacked_barchart(intra_paris_duplex_regions.df, region_pairs, simplify = TRUE) +
+  ggtitle("PARIS") +
+  #scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(9)) +
+  #scale_fill_manual(values = colorRampPalette(brewer.pal(8, "Set2"))(8)) +
+  scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(8)) +
+  theme_minimal_grid() +
+  guides(fill=guide_legend(title="Duplex location"))
+
+paris_regions.gg
+# ggsave(paste0(data.dir, "paris_regions.pdf"), paris_regions.gg, width = 4, height = 5, dpi = 300)
+```
+
+### Comparison with PARIS HEK293 (Lu et al. 2016)
+
+> Filter intragenic 3'UTR duplexes from both datasets
+
+To get more comparable datasets, we focused on the 3'UTR intragenic duplexes for both STAU1 and PARIS. 
+
+```{r}
+stau1.utr3.df <- stau1.dt %>%
+  dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3") %>%
+  mutate(Experiment = "STAU1")
+
+paris.mfe.dt <- paris.mfe.dt %>%
+  rowwise() %>%
+  mutate(type = case_when(L_gene_id == R_gene_id ~ "Intragenic",
+                          TRUE ~ "Intergenic"))
+
+paris.utr3.df <- paris.mfe.dt %>%
+  dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3") %>%
+  mutate(Experiment = "PARIS")
+
+
+# Filter structure annotation files for the 3'UTR-3'UTR intragenic clusters
+utr3_stau1_forgi.df <- semi_join(stau1_forgi.dt, stau1.utr3.df, by = c("id" = "name"))
+utr3_paris_forgi.df <- semi_join(paris_forgi.dt, paris.utr3.df, by = c("id" = "name"))
+utr3_stau1_forgi.df$Experiment <- "STAU1"
+utr3_paris_forgi.df$Experiment <- "PARIS"
+```
+
+
+```{r}
+# Append datasets
+utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df)
+```
+
+
+Clusters remaining in the STAU1 data: `{r} nrow(stau1.utr3.df)`
+Clusters remaining in the PARIS data: `{r} nrow(paris.utr3.df)`
+
+
+```{r}
+nrow(stau1.utr3.df)
+nrow(paris.utr3.df)
+```
+
+## Fig 3 C
+
+***
+> Hybrid spans
+
+```{r}
+utr3_clusters.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(duplex_span = R_start - L_end + 1) %>%
+  ungroup()
+```
+
+```{r}
+span_median <- utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Median = median(duplex_span, na.rm=TRUE))
+span_median
+```
+```{r}
+span_mean <- utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Mean = mean(duplex_span, na.rm=TRUE))
+span_mean
+```
+
+
+```{r}
+duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
+  geom_density(alpha = 0.8, adjust = 1.5) +
+  #scale_colour_brewer(palette="Dark2") +
+  scale_x_log10() + annotation_logticks() +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("Duplex span (nt) ") +
+  #ggtitle("Duplex span") +
+  geom_vline(data=span_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed") +
+  annotate("text", label = paste0("p = ", span.pval), x = 100, y = 0.65)
+
+duplex_span.gg
+# ggsave(paste0(data.dir, "duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
+# adjust = 1.5
+```
+```{r}
+# Extract data for gauss mixture model
+
+We can fit a 2-component Gaussian mixture model to the bimodal STAU1 distribution
+
+```{r}
+suppressPackageStartupMessages(library(mixtools))
+set.seed(42)
+
+# http://tinyheero.github.io/2015/10/13/mixture-model.html
+# 
+#' Plot a Mixture Component
+#' 
+#' @param x Input data
+#' @param mu Mean of component
+#' @param sigma Standard deviation of component
+#' @param lam Mixture weight of component
+
+plot_mix_comps <- function(x, mu, sigma, lam) {
+  lam * dnorm(x, mu, sigma)
+}
+
+mixmdl <- normalmixEM(log10(utr3_clusters.df[utr3_clusters.df$Experiment == "STAU1", ]$duplex_span), k = 2)
+ggplot() +
+  geom_histogram(data = data.frame(x = mixmdl$x), aes(x, ..density..), bins = 100, fill = "grey75") +
+  stat_function(data = data.frame(x = mixmdl$x), geom = "line", fun = plot_mix_comps,
+                args = list(mixmdl$mu[1], mixmdl$sigma[1], lam = mixmdl$lambda[1]),
+                colour = "red", lwd = 1.5) +
+  stat_function(data = data.frame(x = mixmdl$x), geom = "line", fun = plot_mix_comps,
+                args = list(mixmdl$mu[2], mixmdl$sigma[2], lam = mixmdl$lambda[2]),
+                colour = "blue", lwd = 1.5) +
+  scale_x_continuous(labels = c(1, 10, 100, 1000, 10000)) +
+  labs(x = "Duplex span (nt)",
+       y = "Density") +
+  theme_minimal_grid()
+```
+
+This gives us two distributions with mean duplex spans of `r round(10^mixmdl$mu, 3)[1]` and `r round(10^mixmdl$mu, 3)[2]` and lambdas of `r round(mixmdl$lambda, 3)[1]` and `r round(mixmdl$lambda, 3)[2]` respectively.
+
+```{r}
+# ggsave(paste0(data.dir, "duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
+```
+
+```{r}
+fwrite(stau1.duplex.span.df, paste0(data.dir,"stau1_duplex_span.tsv.gz"), sep = "\t")
+```
+
+
+## Fig 3 D
+***
+> Stem lengths
+
+Compare the number of paired residues within each duplex
+
+```{r}
+# get base-pairs count
+utr3_stau1_forgi.df <- get_basepairs_count(utr3_stau1_forgi.df)
+utr3_paris_forgi.df <- get_basepairs_count(utr3_paris_forgi.df)
+
+utr3_forgi.df <- rbind(utr3_stau1_forgi.df, utr3_paris_forgi.df)
+
+utr3_bp.df <- utr3_forgi.df %>%
+  distinct(Experiment, id, total_paired)
+
+utr3_clusters.df <- left_join(utr3_clusters.df, utr3_bp.df, by = c("Experiment", c("name" = "id")))
+```
+
+```{r}
+# Wilcox.test
+stau1.bp.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$total_paired
+paris.bp.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$total_paired
+
+median(stau1.bp.ls)
+median(paris.bp.ls)
+mean(stau1.bp.ls)
+mean(paris.bp.ls)
+
+wilcox.test(stau1.bp.ls, paris.bp.ls, alternative = "two.sided")
+```
+
+```{r}
+# Counts for the plot
+utr3_counts <- list(nrow(stau1.utr3.df), nrow(paris.utr3.df))
+names(utr3_counts) <- c("STAU1", "PARIS")
+
+utr3_counts.df <- as.data.frame(t(data.frame(utr3_counts)))
+utr3_counts.df <- dplyr::rename(utr3_counts.df, counts = V1)
+utr3_counts.df <- rownames_to_column(utr3_counts.df, var = "Experiment")
+
+total_paired.gg <- ggplot(utr3_clusters.df,
+                         aes(x = Experiment, y=total_paired, fill=Experiment)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  #ggtitle("Base-pairs per duplex") +
+  ylab("Base-pairs per duplex (nt)") +
+  geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
+            position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6) +
+  annotate("text", label = paste0("p < 2.2e-16"), x = 1.5, y = 80)
+total_paired.gg
+
+# ggsave(paste0(data.dir, "total_paired.pdf"), total_paired.gg, dpi = 300, width = 4, height = 6)
+```
+
+## Fig 3 E
+
+***
+> Hybridisation energy
+
+```{r}
+# Normalise MFE scores to number of paired res
+# get MFE Z scores
+utr3_clusters.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(normalised_mfe = mfe/total_paired,
+         normalised_mean_shuffled_mfe = mean_shuffled_mfe/total_paired,
+         normalised_sd_shuffled_mfe = sd_shuffled_mfe/total_paired) %>%
+  mutate(normalised_mfe_zscore = (normalised_mfe - normalised_mean_shuffled_mfe)/normalised_sd_shuffled_mfe) %>%
+  ungroup()
+```
+
+
+```{r}
+# Test
+stau1.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$mfe
+stau1.norm_mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$normalised_mfe
+stau1.shuffled.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$normalised_shuffled_mfe
+
+paris.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$mfe
+paris.norm_mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$normalised_mfe
+paris.shuffled.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$normalised_shuffled_mfe
+
+# Differences vs shuffled
+# STAU1
+wilcox.test(stau1.norm_mfe.ls, stau1.shuffled.mfe.ls)
+
+# PARIS
+wilcox.test(paris.norm_mfe.ls, paris.shuffled.mfe.ls)
+
+# Absolute mfe difference vs PARIS
+mean(stau1.mfe.ls) - mean(paris.mfe.ls)
+
+# MFE per bp difference
+mean(stau1.norm_mfe.ls) - mean(paris.norm_mfe.ls)
+wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)
+```
+
+```{r}
+wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val
+```
+
+
+```{r}
+mfe_median <- utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Median = median(normalised_mfe, na.rm=TRUE))
+mfe_median
+```
+
+```{r}
+# Density plot
+utr3_clusters_mfe.df <- pivot_longer(utr3_clusters.df, cols = c(normalised_mfe, normalised_mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+
+utr3_clusters_mfe.df <- utr3_clusters_mfe.df %>%
+  mutate(Sample = case_when((Sample == "normalised_mfe") ~ "STAU1",
+                            (Sample == "normalised_mean_shuffled_mfe") ~ "Shuffled control"))
+
+
+mfe.dens.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  scale_colour_brewer(palette="Dark2") +
+  annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
+  scale_linetype_manual(values=c("longdash", "solid")) +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  facet_grid(rows = vars(Experiment)) +
+  theme(legend.position = "right") +
+  ylab("Density") +
+  xlab("Normalised hybridisation energy (kcal/mol)") +
+  geom_vline(data=mfe_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed")
+  #xlab("MFE (kcal/mol)") +
+  #ggtitle("3'UTR-3'UTR clusters binding energy") 
+
+mfe.dens.gg
+# ggsave(paste0(data.dir, "mfe_dens.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
+```
+
+## Fig 3 F
+
+***
+> Proportion of paired residues
+
+The *paired metric* is a measure that takes into account the ratio of paired residues to non-paired residues (bulges and internal loops) in each duplex. The formula is:
+
+$$
+\text{Paired Metric} = \frac{(n_p)*2}{(n_p)*2 + (L_u + R_u)}, \\
+\text{ } \\
+\text{where:} \\
+ n_p = \text{number of paired residues} \\
+ L_u = \text{number of unpaired residues left arm} \\
+ R_u = \text{number of unpaired residues right arm}
+$$
+
+Correct internal loop and bulges positions:
+
+```{r}
+utr3_forgi.df <- correct_i_positions(utr3_forgi.df)
+```
+
+Calculate the paired metric: 
+
+```{r}
+# Calculate paired metric
+unpaired.df <- get_unpaired_total(utr3_forgi.df, group = Experiment)
+utr3_clusters.df <- left_join(utr3_clusters.df, unpaired.df, by = c("Experiment", c("name" = "id")))
+
+paired_metric.df <- get_paired_metric(utr3_clusters.df, group = Experiment)
+utr3_clusters.df <- left_join(utr3_clusters.df, paired_metric.df, by = c("Experiment", "name"))
+
+```
+
+Convert to percentage: 
+
+```{r}
+utr3_clusters.df <- utr3_clusters.df %>%
+  ungroup() %>%
+  mutate(paired_percentage = paired_to_total_ratio*100) %>%
+  dplyr::select(-paired_to_total_ratio)
+
+paired_percentage_median <- utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Median = median(paired_percentage, na.rm=TRUE))
+paired_percentage_median
+```
+
+```{r}
+stau1.paired_ratio.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$paired_percentage
+paris.paired_ratio.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$paired_percentage
+
+paired_ratio.pval <- wilcox.test(stau1.paired_ratio.ls, paris.paired_ratio.mfe.ls)$p.value
+paired_ratio.pval
+```
+
+```{r}
+paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = Experiment)) + 
+  geom_density() +
+  scale_fill_tableau() +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("Paired residues (%)") +
+  #ggtitle("3'UTR-3'UTR clusters paired metric") +
+  geom_vline(data=paired_percentage_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed") +
+  annotate("text", label = paste0("p = ", paired_ratio.pval), x = 80, y = 0.07)
+
+paired_metric.gg
+```
+
+
+```{r}
+ggsave(paste0(data.dir, "paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
+```
+
+## Fig 3 G
+
+***
+> Number of bulges
+
+```{r}
+bulges.df <- utr3_forgi.df %>%
+  ungroup() %>%
+  group_by(Experiment, id) %>%
+  dplyr::filter(element_type == "i") %>%
+  count(element_type) %>%
+  dplyr::select(Experiment, id, n) %>%
+  ungroup() %>%
+  distinct() %>%
+  dplyr::rename(bulge_count = n)
+
+utr3_clusters.df <- left_join(utr3_clusters.df, bulges.df, by = c("Experiment", c("name" = "id")))
+
+utr3_clusters.df <- utr3_clusters.df %>%
+    replace(is.na(.), 0)
+```
+
+```{r}
+# Wilcox.test
+stau1.bulge.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$bulge_count
+paris.bulge.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$bulge_count
+
+median(stau1.bulge.ls)
+median(paris.bulge.ls)
+mean(stau1.bulge.ls)
+mean(paris.bulge.ls)
+# wilcox.test(stau1.bulge.ls, paris.bulge.ls, alternative = "two.sided")
+```
+
+```{r message=FALSE}
+# Boxplot
+bulges.gg <- ggplot(utr3_clusters.df,
+                         aes(x = Experiment, y=bulge_count, fill=Experiment)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  #ggtitle("Bulges per duplex") +
+  ylab("Bulges per duplex") +
+  geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
+            position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
+bulges.gg
+# ggsave(paste0(data.dir, "bulge_count.pdf"), bulges.gg, dpi = 300, width = 4, height = 6)
+```
+## Fig 3 H
+
+***
+> Symmetry classification
+
+
+The *symmetry classification* is a measure that takes into account the relative position and numbers of bulges and internal loops in each predicted stem-loop structure
+
+
+#### Proportion of perfect duplexes
+
+```{r}
+utr3_clusters.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(stem_type = case_when(paired_percentage == 100 ~ "Perfect duplex",
+                               TRUE ~ "Interrupted stem")) %>%
+  ungroup()
+```
+
+#### Extended symmetry clasification
+
+Description | Label
+------------- | -------------
+Uninterrupted (no bulges or internal loops on either side) | Perfect duplex
+Symmetrical (vertical axis, left-right mirror image) | Symmetric
+Balanced (equal number of internal loops of identical sizes on either side, but not all of same size are opposite each other) | Asymmetric
+Non-Symmetrical | Asymmetric
+
+Obtain stem symmetry types:
+
+```{r warning=FALSE}
+# Get the complete set of internal loop widths for L and R arm 
+utr3_forgi.df <- utr3_forgi.df %>%
+    replace(is.na(.), 0) 
+
+test <- utr3_forgi.df %>%
+  dplyr::group_by(Experiment, id) %>%
+  dplyr::filter(element_type == "i") %>%
+  summarize(L_i_widths_sorted = paste(sort((L_width)),collapse=","),
+            R_i_widths_sorted = paste(sort((R_width)),collapse=","),
+            L_i_widths = paste((L_width),collapse=","),
+            R_i_widths = paste((R_width),collapse=",")) %>%
+  ungroup()
+
+```
+
+```{r}
+utr3_clusters.df <- left_join(utr3_clusters.df, test, by = c("Experiment", c("name" = "id")))
+
+symmetry.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths == R_i_widths ~ "Symmetric",
+                                   stem_type == "Interrupted stem" & L_i_widths != R_i_widths ~ "Asymmetric",
+                                   stem_type == "Perfect duplex" ~ "Perfect duplex")) %>%
+  ungroup()
+
+unique(symmetry.df$symmetry_type)
+stopifnot(nrow(dplyr::filter(symmetry.df, is.na(symmetry_type))) == 0)
+```
+
+```{r warning=FALSE}
+# Get percentages of stem_types
+symmetry.gg <- plot_stacked_barchart(symmetry.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
+  scale_fill_brewer(palette = "PuBuGn") +
+  coord_polar("y", start=0) +
+  guides(fill = guide_legend(title = "Structure type")) +
+    theme_void()
+symmetry.gg 
+# ggsave(paste0(data.dir, "symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
+```
+
+```{r}
+dplyr::filter(symmetry.df, stem_type == "Interrupted stem", bulge_count == 2)
+```
+
+
+# Supplementary figure
+
+***
+> Bulge spacing
+
+The spacing between bulges is the width of stems between bulges
+
+```{r}
+bulge_spacing.df <- utr3_forgi.df %>%
+  ungroup() %>%
+  group_by(Experiment, id) %>%
+  dplyr::filter(any(element_type =="i")) %>%
+  dplyr::filter(element_type == "s") %>%
+  dplyr::filter(!element == "s0") %>%
+  dplyr::filter(!element_number == max(element_number))
+```
+
+Calculate median spacing per structure
+
+```{r}
+median_bulge_spacing.df <- bulge_spacing.df %>% 
+  summarise(bulge_spacing_median=median(L_width), .groups = "keep")
+```
+
+
+```{r message=FALSE}
+# Boxplot
+bulge_s.gg <- ggplot(median_bulge_spacing.df,
+                         aes(x = Experiment, y=bulge_spacing_median, fill=Experiment)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  #ggtitle("Bulges per duplex") +
+  ylab("Median spacing between bulges (nt)") 
+  # geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
+  #           position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
+bulge_s.gg
+ggsave(paste0(data.dir, "bulge_spacing.pdf"), bulge_s.gg, dpi = 300, width = 4, height = 6)
+```
+
+***
+> Sequence content
+
+Calculate the nucleotide frequency for the paired residues in each dataset
+
+```{r}
+utr3_clusters.df <- get_nucleotide_frequency(utr3_clusters.df)
+utr3_clusters.df <- utr3_clusters.df %>%
+    dplyr::arrange(desc(Experiment), desc(total_paired))
+```
+
+Plot nucleotide frequency 
+
+ID = 1 - largest bp
+Short duplexes display higher GC content and long duplexes showed higher AU content, for both PARIS and STAU1.
+
+```{r}
+nuc_freq.gg <- plot_nucleotide_frequency(utr3_clusters.df)$plot +
+  ggtitle("Nucleotide frequencies in each arm")
+```
+
+```{r}
+# ggsave(paste0(data.dir, "nuc_freq.pdf"), nuc_freq.gg, dpi = 300, width = 4, height = 7)
+```
+
+# Extras/ scraps
+
+***
+> STAU1 hiCLIP binding energy
+
+```{r}
+# stau1.mfe.df <- pivot_longer(stau1.dt, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+# stau1.mfe.df <- stau1.mfe.df %>%
+#   mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
+#                             (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
+# 
+# stau1.mfe.gg <- ggplot(stau1.mfe.df, aes(x = MFE, linetype = Sample, color = Sample)) + 
+#   geom_density() +
+#   scale_linetype_manual(values=c("longdash", "solid")) +
+#   scale_color_manual(values = colorRampPalette(c("#808080", "#004C99"))(2)) +
+#   #scale_color_tableau(direction = -1) +
+#   theme_minimal_grid() + 
+#   theme(legend.position = "top") +
+#   #theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+#   ylab("Density") +
+#   xlab("MFE (kcal/mol)") +
+#   ggtitle("STAU1 clusters binding energy") 
+# 
+# stau1.mfe.gg
+# ggsave(paste0(data.dir,"stau1_clusters_MFE.pdf"), stau1.mfe.gg, dpi=300, height = 7, width = 6)
+```
+
+***
+> Symmetry
+
+```{r}
+# symmetry2.df <- utr3_clusters.df %>%
+#   rowwise() %>%
+#   mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths == R_i_widths ~ "Symmetric",
+#                                    stem_type == "Interrupted stem" & L_i_widths_sorted != R_i_widths_sorted & L_i_widths != R_i_widths ~ "Asymmetric",
+#                                    stem_type == "Interrupted stem" & L_i_widths != R_i_widths & L_i_widths_sorted == R_i_widths_sorted ~ "Balanced",
+#                                    stem_type == "Perfect duplex" ~ "Perfect duplex")) %>%
+#   ungroup()
+# 
+# plot_stacked_barchart(symmetry2.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
+#   scale_fill_brewer(palette = "Blues") +
+#   theme_minimal_grid()
+```
