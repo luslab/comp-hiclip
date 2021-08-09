@@ -31,9 +31,26 @@ suppressPackageStartupMessages(library(scales))
 suppressPackageStartupMessages(library(tidyverse, warn.conflicts = FALSE))
 suppressPackageStartupMessages(library(stringr))
 suppressPackageStartupMessages(library(Biostrings))
+suppressPackageStartupMessages(library(mixtools))
 ```
 
 #### Functions
+
+```{r}
+# http://tinyheero.github.io/2015/10/13/mixture-model.html
+# 
+#' Plot a Mixture Component
+#' 
+#' @param x Input data
+#' @param mu Mean of component
+#' @param sigma Standard deviation of component
+#' @param lam Mixture weight of component
+
+plot_mix_comps <- function(x, mu, sigma, lam) {
+  lam * dnorm(x, mu, sigma)
+}
+```
+
 
 ```{r}
 get_basepairs_count <- function(forgi.df) {
@@ -82,8 +99,10 @@ get_paired_metric <- function(clusters.df, group = NULL) {
   
   return(paired_metric.df)
 }
+```
 
 
+```{r}
 get_paired_regions <- function(id, L_db, R_db) {
   
   l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
@@ -103,9 +122,7 @@ get_paired_regions <- function(id, L_db, R_db) {
   
 }
 
-```
 
-```{r}
 trim_duplex_overhangs <- function(clusters.df) {
   
   # Separate L_db and R_db
@@ -116,23 +133,24 @@ trim_duplex_overhangs <- function(clusters.df) {
   clusters.df <- clusters.df %>%
     rowwise() %>%
     mutate(paired_regions = list(get_paired_regions(id, L_db, R_db))) %>%
-    mutate(L_duplex_start= paired_regions$l_start, 
+    mutate(L_duplex_start = paired_regions$l_start, 
            L_duplex_end = paired_regions$l_end,
-           R_duplex_start= paired_regions$r_start, 
+           R_duplex_start = paired_regions$r_start, 
            R_duplex_end = paired_regions$r_end) %>%
     ungroup() %>%
     dplyr::select(-paired_regions)
-  # Adjust genomic coordinates to only the paired region
+  
+  # Adjust genomic coordinates to only include the paired region
   clusters.df <- clusters.df %>%
     rowwise() %>%
-    mutate(L_genomic_start = case_when(strand == "+" ~ L_start + L_duplex_start - 1,
-                                      TRUE ~ L_end - L_duplex_end + 1),
-           L_genomic_end = case_when(strand == "+" ~ L_start + L_duplex_end - 1,
-                                    TRUE ~ L_end - L_duplex_start + 1),
-           R_genomic_start = case_when(strand == "+" ~ R_start + R_duplex_start - 1,
-                                      TRUE ~ R_end - R_duplex_end + 1),
-           R_genomic_end = case_when(strand == "+" ~ R_start + R_duplex_end - 1,
-                                    TRUE ~ R_end - R_duplex_start + 1)) %>%
+    mutate(L_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_start - 1,
+                                      TRUE ~ L_genomic_end - L_duplex_end + 1),
+           L_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_end - 1,
+                                    TRUE ~ L_genomic_end - L_duplex_start + 1),
+           R_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_start - 1,
+                                      TRUE ~ R_genomic_end - R_duplex_end + 1),
+           R_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_end - 1,
+                                    TRUE ~ R_genomic_end - R_duplex_start + 1)) %>%
     ungroup()
     
   return(clusters.df)
@@ -366,26 +384,26 @@ plot_nucleotide_frequency <- function(data.df) {
 #### Data
 
 ```{r}
-# Clusters
-stau1.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/merged_clusters/merged_atlas.clusters.collapsed.mfe.tsv.gz")
-paris.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/all.atlas_clusters.gc.annotated.tsv.gz")
-
-
-paris.mfe.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz")
-
-# Structure annotation
-# stau1: all clusters
-stau1_forgi.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/merged_clusters/merged_atlas.clusters.collapsed.forgi.tsv.gz")
-# paris: only intra-genic 3'UTR
-paris_forgi.dt <- fread("~/Documents/projects/computational_hiCLIP/newest_datasets/paris/paris.3utr.all.atlas_clusters.gc.annotated.forgi.tsv.gz")
-
-# Clustered hybrids
-# stau1.hybrids.dt
-# paris.hybrids.dt
+data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip"
+plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_4"
 ```
 
 ```{r}
-data.dir <- "~/Documents/projects/computational_hiCLIP/newest_datasets/"
+# Clusters
+stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed.mfe.tsv.gz"))
+paris.dt <- fread(paste0(data.dir,"/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
+paris.mfe.dt <- fread(paste0(data.dir, "/paris_atlas/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz"))
+
+# Structure annotation
+# stau1: all clusters
+stau1_forgi.dt <- fread(paste0(data.dir,"/stau1_atlas/merged_atlas.clusters.collapsed.forgi.tsv.gz"))
+
+# paris: only intra-genic 3'UTR
+paris_forgi.dt <- fread(paste0(data.dir,"/paris_atlas/paris.3utr.all.atlas_clusters.gc.annotated.forgi.tsv.gz"))
+
+# Clustered hybrids
+stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
+paris.hybrids.dt <- fread(paste0(data.dir, "/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 ```
 
 # Main figure
@@ -482,7 +500,7 @@ stau1.regions.gg <- plot_stacked_barchart(stau1_duplex_regions.df, region_pairs,
   guides(fill=guide_legend(title="Duplex location"))
   
 stau1.regions.gg
-#ggsave(paste0(data.dir, "stau_regions.pdf"), stau1.regions.gg, width = 4, height = 5, dpi = 300)
+# ggsave(paste0(data.dir, "stau_regions.pdf"), stau1.regions.gg, width = 4, height = 5, dpi = 300)
 ```
 
 ```{r}
@@ -593,10 +611,8 @@ nrow(paris.utr3.df)
 #### Need to adjust the genomic coordinates to focus on the stem of the structure
 
 ```{r}
-
+utr3_clusters.df <- trim_duplex_overhangs(utr3_clusters.df)
 ```
-
-
 
 
 ## Fig 4 C
@@ -605,11 +621,18 @@ nrow(paris.utr3.df)
 > Hybrid spans
 
 ```{r}
+# utr3_clusters.df <- utr3_clusters.df %>%
+#   rowwise() %>%
+#   mutate(duplex_span1 = R_start - L_end + 1) %>%
+#   ungroup()
+
 utr3_clusters.df <- utr3_clusters.df %>%
   rowwise() %>%
-  mutate(duplex_span = R_start - L_end + 1) %>%
+  mutate(duplex_span = case_when(L_genomic_strand == "+" ~ R_genomic_duplex_start - L_genomic_duplex_end + 1 - 2,
+                                  L_genomic_strand == "-" ~ L_genomic_duplex_start - R_genomic_duplex_end + 1 - 2)) %>%
   ungroup()
 ```
+
 
 ```{r}
 span_median <- utr3_clusters.df %>%
@@ -628,46 +651,30 @@ span_mean
 ```{r}
 duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
   geom_density(alpha = 0.8, adjust = 1.5) +
-  #scale_colour_brewer(palette="Dark2") +
   scale_x_log10() + annotation_logticks() +
   scale_color_tableau() +
   theme_minimal_grid() + 
   theme(legend.position = "top") +
   ylab("Density") +
   xlab("Duplex span (nt) ") +
-  #ggtitle("Duplex span") +
   geom_vline(data=span_median, aes(xintercept=Median, color=Experiment),
-             linetype="dashed") +
-  annotate("text", label = paste0("p = ", span.pval), x = 100, y = 0.65)
+             linetype="dashed")
 
 duplex_span.gg
-# ggsave(paste0(data.dir, "duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
-# adjust = 1.5
+#ggsave(paste0(plots.dir, "/duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
 ```
-```{r}
-# Extract data for gauss mixture model
+
+## Fig S4 A
 
 We can fit a 2-component Gaussian mixture model to the bimodal STAU1 distribution
 
 ```{r}
-suppressPackageStartupMessages(library(mixtools))
+# Extract data for gauss mixture model
+
 set.seed(42)
-
-# http://tinyheero.github.io/2015/10/13/mixture-model.html
-# 
-#' Plot a Mixture Component
-#' 
-#' @param x Input data
-#' @param mu Mean of component
-#' @param sigma Standard deviation of component
-#' @param lam Mixture weight of component
-
-plot_mix_comps <- function(x, mu, sigma, lam) {
-  lam * dnorm(x, mu, sigma)
-}
-
 mixmdl <- normalmixEM(log10(utr3_clusters.df[utr3_clusters.df$Experiment == "STAU1", ]$duplex_span), k = 2)
-ggplot() +
+
+mix.gg <- ggplot() +
   geom_histogram(data = data.frame(x = mixmdl$x), aes(x, ..density..), bins = 100, fill = "grey75") +
   stat_function(data = data.frame(x = mixmdl$x), geom = "line", fun = plot_mix_comps,
                 args = list(mixmdl$mu[1], mixmdl$sigma[1], lam = mixmdl$lambda[1]),
@@ -679,20 +686,18 @@ ggplot() +
   labs(x = "Duplex span (nt)",
        y = "Density") +
   theme_minimal_grid()
+
+mix.gg
+
+# ggsave(paste0(plots.dir, "/duplex_span_gauss_mixture.pdf"), mix.gg, dpi = 300, width = 4, height = 4)
 ```
 
 This gives us two distributions with mean duplex spans of `r round(10^mixmdl$mu, 3)[1]` and `r round(10^mixmdl$mu, 3)[2]` and lambdas of `r round(mixmdl$lambda, 3)[1]` and `r round(mixmdl$lambda, 3)[2]` respectively.
 
-```{r}
-# ggsave(paste0(data.dir, "duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
-```
 
-```{r}
-fwrite(stau1.duplex.span.df, paste0(data.dir,"stau1_duplex_span.tsv.gz"), sep = "\t")
-```
+## Fig 4 D
 
 
-## Fig 3 D
 ***
 > Stem lengths
 
@@ -736,22 +741,20 @@ utr3_counts.df <- rownames_to_column(utr3_counts.df, var = "Experiment")
 total_paired.gg <- ggplot(utr3_clusters.df,
                          aes(x = Experiment, y=total_paired, fill=Experiment)) +
   geom_boxplot() +
-  scale_fill_brewer(palette="Blues") +
   theme(legend.position="right", legend.direction="vertical") +
   scale_fill_tableau() +
   theme_minimal_grid() + 
   theme(legend.position = "top") +
-  #ggtitle("Base-pairs per duplex") +
-  ylab("Base-pairs per duplex (nt)") +
+  ylab("Base-pairs per duplex (bp)") +
   geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6) +
   annotate("text", label = paste0("p < 2.2e-16"), x = 1.5, y = 80)
 total_paired.gg
 
-# ggsave(paste0(data.dir, "total_paired.pdf"), total_paired.gg, dpi = 300, width = 4, height = 6)
+# ggsave(paste0(plots.dir, "/total_paired.pdf"), total_paired.gg, dpi = 300, width = 4, height = 6)
 ```
 
-## Fig 3 E
+## Fig 4 E
 
 ***
 > Hybridisation energy
@@ -764,7 +767,6 @@ utr3_clusters.df <- utr3_clusters.df %>%
   mutate(normalised_mfe = mfe/total_paired,
          normalised_mean_shuffled_mfe = mean_shuffled_mfe/total_paired,
          normalised_sd_shuffled_mfe = sd_shuffled_mfe/total_paired) %>%
-  mutate(normalised_mfe_zscore = (normalised_mfe - normalised_mean_shuffled_mfe)/normalised_sd_shuffled_mfe) %>%
   ungroup()
 ```
 
@@ -773,11 +775,11 @@ utr3_clusters.df <- utr3_clusters.df %>%
 # Test
 stau1.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$mfe
 stau1.norm_mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$normalised_mfe
-stau1.shuffled.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$normalised_shuffled_mfe
+stau1.shuffled.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$normalised_mean_shuffled_mfe
 
 paris.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$mfe
 paris.norm_mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$normalised_mfe
-paris.shuffled.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$normalised_shuffled_mfe
+paris.shuffled.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$normalised_mean_shuffled_mfe
 
 # Differences vs shuffled
 # STAU1
@@ -802,7 +804,7 @@ wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val
 ```{r}
 mfe_median <- utr3_clusters.df %>%
     group_by(Experiment) %>%
-    dplyr::summarize(Median = median(normalised_mfe, na.rm=TRUE))
+    dplyr::summarize(Median = median(normalised_mfe, na.rm = TRUE))
 mfe_median
 ```
 
@@ -817,7 +819,6 @@ utr3_clusters_mfe.df <- utr3_clusters_mfe.df %>%
 
 mfe.dens.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, color = Experiment)) + 
   geom_density(alpha = 0.8) +
-  scale_colour_brewer(palette="Dark2") +
   annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
   scale_linetype_manual(values=c("longdash", "solid")) +
   scale_color_tableau() +
@@ -825,17 +826,15 @@ mfe.dens.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, colo
   facet_grid(rows = vars(Experiment)) +
   theme(legend.position = "right") +
   ylab("Density") +
-  xlab("Normalised hybridisation energy (kcal/mol)") +
+  xlab("Normalised hybridisation energy (kcal/mol)/bp") +
   geom_vline(data=mfe_median, aes(xintercept=Median, color=Experiment),
              linetype="dashed")
-  #xlab("MFE (kcal/mol)") +
-  #ggtitle("3'UTR-3'UTR clusters binding energy") 
 
 mfe.dens.gg
-# ggsave(paste0(data.dir, "mfe_dens.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
+# ggsave(paste0(plots.dir, "/hybridisation_energy.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
 ```
 
-## Fig 3 F
+## Fig 4 F
 
 ***
 > Proportion of paired residues
@@ -857,7 +856,7 @@ Correct internal loop and bulges positions:
 utr3_forgi.df <- correct_i_positions(utr3_forgi.df)
 ```
 
-Calculate the paired metric: 
+Calculate the percentage of paired residues: 
 
 ```{r}
 # Calculate paired metric
@@ -867,11 +866,7 @@ utr3_clusters.df <- left_join(utr3_clusters.df, unpaired.df, by = c("Experiment"
 paired_metric.df <- get_paired_metric(utr3_clusters.df, group = Experiment)
 utr3_clusters.df <- left_join(utr3_clusters.df, paired_metric.df, by = c("Experiment", "name"))
 
-```
-
-Convert to percentage: 
-
-```{r}
+# Convert to percentage
 utr3_clusters.df <- utr3_clusters.df %>%
   ungroup() %>%
   mutate(paired_percentage = paired_to_total_ratio*100) %>%
@@ -906,14 +901,10 @@ paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = Ex
   annotate("text", label = paste0("p = ", paired_ratio.pval), x = 80, y = 0.07)
 
 paired_metric.gg
+# ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
 ```
 
-
-```{r}
-ggsave(paste0(data.dir, "paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
-```
-
-## Fig 3 G
+## Fig 4 G
 
 ***
 > Number of bulges
@@ -962,9 +953,9 @@ bulges.gg <- ggplot(utr3_clusters.df,
   geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
 bulges.gg
-# ggsave(paste0(data.dir, "bulge_count.pdf"), bulges.gg, dpi = 300, width = 4, height = 6)
+# ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 4, height = 6)
 ```
-## Fig 3 H
+## Fig 4 H
 
 ***
 > Symmetry classification
@@ -1032,13 +1023,8 @@ symmetry.gg <- plot_stacked_barchart(symmetry.df, column = symmetry_type, group 
   guides(fill = guide_legend(title = "Structure type")) +
     theme_void()
 symmetry.gg 
-# ggsave(paste0(data.dir, "symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
+# ggsave(paste0(plots.dir, "/symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
 ```
-
-```{r}
-dplyr::filter(symmetry.df, stem_type == "Interrupted stem", bulge_count == 2)
-```
-
 
 # Supplementary figure
 
@@ -1080,13 +1066,20 @@ bulge_s.gg <- ggplot(median_bulge_spacing.df,
   # geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
   #           position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
 bulge_s.gg
-ggsave(paste0(data.dir, "bulge_spacing.pdf"), bulge_s.gg, dpi = 300, width = 4, height = 6)
+# ggsave(paste0(plots.dir, "/bulge_spacing.pdf"), bulge_s.gg, dpi = 300, width = 4, height = 6)
 ```
+
+# Supplementary figure
 
 ***
 > Sequence content
 
 Calculate the nucleotide frequency for the paired residues in each dataset
+
+```{r}
+nrow(utr3_clusters.df)
+```
+
 
 ```{r}
 utr3_clusters.df <- get_nucleotide_frequency(utr3_clusters.df)
@@ -1102,6 +1095,8 @@ Short duplexes display higher GC content and long duplexes showed higher AU cont
 ```{r}
 nuc_freq.gg <- plot_nucleotide_frequency(utr3_clusters.df)$plot +
   ggtitle("Nucleotide frequencies in each arm")
+
+nuc_freq.gg
 ```
 
 ```{r}
