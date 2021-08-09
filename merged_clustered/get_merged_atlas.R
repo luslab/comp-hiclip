@@ -9,17 +9,20 @@ suppressPackageStartupMessages(library(parallel))
 # Data
 # ==========
 
+
+data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/"
 results.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/merged_clusters/stau1_atlas"
 
 # Linker
-linker.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/linker.clusters.mfe.tsv.gz")
+linker.dt <- fread(paste0(data.dir, "/results_linker/linker.clusters.mfe.tsv.gz"))
 
 # No linker
-nolinker.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nolinker/atlas/all.hybrids.tsv.gz")
+nolinker.dt <- fread(paste0(data.dir, "/results_nolinker/all.hybrids.tsv.gz"))
 nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
 
 # Non-hybrids, files produced in Figure_2.Rmd
-nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/stau1_nonhybrid.gc.txt")
+# nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/stau1_nonhybrid.gc.txt") # old short-range structure analyses
+nonhybrid.dt <- fread(paste0(data.dir, "lmin/short_range_duplexes.tsv.gz"))
 nonhybrid.dt$sample <- "stau1_nonhybrid"
 
 
@@ -27,8 +30,11 @@ nonhybrid.dt$sample <- "stau1_nonhybrid"
 # Annotation files
 # ==========
 
-genes.gr <- rtracklayer::import.gff2("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz")
-regions.gr <- rtracklayer::import.gff2("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/regions.gtf.gz")
+#ref.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/ref"
+ref.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/"
+
+genes.gr <- rtracklayer::import.gff2(paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz"))
+regions.gr <- rtracklayer::import.gff2(paste0(ref.dir,"/regions.gtf.gz"))
 
 
 # ==========
@@ -48,7 +54,7 @@ all.hybrids.dt <- rbind(linker.dt, nolinker.dt)
 nrow(all.hybrids.dt) # linker and no linker
 
 all.hybrids.dt <- rbind(all.hybrids.dt, nonhybrid.dt)
-
+nrow(all.hybrids.dt)
 #all.hybrids.dt[, c("cluster", "cluster_hybrid_count"):=NULL]
 
 # ==========

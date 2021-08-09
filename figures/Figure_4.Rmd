@@ -1,5 +1,5 @@
 ---
-title: "Figure 3"
+title: "Figure 4"
 author: "Ira Iosub"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
@@ -84,32 +84,64 @@ get_paired_metric <- function(clusters.df, group = NULL) {
 }
 
 
-extract_paired_residues <- function(id, L_db, L_sequence, R_db, R_sequence) {
+get_paired_regions <- function(id, L_db, R_db) {
   
   l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
-  # l_start <- l_brackets[1]
-  # l_end <- l_brackets[length(l_brackets)]
-  # l_trimmed_db <- str_sub(L_db, l_start, l_end)
-  # l_trimmed_seq <- str_sub(L_sequence, l_start, l_end)
+  l_start <- l_brackets[1]
+  l_end <- l_brackets[length(l_brackets)]
   
   r_brackets <- str_locate_all(R_db, pattern = "\\)")[[1]][,1]
-  # r_start <- r_brackets[1]
-  # r_end <- r_brackets[length(r_brackets)]
-  # r_trimmed_db <- str_sub(R_db, r_start, r_end)
-  # r_trimmed_seq <- str_sub(R_sequence, r_start, r_end)
+  r_start <- r_brackets[1]
+  r_end <- r_brackets[length(r_brackets)]
   
   stopifnot(length(l_brackets) == length(r_brackets)) # check L and R arms of the duplex have an equal number of bp
   
-  l_paired_residues <- paste(str_sub(L_sequence, start = l_brackets, end = l_brackets), collapse = '')
-  r_paired_residues <- paste(str_sub(R_sequence, start = r_brackets, end = r_brackets), collapse = '')
-  
-  results.ls <- list(id = id, l_paired_residues=l_paired_residues, r_paired_residues=r_paired_residues) # l_start =l_start, l_end = l_end, l_trimmed_db=l_trimmed_db, l_trimmed_seq=l_trimmed_seq,r_start=r_start, r_end=r_end, r_trimmed_db=r_trimmed_db, r_trimmed_seq=r_trimmed_seq,
+  results.ls <- list(id = id, l_start = l_start, l_end = l_end, 
+                     r_start=r_start, r_end=r_end)
   
   return(results.ls)
   
 }
 
+```
 
+```{r}
+trim_duplex_overhangs <- function(clusters.df) {
+  
+  # Separate L_db and R_db
+  clusters.df <- clusters.df %>%
+    separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
+  
+  # Get positions of paired residues within structures of each arm
+  clusters.df <- clusters.df %>%
+    rowwise() %>%
+    mutate(paired_regions = list(get_paired_regions(id, L_db, R_db))) %>%
+    mutate(L_duplex_start= paired_regions$l_start, 
+           L_duplex_end = paired_regions$l_end,
+           R_duplex_start= paired_regions$r_start, 
+           R_duplex_end = paired_regions$r_end) %>%
+    ungroup() %>%
+    dplyr::select(-paired_regions)
+  # Adjust genomic coordinates to only the paired region
+  clusters.df <- clusters.df %>%
+    rowwise() %>%
+    mutate(L_genomic_start = case_when(strand == "+" ~ L_start + L_duplex_start - 1,
+                                      TRUE ~ L_end - L_duplex_end + 1),
+           L_genomic_end = case_when(strand == "+" ~ L_start + L_duplex_end - 1,
+                                    TRUE ~ L_end - L_duplex_start + 1),
+           R_genomic_start = case_when(strand == "+" ~ R_start + R_duplex_start - 1,
+                                      TRUE ~ R_end - R_duplex_end + 1),
+           R_genomic_end = case_when(strand == "+" ~ R_start + R_duplex_end - 1,
+                                    TRUE ~ R_end - R_duplex_start + 1)) %>%
+    ungroup()
+    
+  return(clusters.df)
+}
+
+
+```
+
+```{r}
 correct_i_positions <- function(forgi.df) {
   # Forgi output places all asymmetric internal loops and bulges on the left side, even when they should be on the right.
   # If such cases exist, swap them to the right
@@ -358,9 +390,9 @@ data.dir <- "~/Documents/projects/computational_hiCLIP/newest_datasets/"
 
 # Main figure
 
-## Fig 3 A
+## Fig 4 A
 
-### Summary of atlas (counts, locations, binding energies)
+### Summary of atlas (counts)
 
 ***
 > STAU1 hiCLIP cluster counts
@@ -385,9 +417,9 @@ paris.dt <- paris.dt[!grepl("tRNA", R_seqnames)]
 ```{r}
 nrow(paris.dt) 
 ```
-## Fig 3 A
 
-## Fig 3 B
+
+## Fig 4 B
 
 ***
 > Duplex locations
@@ -481,7 +513,7 @@ paris_intra_inter.gg
 # ggsave(paste0(data.dir, "paris_intra_inter.pdf"), paris_intra_inter.gg, width = 2.5, height = 5, dpi = 300)
 ```
 
-## Fig 3 B
+## Fig 4 B
 
 ```{r}
 intra_paris.dt <- paris.dt %>%
@@ -557,7 +589,17 @@ nrow(stau1.utr3.df)
 nrow(paris.utr3.df)
 ```
 
-## Fig 3 C
+
+#### Need to adjust the genomic coordinates to focus on the stem of the structure
+
+```{r}
+
+```
+
+
+
+
+## Fig 4 C
 
 ***
 > Hybrid spans

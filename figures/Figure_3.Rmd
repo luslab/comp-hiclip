@@ -842,7 +842,7 @@ all.collapsed.dt <- data.table(all.collapsed)
 ```{r}
 # Export reformated file, it will be used for clustering all datasets
 
-# fwrite(short_range.reformated.gc.df, paste0(data.dir, "/results/short_range_duplexes.tsv.gz", sep = "\t"))
+fwrite(short_range.reformated.gc.df, paste0(data.dir, "/results/short_range_duplexes.tsv.gz"), sep = "\t")
 
 ```
 
