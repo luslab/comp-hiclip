@@ -27,7 +27,7 @@ library(UpSetR)
 ```{r}
 plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_1"
 
-ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899")
+ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3")
 ```
 
 
