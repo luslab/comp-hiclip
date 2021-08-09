@@ -25,6 +25,3 @@ cd $STRUCTURE_DIR
 # Generate RNAplfold unpaired probability metaprofile (-100nt and +100nt window)
 ./get_structure_metaprofile.R --bed=$RESULTSDIR/stau1.10nt_10nt.peaks.annot.bed.gz --prob=$STRUCTURE_DIR/stau1_threeutrs.rnaplfold.bed,$STRUCTURE_DIR/stau1_threeutrs.rnaplfold.shuffled.bed --prefix=$STRUCTURE_DIR/stau1
 
-# Run RNAfold and annotate structures with forgi for all STAU1 peaks
-./run_rnafold.R --bed=$RESULTSDIR/stau1.10nt_10nt.peaks.annot.bed.gz --prefix=$STRUCTURE_DIR/stau1
-

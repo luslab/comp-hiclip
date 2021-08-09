@@ -1,5 +1,5 @@
 ---
-title: "Figure 2 & related"
+title: "Figure 3 & related"
 author: "Ira Iosub"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:
@@ -20,6 +20,7 @@ output:
 #### Libraries
 
 ```{r include=FALSE, warning=FALSE}
+suppressPackageStartupMessages(library(Biostrings))
 suppressPackageStartupMessages(library(rematch))
 suppressPackageStartupMessages(library(stringr))
 suppressPackageStartupMessages(library(ggplot2))
@@ -100,15 +101,15 @@ plot_metaprofile <- function(data.df) {
   profile.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
     geom_ribbon(aes(ymin=(mean_prob-std_prob), ymax=(mean_prob+std_prob)), color = "grey80", fill = "grey80") +
     geom_line(aes(linetype = Sample)) +
-    scale_linetype_manual(values=c("longdash", "solid"))+
-    scale_color_manual(values=c('#E69F00', '#222222'))+
+    scale_linetype_manual(values=c("longdash", "solid")) +
+    scale_color_manual(values=c('#E69F00', '#222222')) +
     geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
-    ylim(c(0.40, 0.60))+
-    xlab("Distance relative to the peak start (nt)")+
+    ylim(c(0.40, 0.60)) +
+    xlab("Distance relative to the peak start (nt)") +
     theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
     ylab("Mean probability") +
     labs(linetype = "Sample") +
-    geom_text(aes(x = 55,y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4) 
+    geom_text(aes(x = 55,y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4)
   
   return(profile.gg)
   
@@ -249,31 +250,20 @@ get_paired_regions <- function(id, L_db, R_db) {
 }
 ```
 
-
 ```{r}
-get_collapsed_clusters <- function(hybrids.dt, percent_overlap = 0.5) {
+get_stem_loop_sequence <- function(hybrids.dt, genome.dt) {
   
-  hybrids.dt[, total_count := NULL]
-  hybrids.dt <- hybrids.dt[, total_count := .N, by = .(L_seqnames, R_seqnames)]
-  hybrids.dt <- hybrids.dt[L_seqnames == R_seqnames]
-  hybrids.dt <- hybrids.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
-  hybrids.dt <- hybrids.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
-  hybrids.dt <- hybrids.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
-  hybrids.dt <- hybrids.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
-  hybrids.dt <- hybrids.dt[!grepl("tRNA", L_seqnames)]
-  hybrids.dt <- hybrids.dt[!grepl("tRNA", R_seqnames)]
+  hybrids.dt[, gene_id := L_seqnames]
+  setkey(genome.dt, gene_id)
+  setkey(hybrids.dt, gene_id)
   
-  hybrids.list <- split(hybrids.dt, by = c("L_seqnames", "R_seqnames"))
-  hybrids.clusters.list <- parallel::mclapply(hybrids.list, cluster_hybrids, percent_overlap =percent_overlap, mc.cores = 4)
-  hybrids.clusters.dt <- rbindlist(hybrids.clusters.list, use.names = TRUE, fill = TRUE)
-  hybrids.collapsed.dt  <- collapse_clusters(hybrids.clusters.dt, mode = "wide")
+  seq.dt <- genome.dt[hybrids.dt]
+  seq.dt[, `:=`(stem_loop_sequence, stringr::str_sub(sequence, start = L_start, end = R_end))]
+  seq.dt[, `:=`(c("gene_id", "sequence"), NULL)]
 
-  return(hybrids.collapsed.dt)
-  
+  return(seq.dt)
 }
 ```
-
-
 #### Data
 
 ***
@@ -283,7 +273,7 @@ get_collapsed_clusters <- function(hybrids.dt, percent_overlap = 0.5) {
 data.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/july_2021"
 plots.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3"
 ref.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/ref"
-# ref.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref"
+ref.dir2 <- "/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets"
 ```
 
 ***
@@ -294,6 +284,8 @@ txdb <- paste0(ref.dir,"/gencode.v33.txdb.sqlite")
 gencode.txdb <- AnnotationDbi::loadDb(txdb)
 human.gtf <- paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_id used by Tosca
 regions.gr <- import.gff2(paste0(ref.dir,"/regions.gtf.gz"))
+genes.gr <- import.gff2(paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz"))
+fa.dss <- readDNAStringSet((paste0(ref.dir2, "/GRCh38.gencode_v33.fa")))
 ```
 
 ***
@@ -519,7 +511,7 @@ cluster1.df$cluster_size <- kmeans.df$cluster_size
 ```
 
 ```{r}
-cluster1.df$cluster <- plyr::mapvalues(cluster1.df$cluster, from=c(3, 2, 1), to=c(3, 1, 2))
+cluster1.df$cluster <- plyr::mapvalues(cluster1.df$cluster, from = c(3, 2, 1), to = c(3, 1, 2))
 cluster1.df$cluster <- factor(cluster1.df$cluster, levels = c(1, 2, 3))
 
 cluster1.df <- cluster1.df %>%
@@ -555,6 +547,11 @@ Metaprofiles for each cluster:
 ```{r warning=FALSE, message=FALSE}
 clusters.df <- clusters.df %>%
   dplyr::rename(cluster = .cluster)
+```
+
+
+```{r warning=FALSE, message=FALSE}
+col_pal <- brewer.pal(4, "Dark2")
 
 clusters.gg <- plot_cluster_mean(clusters.df, 51) +
   scale_y_continuous(position = "right") +
@@ -587,33 +584,6 @@ head(short_range.dt)
 
 #### Trim dot bracket structure to focus only on the paired regions
 
-```{r}
-# Processing structure function
-
-# find position of the first "(" and ")" in L and R respectively
-# find position of the last "(" and ")" in L and R respectively
-# trim external dots..to get all paired (find pos of first and last ())
-# trim same positions from seq
-
-get_paired_regions <- function(id, L_db, R_db) {
-  
-  l_brackets <- str_locate_all(L_db, pattern = "\\(")[[1]][,1]
-  l_start <- l_brackets[1]
-  l_end <- l_brackets[length(l_brackets)]
-  
-  r_brackets <- str_locate_all(R_db, pattern = "\\)")[[1]][,1]
-  r_start <- r_brackets[1]
-  r_end <- r_brackets[length(r_brackets)]
-  
-  stopifnot(length(l_brackets) == length(r_brackets)) # check L and R arms of the duplex have an equal number of bp
-  
-  results.ls <- list(id = id, l_start = l_start, l_end = l_end, 
-                     r_start = r_start, r_end = r_end)
-  
-  return(results.ls)
-  
-}
-```
 
 ```{r}
 # Trim unpaired residues at the ends of left and right arms
@@ -650,16 +620,12 @@ short_range.dt <- short_range.dt %>%
 
 ```
 
-
-#### Calculate mean distance from xl site for each cluster
-
-#### Duplex classification
-
-
 ```{r}
-# how many peaks with perfect stem loops?
-
+short_range.dt <- dplyr::filter(short_range.dt, loop != 0)
 ```
+
+
+
 
 ## Fig 3 D
 
@@ -671,34 +637,33 @@ hairpin_median <- short_range.dt %>%
 hairpin_median
 
 # Plot
-h0.gg <- ggplot(short_range.dt, aes(x=hairpin_loop)) + 
+h0.gg <- ggplot(short_range.dt, aes(x = hairpin_loop)) + 
   #geom_histogram(bins = 45, color="black", fill = "#DEEBF7") +
-  geom_density(color = "#31a1b3") +
-  theme_minimal() +
+  geom_density(color = "#31a1b3", bw = 0.1) +
+  theme_minimal_grid() +
   geom_vline(data=hairpin_median, aes(xintercept=Median), color = "grey",
              linetype="dashed") +
-  #scale_x_log10() + annotation_logticks(sides = "b") + #breaks=c(3,5,7, 10,30))
+  scale_x_log10() + annotation_logticks(sides = "b") + #breaks=c(3,5,7, 10,30))
   # ggtitle("Distribution of hairpin loop sizes") +
   xlab("Hairpin loop size (nt)") +
   ylab("Density")
 
 h0.gg
+# ggsave(paste0(plots.dir,"/",prefix,"_hairpin_lengths.pdf"), h0.gg, width = 5, height = 4)
 ```
 
 ```{r}
 quantile(short_range.dt$hairpin_loop, c(.25, .50, .75, 1))
 ```
 
-## Fig 2 E
-
+## Fig 3 E
 
 ### Overlap with duplexes from STAU1 hybrid reads
 
 ***
-> Convert forgi coordinates to tx and genomic
+> Convert coordinates to tx
 
 #### Get genomic and tx coordinates for the resized peaks that have been used for RNAplfold and forgi analyses
-
 
 ```{r}
 # ==========
@@ -748,10 +713,6 @@ peaks.df <- peaks.gc.df %>%
 
 ```{r}
 peaks.df <- dplyr::rename(peaks.df, tx_name = name)
-```
-
-
-```{r}
 
 # Extract the start and end position of the stem-loop individually for each arm
 arms.df <- short_range.dt %>% 
@@ -762,9 +723,6 @@ arms.df <- as.data.frame(left_join(arms.df, peaks.df, by = c("name" = "id", "seq
 
 ```
 
-```{r}
-arms.df
-```
 
 #### From the annotated peaks coordinates calculate  tx coordinates of the  predicted stem
 
@@ -788,55 +746,24 @@ arms.df <- arms.df %>%
 
 ```{r}
 # The peaks with gene IDs not present in fasta_ids of human annotation will have NAs instead of coordinates, so filtering them out
-#arms.df <- dplyr::filter(arms.df, !is.na(fasta_id))
-```
+arms.df <- dplyr::filter(arms.df, !is.na(fasta_id))
 
-
-```{r}
 # Check L and R arm coordinate widths are correct
-stopifnot(abs(arms.df$L_genomic_end - arms.df$L_genomic_start) ==
-            abs(arms.df$L_tx_end - arms.df$L_tx_start))
+stopifnot((arms.df$L_genomic_end - arms.df$L_genomic_start) == abs(arms.df$L_tx_end - arms.df$L_tx_start))
+stopifnot((arms.df$R_genomic_end - arms.df$R_genomic_start) == abs(arms.df$R_tx_end - arms.df$R_tx_start))
 ```
 
 
 ```{r}
-stopifnot(abs(arms.df$L_max - arms.df$L_min) ==
-            abs(arms.df$L_genomic_end - arms.df$L_genomic_start))
-
-stopifnot(abs(arms.df$R_genomic_end - arms.df$R_genomic_start) == 
-            abs(arms.df$R_tx_end - arms.df$R_tx_start))
-stopifnot(abs(arms.df$R_max - arms.df$R_min) == 
-            abs(arms.df$R_genomic_end - arms.df$R_genomic_start))
-```
-
-```{r}
-# Transcriptomic (similar to Tosca hybrids table):
-# forgi.reformated.tx.df <- data.frame(id=arms.df$id, name=arms.df$name, orientation = NA, type = "intragenic", hybrid_selection = NA, L_seqnames = arms.df$fasta_id,
-#                                      L_read_start = arms.df$L_min, L_read_end = arms.df$L_max, L_start = arms.df$L_tx_start, L_end = arms.df$L_tx_end, L_width = NA, L_strand = "+", 
-#                                      R_seqnames = arms.df$fasta_id, R_read_start = arms.df$R_min, R_read_end = arms.df$R_max, R_start = arms.df$R_tx_start, R_end = arms.df$R_tx_end, R_width = NA, R_strand = "+",
-#                                      umi= NA, L_sequence=arms.df$L_seq, R_sequence=arms.df$R_seq, mfe = NA)
-# 
-# forgi.reformated.tx.df <- forgi.reformated.tx.df %>%
-#   rowwise() %>%
-#   mutate(L_width = L_end - L_start + 1,
-#          R_width = R_end - R_start +1,
-#          L_sequence = str_replace_all(L_sequence, "U", "T"), # replace Us with Ts
-#          R_sequence = str_replace_all(R_sequence, "U", "T")) %>%
-#   ungroup()
-
-
 # Genomic (similar to tosca clusters table):
-short_range.reformated.gc.df <- data.frame(name = arms.df$id, count = arms.df$score, L_seqnames=arms.df$fasta_id,	
+short_range.reformated.gc.df <- data.frame(name = arms.df$name, count = arms.df$score, L_seqnames=arms.df$fasta_id,	
                                      L_start=arms.df$L_tx_start, L_end=arms.df$L_tx_end, L_strand="+", L_genomic_seqnames=arms.df$seqnames,
                                      L_genomic_start=arms.df$L_genomic_start, L_genomic_end= arms.df$L_genomic_end,
                                      L_genomic_strand=arms.df$strand, R_seqnames=arms.df$fasta_id, R_start=arms.df$R_tx_start, R_end=arms.df$R_tx_end,
                                      R_strand="+", R_genomic_seqnames=arms.df$seqnames,
                                      R_genomic_start=arms.df$R_genomic_start,  R_genomic_end= arms.df$R_genomic_end,
                                      R_genomic_strand =arms.df$strand)
-```
 
-
-```{r}
 stopifnot(abs(short_range.reformated.gc.df$L_genomic_end - short_range.reformated.gc.df$L_genomic_start) ==
             abs(short_range.reformated.gc.df$L_end - short_range.reformated.gc.df$L_start))
 stopifnot(abs(short_range.reformated.gc.df$R_genomic_end - short_range.reformated.gc.df$R_genomic_start) ==
@@ -846,13 +773,9 @@ stopifnot(abs(short_range.reformated.gc.df$R_genomic_end - short_range.reformate
 
 ```{r}
 # Export bed file
-short_range.reformated.gc.df <- data.table(short_range.reformated.gc.df)
-export_genomic_bed(short_range.reformated.gc.df, paste0(data.dir, "/predicted_duplexes.bed"))
-
+short_range.reformated.gc.dt <- data.table(short_range.reformated.gc.df)
+# export_genomic_bed(short_range.reformated.gc.dt, paste0(data.dir, "/predicted_duplexes.bed"))
 ```
-
-
-
 
 ***
 > Calculate overlap with STAU1 duplexes from hybrid reads
@@ -898,29 +821,46 @@ all.clusters.list <- parallel::mclapply(all.list, cluster_hybrids, percent_overl
 all.clusters.dt <- rbindlist(all.clusters.list, use.names = TRUE, fill = TRUE)
 ```
 
+
 ```{r}
 #all.clusters.dt[L_seqnames == R_seqnames][!L_seqnames %in% c("tRNA", "rDNA", "rRNA_5S")][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)]
 all.collapsed  <- collapse_clusters(all.clusters.dt, mode = "wide")
 ```
 
+```{r}
+# Get genomic coordinates
+all.collapsed <- convert_coordinates(all.collapsed, genes.gr)
+
+```
+
+```{r}
+# Export bed file
+all.collapsed.dt <- data.table(all.collapsed)
+# export_genomic_bed(all.collapsed.dt, paste0(data.dir, "/collapsed_hybrid_duplexes.bed"))
+```
+
+```{r}
+# Export reformated file, it will be used for clustering all datasets
+
+# fwrite(short_range.reformated.gc.df, paste0(data.dir, "/results/short_range_duplexes.tsv.gz", sep = "\t"))
+
+```
+
 #### Find overlaps with merged clusters (no linker and linker)
 
 ```{r}
-nonhyb.dt <- as.data.table(forgi.reformated.gc.df)
-
-ol <- primavera::find_valid_hybrid_overlaps(nonhyb.dt, all.collapsed)
-nonhyb_overlapped.dt <- nonhyb.dt[unique(ol$queryHits)]
+ol <- primavera::find_valid_hybrid_overlaps(as.data.table(short_range.reformated.gc.df), all.collapsed)
+nonhyb_overlapped.dt <- short_range.reformated.gc.df[unique(ol$queryHits),]
 ```
 
-
 ```{r}
-nonhyb_count <- nrow(count(all_sl.df, id))
+nonhyb_count <- nrow(short_range.dt)
 hyb_clusters_count <- nrow(all.collapsed)
 nonhyb_ol_count <- nrow(nonhyb_overlapped.dt)
 
-olap_counts <- c(Predicted_stem_loop_duplexes_min_10_bp = nonhyb_count-nonhyb_ol_count, hiCLIP_duplexes = hyb_clusters_count-nonhyb_ol_count, "Predicted_stem_loop_duplexes_min_10_bp&hiCLIP_duplexes" = nonhyb_ol_count)
+olap_counts <- c(Predicted_short_range_duplexes = nonhyb_count-nonhyb_ol_count, hiCLIP_duplexes = hyb_clusters_count-nonhyb_ol_count, "Predicted_short_range_duplexes&hiCLIP_duplexes" = nonhyb_ol_count)
 
-#pdf(file=paste0(data.dir,"/overlap.pdf"), onefile=FALSE) 
+#pdf(file=paste0(plots.dir,"/short_range_overlap.pdf"), onefile=FALSE, width = 7, height = 5) 
 
 upset(fromExpression(olap_counts),
       order.by = "freq",
@@ -929,71 +869,177 @@ upset(fromExpression(olap_counts),
       text.scale = 1.1,
       point.size = 2.8,
       line.size = 1,
-      mainbar.y.label = "Intersection cont",
-      sets.x.label = "Total duplexes",
+      mainbar.y.label = "Intersecting number of duplexes",
+      sets.x.label = "Total number of duplexes",
       empty.intersections = "off"
       )
 
 #dev.off()
 ```
 
-#### Find overlaps with linker and nolinker clusters individually
+
+## Fig 3 G
+
+### Examples of short-range structures
+
+***
+> Short-range structure that overlaps with hybrid duplexes
 
 ```{r}
-# Cluster linker
-linker.collapsed.dt <- get_collapsed_clusters(linker.dt, percent_overlap = 0.5)
-# Cluster nolinker
-nolinker.collapsed.dt <- get_collapsed_clusters(nolinker.dt, percent_overlap = 0.5)
+semi_join(short_range.dt, nonhyb_overlapped.dt, by = "name")
 
-# Find overlaps
-ol_linker <- find_valid_hybrid_overlaps(nonhyb.dt, linker.collapsed.dt)
-nonhyb_linker_overlapped.dt <- nonhyb.dt[unique(ol_linker$queryHits)]
+# ID11446
 
-ol_nolinker <- find_valid_hybrid_overlaps(nonhyb.dt, nolinker.collapsed.dt)
-nonhyb_nolinker_overlapped.dt <- nonhyb.dt[unique(ol_nolinker$queryHits)]
+# ID13102
+```
+```{r}
+ex1.df <- dplyr::filter(short_range.dt, name == "ID10081")
+```
+
+***
+> Short-range structure that doesn't overlap with hybrid duplexes
+
+```{r}
+anti_join(short_range.dt, nonhyb_overlapped.dt, by = "name")
+
+# ID10131
+
+# ID1020
+
+# ID10262
+
+# small loop ID10335
+
+# ............(((((.....(((((((...((((&...))))...))))))).))))).... ID10376
+
+# ID1040
+
+#ID10436 .......(((..((((((.((((((.....&...)))))).)))))).))).   loop=8
+```
+
+```{r}
+ex2.df <- dplyr::filter(short_range.dt, name == "ID10083")
+```
+
+```{r}
+short_range_exaples.dt <- as.data.table(rbind(ex1.df, ex2.df))
+short_range_exaples.dt$q <- 0
+short_range_exaples_bp.dt <- short_range_exaples.dt[, .(seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
+# fwrite(short_range_exaples_bp.dt, sep = "\t", col.names = FALSE, file = "short_range_examples.bp")
 
 ```
 
 ```{r}
-# nonhyb_count <- nrow(count(all_sl.df, id))
-linker_clusters_count <- nrow(linker.collapsed.dt)
-nolinker_clusters_count <- nrow(nolinker.collapsed.dt)
-
-nonhyb_linker_ol_count <- nrow(nonhyb_linker_overlapped.dt)
-nonhyb_nolinker_ol_count <- nrow(nonhyb_nolinker_overlapped.dt)
-
-olap_counts <- c(Nonhybrids = nonhyb_count-nonhyb_linker_ol_count - nonhyb_nolinker_ol_count, "Nonhybrids&Linker" = nonhyb_linker_ol_count, "Nonhybrids&NoLinker" = nonhyb_nolinker_ol_count)
-
-upset(fromExpression(olap_counts), 
-      order.by = "freq", 
-      decreasing = T, 
-      number.angles = 0, 
-      text.scale = 1.1, 
-      point.size = 2.8, 
-      line.size = 1,
-      mainbar.y.label = "Overlaps", 
-      sets.x.label = "Total duplexes"
-      ) 
+clusters_examples.dt <- all.collapsed %>%
+  dplyr::filter(name == "C001-PIN1:ENSG00000127445.13-PIN1:ENSG00000127445.13" |
+                  name == "C002-PIN1:ENSG00000127445.13-PIN1:ENSG00000127445.13")
+clusters_examples.dt
 
 ```
 
-## Fig 2 F
+```{r}
+clusters_examples.dt$q <- 0
+clusters_examples_bp.dt <- clusters_examples.dt[, .(L_genomic_seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
+#fwrite(clusters_examples_bp.dt, sep = "\t", col.names = FALSE, file = "long_range_examples.bp")
+```
 
-### Examples 
+```{r}
+short_range_exaples.dt
+```
 
+```{r}
+fa.dt <- data.table(gene_id = names(fa.dss), sequence = as.character(fa.dss))
+short_range.reformated.gc.df <- get_sequence(as.data.table(short_range.reformated.gc.df), fa.dt)
+stopifnot(!any(is.na(c(short_range.reformated.gc.df$L_sequence, short_range.reformated.gc.df$L_sequence))))
+short_range.dt <- left_join(short_range.dt, dplyr::select(short_range.reformated.gc.df, name, L_sequence, R_sequence))
+```
 
+```{r}
+x <- get_stem_loop_sequence(as.data.table(short_range.reformated.gc.df), fa.dt)
+short_range.dt <- left_join(short_range.dt, dplyr::select(x, name, stem_loop_sequence))
+```
 
-### Export tables
-
-
+```{r}
+dplyr::filter(short_range.dt, name == "ID10083" | name == "ID10081")
+```
 
 
 # Supplementary figure / Other RBPs
 
+## Fig 3 D
+
+### Duplex length
+
+```{r}
+short_range.dt <- short_range.dt %>%
+  rowwise() %>%
+  mutate(total_paired = str_count(L_db, "\\(")) %>%
+  ungroup()
+```
+
+
+```{r}
+m_motif_structures <- list(nrow(short_range.dt))
+names(m_motif_structures) <- "M motif duplexes (clusters 1, 2, 3)"
+m_motif_min10bp <- list(nrow(short_range.dt[short_range.dt$total_paired >= 10,]))
+names(m_motif_min10bp) <-"M motif duplexes >= 10 bp"
+
+m_motif_max9bp <- list(nrow(short_range.dt) - nrow(short_range.dt[short_range.dt$total_paired >= 10,]))
+names(m_motif_max9bp) <- "M motif duplexes < 10 bp"
+
+no_m_motif <- list(nrow(stau1.prob.df) - nrow(short_range.dt))
+names(no_m_motif) <- "No M motif"
+structure_types.ls <- c(no_m_motif, m_motif_max9bp, m_motif_min10bp)
+types.df <- data.frame(structure_types = names(structure_types.ls), count = unlist(structure_types.ls, use.names=FALSE))
+
+data_counts.df <- types.df %>%
+  mutate(percentage = scales::percent(count / sum(count))) %>%
+  mutate(percentage = as.numeric(sub("%","", percentage))) %>%
+    #mutate(percentage = counts*100 / sum(counts)) %>%
+  mutate(pos = cumsum(percentage) - percentage/2)
+
+types_colours <- c("No M motif" = "#216b77", "M motif duplexes >= 10 bp" = "#31a1b3", "M motif duplexes < 10 bp" = "#5ec3d3")
+
+# data_counts.df$structure_types <- factor(data_counts.df$structure_types, levels = "No M motif", "M motif duplexes < 10 bp", "M motif duplexes >= 10 bp")
+  
+  pie.gg <- ggplot(data_counts.df, aes(x="", y=count, fill=reorder(structure_types, count))) +
+    geom_bar(stat = "identity", width = 0.05, color="black", alpha = 0.5) +
+    coord_polar("y", start=0) +
+    #scale_fill_brewer(palette = "Blues", direction = -1) +
+    scale_fill_manual(values = types_colours) +
+    ggrepel::geom_label_repel(aes(label = paste0(percentage,"%")), size = 3.5, show.legend = FALSE, position = position_stack(vjust = .5)) +
+    ggrepel::geom_label_repel(aes(label = count), size = 2.5, show.legend = FALSE, position = position_stack(vjust = .3)) +
+    guides(fill = guide_legend(title = "Structure type")) +
+    theme_void() # remove background, grid, numeric labels
+
+pie.gg
+
+# ggsave(paste0(plots.dir,"/",prefix,"_structure_types.pdf"), pie.gg, width = 5, height = 4, dpi = 300)
+```
+
+
+```{r}
+total_paired_median <- short_range.dt %>%
+  dplyr::summarize(Median = median(total_paired, na.rm = TRUE))
+total_paired_median
+
+# Plot
+s.gg <- ggplot(short_range.dt, aes(x=total_paired)) + 
+  #geom_histogram(bins = 45, color="black", fill = "#DEEBF7") +
+  geom_density(color = "#31a1b3") +
+  theme_minimal_grid() +
+  geom_vline(data=total_paired_median, aes(xintercept=Median), color = "grey",
+             linetype="dashed") +
+  #scale_x_log10() + annotation_logticks(sides = "b") + #breaks=c(3,5,7, 10,30))
+  # ggtitle("Distribution of hairpin loop sizes") +
+  xlab("Paired residues") +
+  ylab("Density")
+
+s.gg
+```
+
+
 ## TDP43
-
-
-
 
 ```{r}
 prob.file <- prob.files[str_detect(prob.files, "tardp")]
@@ -1087,7 +1133,7 @@ hur.profile.gg
 ```
 
 
-# Combine all RBPs (Figure 3 A)
+# Combine all RBPs (Figure 3 B)
 
 ```{r}
 hur.data.df$Experiment <- as.factor("HuR")
@@ -1148,6 +1194,7 @@ merged.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample,
   ylim(c(0.40, 0.60)) +
   xlab("Distance relative to the peak start (nt)") +
   theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme_minimal_grid() +
     ylab("Mean probability") +
     labs(linetype = "Sample") +
     # geom_text(aes(x = 55, y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 3) 
@@ -1165,6 +1212,28 @@ merged.gg
 # ggsave(paste0(data.dir,"/RBPs_metaprofile_paired_v2.pdf"), merged.gg, width = 4, height = 4)
 ```
 
+########################
 
+```{r}
+# p = c(0, 0.25, 0.50, 0.75, 1)
+#   
+#   coord.dt <- short_range.dt
+#   coord.dt$q <- cut(short_range.dt$score, 
+#                     breaks = quantile(coord.dt$score, probs = p), 
+#                     include.lowest = TRUE, 
+#                     labels = 0:(length(p) - 2))
+#   
+#   cols <- tableau_seq_gradient_pal('Blue')(seq(0, 1, length = length(p) - 1))
+#   cols.dt <- rbindlist(lapply(cols, function(x) data.table(paste(as.vector(col2rgb(x)), collapse = "\t"))))
+#   cols.dt[, `:=` (colour = "color:",
+#                   annotation = paste("Count quantile", 1:(length(p) - 1)))]
+#   setcolorder(cols.dt, c("colour", "V1", "annotation"))
+# 
+# coord.dt <- as.data.table(coord.dt)
+# bp.dt <- coord.dt[, .(seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
+#   setorder(bp.dt, q)
+#   
+#   fwrite(cols.dt, sep = "\t", col.names = FALSE, quote = FALSE, file = "short_range.bp")
+#   fwrite(bp.dt, sep = "\t", col.names = FALSE, file = "short_range.bp", append = TRUE)
 
-
+```
