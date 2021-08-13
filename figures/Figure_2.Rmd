@@ -165,9 +165,9 @@ pie.dt[, lab.ypos := cumsum(N) - 0.5 * N]
 
 p <- ggplot(pie.dt, aes(x = "", y = N, fill = recovered)) + 
   geom_bar(stat = "identity") + 
-  coord_polar("y", start = 0) +
+  coord_polar("y", start = 1.571) +
   scale_fill_tableau(palette = "Classic Blue-Red 6", direction = -1) +
-  theme_minimal_grid() + theme(legend.position = "top", 
+  theme_minimal_grid() + theme(legend.position = "top",
                                axis.text = element_blank(),
                                axis.ticks = element_blank(),
                                axis.line = element_blank(),
@@ -176,6 +176,8 @@ p <- ggplot(pie.dt, aes(x = "", y = N, fill = recovered)) +
        y = "",
        fill = "") +
   geom_text(aes(y = lab.ypos, label = percent), color = "white", size = 5)
+
+p
 
 ggsave(p, filename = file.path(plot.path, "silico_recovery.pdf"), width = 7, height = 4)
 ```
@@ -233,23 +235,32 @@ ggsave(p, filename = file.path(plot.path, "silico_recovery_readlength.pdf"), wid
 p
 ```
 
-# B
+```{r}
+linker.dt[, median(readlength), by = recovered]
+wilcox.test(x = linker.dt[recovered == "Recovered"]$readlength, y = linker.dt[recovered == "Not recovered"]$readlength)
+```
+# C - shortest arm
 
 ```{r}
 p <- ggplot(linker.dt, aes(y = minwidth, x = recovered, colour = recovered)) +
   geom_violin() +
-  geom_boxplot(width = 0.1, outlier.size = 0.5) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
   coord_flip() +
   facet_grid(sample ~ ., 
            labeller = labeller(sample = c(stau1_high = "High RNase", stau1_low = "Low RNase"))) +
   scale_colour_tableau(palette = "Classic Blue-Red 6", direction = -1) +
   theme_minimal_grid() + theme(legend.position = "none") +
   labs(x = "",
-       y = "Shortest arm length",
+       y = "Shorter arm length",
        colour = "Recovered")
 
 ggsave(p, filename = file.path(plot.path, "silico_recovery_minarmlength.pdf"), width = 7, height = 4)
 p
+```
+
+```{r}
+linker.dt[, median(minwidth), by = recovered]
+wilcox.test(x = linker.dt[recovered == "Recovered"]$minwidth, y = linker.dt[recovered == "Not recovered"]$minwidth)
 ```
 
 # C - inter-intra
