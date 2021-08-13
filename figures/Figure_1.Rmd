@@ -113,7 +113,7 @@ round(prop.table(table(hybrids.dt[exp == "Linker"]$type)) * 100, 1)
 ## 1D - Regions
 
 ```{r}
-arms.dt <- rbindlist(list(hybrids.dt[, exp, L_region], hybrids.dt[, exp, R_region]), use.names = FALSE)
+arms.dt <- rbindlist(list(hybrids.dt[, .(exp, L_region)], hybrids.dt[, .(exp, R_region)]), use.names = FALSE)
 arms.dt$L_region <- factor(arms.dt$L_region, levels = rev(c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA")))
 
 p <- ggplot(arms.dt[, .N, by = .(L_region, exp)], aes(x = exp, y = N, fill = L_region)) +
