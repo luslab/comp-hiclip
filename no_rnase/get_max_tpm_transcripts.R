@@ -50,11 +50,11 @@ transcripts.df <- as.data.frame(transcriptsBy(TxDb))
 # Expression profile
 # ==========
 
-samples.ls <- colnames(rnaseq.dt)[str_detect(colnames(rnaseq.dt), "ERR")]
+samples.ls <- colnames(rnaseq.dt)[str_detect(colnames(rnaseq.dt), "untreated")]
 rnaseq.dt <- dplyr::select(rnaseq.dt, c(tx, gene_id, all_of(samples.ls)))
 
 rnaseq.dt <- rnaseq.dt %>%
-  dplyr::filter(if_any(matches("ERR"), ~ . != 0)) # filter out rows with all samples with TPM = 0
+  dplyr::filter(if_any(matches("untreated"), ~ . != 0)) # filter out rows with all samples with TPM = 0
   
 
 rnaseq.dt$tpm_mean <- rowMeans(subset(rnaseq.dt, select = samples.ls), na.rm = TRUE)
