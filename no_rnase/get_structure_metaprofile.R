@@ -115,7 +115,7 @@ cleanup_files(sjob)
 # Convert tiled GRanges to profile dataframe
 # ==========
 
-rnaplfold.ls <- readRDS("threeutrs.rnaplfold.profiles.rds") # load the GRanges List
+rnaplfold.ls <- readRDS(paste0(opt$prefix,"_threeutrs.rnaplfold.profiles.rds")) # load the GRanges List
 
 rnaplfold.grl <- GRangesList(rnaplfold.ls)
 rnaplfold.gr <- unlist(rnaplfold.grl)
