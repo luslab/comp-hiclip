@@ -6,6 +6,8 @@ library(robustbase)
 library(reshape)
 library(stringr)
 library(optparse)
+library(rslurm)
+library(data.table)
 
 # ==========
 # Define functions
@@ -19,81 +21,42 @@ resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
   gr <- unlist(grl)
   gr <- keepStandardChromosomes(gr, pruning.mode = "coarse")
   gr <- dropSeqlevels(gr, c("chrM", "chrY"), pruning.mode = "coarse")
-
+  
   gr <- resize(gr, width = 1, fix = "start") # resize the peaks, start of peak = 1
   gr <- unique(gr)  # keep unique xl positions
   gr <- resize(resize(gr, width = right + 1, fix = "start"), width = w, fix = "end") # add +/- flanks
   gr$id <- paste0("ID", seq(1, length(gr)))
-
+  
   return(gr)
   
 }
 
-get_overlaps <- function(gr, element.gr, left = 100, right = 100) {
+get_overlaps <- function(transcript_id, gr, rnaplfold.gr, left = 100, right = 100) {
   
   w <- left + right + 1  # width of interval: xl site + flanks
   
-  gr.nt <- unlist(tile(gr, width = 1))
-  overlap <- findOverlaps(gr.nt, element.gr) 
-  gr.nt$structure_prob <- as.numeric(NA)
-  gr.nt[queryHits(overlap)]$structure_prob <- element.gr[subjectHits(overlap)]$score
-  
-  gr.nt$id <- rep(gr$id, each = w)
-  
-  overlap.df <- as.data.frame(gr.nt)
-  # overlap.df$id <- 1 + seq(0, nrow(overlap.df) - 1) %/% w  # add peak ids #one ID every w nt
-  # overlap.df$id <- paste0("ID",overlap.df$id)
-  
-  
-  stopifnot(unique(unique(overlap.df$id) == unique(gr$id)) == TRUE)
-  
-  overlap.df <- rowid_to_column(overlap.df, "nt_id") # record nt order in nt_id column
-  
-  plus <- overlap.df %>% dplyr::filter(overlap.df$strand == "+") # separate by strands to assign nt position
-  
-  plus$pos <- seq(1:w)
-  minus <- overlap.df %>% dplyr::filter(overlap.df$strand == "-")
-  
-  minus$pos <- rev(seq(1:w))
-  overlap.df <- rbind(plus, minus) %>%
-    arrange(nt_id) %>%
-    dplyr::select(-nt_id) # order by nt_id and remove the nt_id col
-  
-  pos.df <- unstack(overlap.df, structure_prob ~ pos) # reshape df and keep only the nt positions and scores
-  pos.df <- rowid_to_column(pos.df, var = "id")
-  pos.df$id <- paste0("ID", pos.df$id)
-  rownames(pos.df) <- pos.df$id # make the id column the index
-  pos.df <- dplyr::select(pos.df, -id)
-  colnames(pos.df) <- seq(-left, right)
-  pos.df <- pos.df[rowSums(is.na(pos.df)) != ncol(pos.df), ] # remove peaks with all NAs (i.e. no overlaps found)
-  
-  return(pos.df)
+  print(transcript_id)
+  transcript_id <- unlist(transcript_id)
+  #tx.gr <- gr[gr$name %in% transcript_id]
+  tx.gr <- gr[(elementMetadata(gr)[, "name"] %in% transcript_id)]
+  #rnaplfold.tx.gr <- rnaplfold.gr[rnaplfold.gr$name %in% transcript_id]
+  rnaplfold.tx.gr <- rnaplfold.gr[(elementMetadata(rnaplfold.gr)[, "name"] %in% transcript_id)]
+  gr.nt <- unlist(tile(tx.gr, width = 1))
+  overlap <- findOverlaps(gr.nt, rnaplfold.tx.gr)
+  gr.nt$structure_prob <- rep(as.numeric(NA),  times = length(gr.nt))
+  gr.nt[queryHits(overlap)]$structure_prob <- rnaplfold.tx.gr[subjectHits(overlap)]$score
+  gr.nt$id <- rep(tx.gr$id, each = w)
+  return(gr.nt)
   
 }
 
-get_metaprofile <- function(gr, element.gr) {
-  
-  structure.gr <- import.bed(element.gr, which = gr)
-  transcript.list <- unique(unlist(gr$name))
-  
-  pref <- str_split(element.gr, pattern = ".bed")[[1]][1]
-  structure.gr <- structure.gr[structure.gr$name %in% transcript.list]
-  
-  gr <- gr[gr$name %in% unique(structure.gr$name)]
-  
-  #stopifnot(length(element.gr) == length(unique(element.gr)))
-  
-  pos.df <- get_overlaps(gr, structure.gr, left = opt$left, right = opt$right)
-  data.table::fwrite(pos.df, paste0(pref,"_prob.tsv.gz"), sep = "\t", row.names = TRUE)
-  
-}
 
 # ==========
 # Define options and params
 # ==========
 
-option_list <- list(make_option(c("-b", "--bed"), action = "store", type = "character", default=NA, help = "Comma separated transcript (ENST)-annotated peaks/xlink bed files"),
-                    make_option(c("", "--prob"), action = "store", type = "character", default=NA, help = "Comma separated structure probability bed files"),
+option_list <- list(make_option(c("-b", "--bed"), action = "store", type = "character", default=NA, help = "(ENST)-annotated peaks/xlink bed files"),
+                    make_option(c("", "--prob"), action = "store", type = "character", default=NA, help = "Structure probability bed file"),
                     make_option(c("", "--prefix"), action = "store", type = "character", default=NA, help = "Prefix for output files"),
                     make_option(c("-l", "--left"), action = "store", type = "integer", default = 100, help = "Number of nt upstream [default: %default]"),
                     make_option(c("-r", "--right"), action = "store", type = "integer", default = 100, help = "Number of nt downstream [default: %default]"))
@@ -108,18 +71,80 @@ prefix <- opt$prefix
 # ==========
 
 # Load the peak/xl bed files; they need to be annotated with ENST in a 'name' metadata column
-files.list <- unlist(strsplit(opt$bed, ","))
-peaks.gr <- resize_peaks(files.list, left = opt$left, right = opt$right)
-message("Merging and resizing peaks...")
+
+message("Resizing peaks...")
+peaks.gr <- resize_peaks(opt$bed, left = opt$left, right = opt$right)
+w <- opt$left + opt$right + 1
 
 # Load the structure probability bed files
-structure.files.list <- unlist(strsplit(opt$prob, ","))
-structure.files.list <- structure.files.list[str_detect(structure.files.list, pattern = ".bed")]
 
-message("Calculating profiles...")
+rnaplfold.file <- opt$prob
+structure.gr <- import.bed(rnaplfold.file, which = peaks.gr)
+transcript.list <- intersect(peaks.gr$name, structure.gr$name)
 
-lapply(structure.files.list, get_metaprofile, gr = peaks.gr)
-message("Metaprofiles generated.")
+structure.gr <- structure.gr[(elementMetadata(structure.gr)[, "name"] %in% transcript.list)]
+peaks.gr <- peaks.gr[(elementMetadata(peaks.gr)[, "name"] %in% transcript.list)]
+
+transcript.ls <- as.list(c(transcript.list))
+
+sjob <- rslurm::slurm_map(transcript.ls,
+                          get_overlaps, left = opt$left, right = opt$right,
+                          gr=peaks.gr, rnaplfold.gr=structure.gr,
+                          nodes = 100, cpus_per_node = 1,
+                          jobname = "RNAplfold_metaprofiles",
+                          slurm_options = list(time = "24:00:00"),
+                          submit = TRUE)
+
+Sys.sleep(60)
+message("Profiles generating..")
+
+# check job is finished
+status <- FALSE
+while(status == FALSE) {
+  squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
+  if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left, = all jobs are finished
+  Sys.sleep(60)
+}
+
+output <- get_slurm_out(sjob, outtype = "raw")
+saveRDS(output, paste0(opt$prefix,"_threeutrs.rnaplfold.profiles.rds"))
+
+cleanup_files(sjob)
+
+# ==========
+# Convert tiled GRanges to profile dataframe
+# ==========
+
+rnaplfold.ls <- readRDS("threeutrs.rnaplfold.profiles.rds") # load the GRanges List
+
+rnaplfold.grl <- GRangesList(rnaplfold.ls)
+rnaplfold.gr <- unlist(rnaplfold.grl)
+
+overlap.df <- as.data.frame(rnaplfold.gr)
+overlap.df <- rowid_to_column(overlap.df, "nt_id") # record nt order in nt_id column
+
+plus <- overlap.df %>% dplyr::filter(overlap.df$strand == "+") # separate by strands to assign nt position
+
+plus$pos <- seq(1:w)
+minus <- overlap.df %>% dplyr::filter(overlap.df$strand == "-")
+minus$pos <- rev(seq(1:w))
+
+overlap.df <- rbind(plus, minus) %>%
+  arrange(nt_id) %>%
+  dplyr::select(-nt_id) # order by nt_id and remove the nt_id col
+
+id.list <- unique(overlap.df$id)
+pos.df <- unstack(overlap.df, structure_prob ~ pos) # reshape df and keep only the nt positions and scores
+pos.df$id <- id.list
+
+rownames(pos.df) <- pos.df$id # make the id column the index
+pos.df <- dplyr::select(pos.df, -id)
+colnames(pos.df) <- seq(-opt$left, opt$right)
+
+pos.df <- pos.df[rowSums(is.na(pos.df)) != ncol(pos.df), ] # remove peaks with all NAs (i.e. no overlaps found)
+fwrite(pos.df, paste0(opt$prefix,"_prob_profiles.tsv.gz"), sep = "\t", row.names = TRUE)
+
+if (nrow(pos.df) > 0) {message("Profiles generated.")}
 
 
 
