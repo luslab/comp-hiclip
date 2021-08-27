@@ -79,11 +79,14 @@ get_metaprofile_mean <- function(filename) {
   return(df)
   
 }
+```
 
+
+```{r}
 run_kmeans <- function(data, k) {
   
   set.seed(123)
-  data.kmeans <- kmeans(data, centers = k, iter.max = 20)
+  data.kmeans <- kmeans(data, centers = k, iter.max = 30)
   data <- augment(data.kmeans, data) #%>% arrange(.cluster)
   data <- data %>% add_count(.cluster, name = "cluster_size") %>%
     column_to_rownames(var = ".rownames")
@@ -270,7 +273,7 @@ get_stem_loop_sequence <- function(hybrids.dt, genome.dt) {
 > Data directories
 
 ```{r}
-data.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/july_2021"
+data.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021"
 plots.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3"
 ref.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/ref"
 ref.dir2 <- "/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets"
@@ -292,11 +295,13 @@ fa.dss <- readDNAStringSet((paste0(ref.dir2, "/GRCh38.gencode_v33.fa")))
 > Probablility profiles
 
 ```{r}
-prob.files <- list.files(paste0(data.dir,"/data"), pattern = "rnaplfold_prob.tsv.gz", full.names = TRUE)
-shuff.files <- list.files(paste0(data.dir,"/data"), pattern = "rnaplfold.shuffled_prob.tsv.gz", full.names = TRUE)
-
+prob.files <- list.files(paste0(data.dir,""), pattern = "_prob_profiles.tsv.gz", full.names = TRUE)
+shuff.files <- prob.files[str_detect(prob.files, "shuffled")]
+prob.files <- prob.files[!str_detect(prob.files, "shuffled")]
 shuffled <- TRUE
+
 prob.files
+shuff.files
 ```
 
 
@@ -323,10 +328,11 @@ nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
 > Annotated peaks
 
 ```{r}
-bed.files <- list.files(path = paste0(data.dir,"/data"), pattern = "annot.bed.gz", full.names = TRUE)
+bed.files <- list.files(path = paste0(data.dir,""), pattern = "annot.bed.gz", full.names = TRUE)
 stau1.bedfile <- bed.files[str_detect(bed.files, "stau1")]
 print(stau1.bedfile)
 ```
+
 
 
 # Main figure
@@ -339,6 +345,10 @@ print(stau1.bedfile)
 peaks.gr <- import.bed(stau1.bedfile)
 peaks.gr <- keepStandardChromosomes(peaks.gr, pruning.mode = "coarse")
 peaks.gr <- dropSeqlevels(peaks.gr, c("chrM", "chrY"), pruning.mode = "coarse")
+```
+
+```{r}
+peaks.gr
 ```
 
 ```{r}
@@ -356,6 +366,7 @@ peak_regions.df$type <- factor(peak_regions.df$type, levels = c("UTR5", "CDS", "
 ```
 
 
+
 ```{r}
 region_colours <- c("ncRNA" = "#fbb04e", "intron" = "#bfbb60", "UTR5" = "#a2ceaa",
                     "rRNA" = "#4f6980", "UTR3" = "#f47942", "CDS" = "#638b66",
@@ -371,7 +382,7 @@ peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type)$plot +
   #  geom_text(data = peak_regions.df, aes(x = 0.65, y = 90, label = paste0("n = ", nrow(peak_regions.df))), inherit.aes = FALSE, size = 6) 
   
 peak_regions.gg
-# ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
+ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
 
 ### STAU1 unpaired probability metaprofile
@@ -388,10 +399,8 @@ prefix <- str_split(prefix, ".tsv")[[1]][1]
 print(prefix)
 ```
 
-
 ```{r}
 # Load metaprofile dataframes (df output from get_structure_metaprofile.R)
-
 stau1.prob.df <- fread(prob.file, skip = 1, data.table = FALSE)
 stau1.prob.df <- column_to_rownames(stau1.prob.df, var = "V1")
 colnames(stau1.prob.df) <- seq(1-(ncol(stau1.prob.df)+1)/2, (ncol(stau1.prob.df)-1)/2) # center column names on zero
@@ -419,7 +428,7 @@ if (shuffled == TRUE) {
 ```{r}
 # plot the mean probability and standard error of the mean
 stau1.profile.gg <- plot_metaprofile(stau1.data.df)
-stau1.profile.gg <- append_layers(stau1.profile.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+stau1.profile.gg <- append_layers(stau1.profile.gg, annotate("rect", xmin = 10, xmax = 75, ymin = -Inf, ymax = Inf, 
            alpha = 0.3, fill = "#31a1b3"), position = "bottom")
 
 stau1.profile.gg
@@ -449,10 +458,11 @@ Find the optimal number of clusters
 
 ```{r}
 set.seed(123)
-silhouette.gg <- fviz_nbclust(prob_downstream.df, kmeans, method="silhouette")
+silhouette.gg <- fviz_nbclust(prob_downstream.df, run_kmeans, method="silhouette")
 silhouette.gg
 # ggsave(paste0(plots.dir,"/silhouette_2k.pdf"), silhouette.gg, dpi = 300, width = 4, height = 4)
 ```
+
 
 ```{r}
 n_clusters <- 2
@@ -471,8 +481,11 @@ kmeans.df <- run_kmeans(prob_downstream.df, n_clusters)
 stopifnot(rownames(kmeans.df) == rownames(stau1.prob.df))
 stau1.prob.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
 stau1.prob.df$cluster_size <- kmeans.df$cluster_size
+```
 
-stau1.prob.df$cluster <- plyr::mapvalues(stau1.prob.df$cluster, from=c(2, 1), to=c(0, 1))
+
+```{r warning=FALSE, message=FALSE}
+stau1.prob.df$cluster <- plyr::mapvalues(stau1.prob.df$cluster, from=c(1, 2), to=c(0, 1))
 stau1.prob.df <- dplyr::arrange(stau1.prob.df, cluster)
 stau1.prob.df$cluster <- factor(stau1.prob.df$cluster, levels = c(0, 1))
 ```
@@ -523,9 +536,13 @@ cluster1.df <- cluster1.df %>%
 cluster0.df <- stau1.prob.df %>%
   dplyr::filter(cluster == "0") %>%
   dplyr::rename(.cluster = cluster)
+```
 
+
+```{r}
 # Merge back cluster 0 and the subclusters of cluster 1
 clusters.df <- rbind(cluster0.df, cluster1.df)
+clusters.df$.cluster <- plyr::mapvalues(clusters.df$.cluster, from = c(3, 2, 1, 0), to = c(1, 2, 3, 0))
 clusters.df$.cluster <- factor(clusters.df$.cluster, levels = c(0, 1, 2, 3))
 
 stopifnot(nrow(stau1.prob.df) == nrow(clusters.df)) # Check same size as original prob df
@@ -539,7 +556,7 @@ plot_cluster_heatmap(clusters.df, plot.title = prob.name, plot.name = paste0(plo
 ```{r}
 # Export clusters data
 clusters.df <- rownames_to_column(clusters.df, var = "id")
-# fwrite(clusters.df, paste0(data.dir, "/", prefix,"_clusters.tsv.gz"), sep = "\t")
+#fwrite(clusters.df, paste0(data.dir, "/", prefix,"_clusters.tsv.gz"), sep = "\t")
 ```
 
 Metaprofiles for each cluster: 
@@ -556,11 +573,11 @@ col_pal <- brewer.pal(4, "Dark2")
 clusters.gg <- plot_cluster_mean(clusters.df, 51) +
   scale_y_continuous(position = "right") +
   theme(strip.background = element_blank(), strip.text.x = element_blank())
-clusters.gg <- append_layers(clusters.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
+clusters.gg <- append_layers(clusters.gg, annotate("rect", xmin = 10, xmax = 75, ymin = -Inf, ymax = Inf, 
            alpha = 0.3, fill = "#31a1b3"), position = "bottom")
 
 clusters.gg
-# ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 10)
+#ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 10)
 
 ```
 Clusters 1,2,3 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
@@ -663,7 +680,7 @@ quantile(short_range.dt$hairpin_loop, c(.25, .50, .75, 1))
 ***
 > Convert coordinates to tx
 
-#### Get genomic and tx coordinates for the resized peaks that have been used for RNAplfold and forgi analyses
+#### Get genomic and tx coordinates for the resized peaks that have been used for RNAplfold
 
 ```{r}
 # ==========
@@ -671,8 +688,24 @@ quantile(short_range.dt$hairpin_loop, c(.25, .50, .75, 1))
 # ==========
 
 # Load peaks data, resize exactly as for rnaplfold used to predict structures
-peaks.gc.gr <- resize_peaks(stau1.bedfile, left = 0, right = 100)
+peaks.gc.gr <- resize_peaks(stau1.bedfile, left = 100, right = 100)
+```
 
+```{r}
+data.dir
+```
+
+```{r}
+# Save a record of the bed fie
+peaks.id.gr <- peaks.gc.gr
+peaks.id.gr$name <- peaks.id.gr$id
+peaks.id.gr$id <- NULL
+
+# export.bed(peaks.id.gr, paste0(data.dir, "stau1.10nt_10nt.peaks.annot_id.bed.gz"))
+```
+
+
+```{r}
 # Add a new column containing gene ids by directly mapping the transcript ids
 keys = peaks.gc.gr$name
 mapped.ids <- AnnotationDbi::select(gencode.txdb, keys = keys, columns="GENEID", keytype="TXNAME")
@@ -1212,7 +1245,6 @@ merged.gg
 # ggsave(paste0(data.dir,"/RBPs_metaprofile_paired_v2.pdf"), merged.gg, width = 4, height = 4)
 ```
 
-########################
 
 ```{r}
 # p = c(0, 0.25, 0.50, 0.75, 1)
