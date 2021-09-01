@@ -48,6 +48,11 @@ theme_set(theme_bw() +
             theme(legend.position = "top"))
 ```
 
+```{r}
+library(BSgenome.Hsapiens.UCSC.hg38)
+Hsapiens <- BSgenome.Hsapiens.UCSC.hg38
+```
+
 #### Functions: metaprofiles and clustering
 
 ```{r}
@@ -79,10 +84,7 @@ get_metaprofile_mean <- function(filename) {
   return(df)
   
 }
-```
 
-
-```{r}
 run_kmeans <- function(data, k) {
   
   set.seed(123)
@@ -198,6 +200,89 @@ plot_stacked_barchart <- function(data.df, column, group=NULL) {
 
 ```
 
+#### Functions: defining duplexes from RNAplfold clusters
+
+```{r}
+get_duplex <- function(region.dt, cluster_number, cores = 4) {
+
+  # Cluster 1 = 1-30 & 30-50
+  # Cluster 2 = 8-36 & 36-63
+  # Cluster 3 = 16-44 & 44-68
+  
+  if(cluster_number == 1) {
+    
+    c.L_start <- 1
+    c.L_end <- 30
+    c.R_start <- 31
+    c.R_end <- 50
+    
+  } else if(cluster_number == 2) {
+    
+    c.L_start <- 8
+    c.L_end <- 36
+    c.R_start <- 37
+    c.R_end <- 63    
+    
+  } else if(cluster_number == 3) {
+    
+    c.L_start <- 16
+    c.L_end <- 44
+    c.R_start <- 45
+    c.R_end <- 68     
+    
+  } else {
+    
+    stop("cluster_number should be 1, 2, or 3")
+    
+  }
+    
+  c.dt <- region.dt[cluster == cluster_number]
+  
+  c.dt[strand == "+", 
+        `:=` (L_start = xlink + c.L_start,
+              L_end = xlink + c.L_end,
+              R_start = xlink + c.R_start,
+              R_end = xlink + c.R_end)]
+  c.dt[strand == "-", 
+        `:=` (L_end = xlink - c.L_start,
+              L_start = xlink - c.L_end,
+              R_end = xlink - c.R_start,
+              R_start = xlink - c.R_end)] # start and end flipped for GRanges
+  
+  L.gr <- with(c.dt, GRanges(seqnames = seqnames,
+                              ranges = IRanges(start = L_start, end = L_end),
+                              strand = strand,
+                              name = name,
+                              score = score,
+                              cluster = cluster,
+                              xlink = xlink))
+  
+  R.gr <- with(c.dt, GRanges(seqnames = seqnames,
+                              ranges = IRanges(start = R_start, end = R_end),
+                              strand = strand,
+                              name = name,
+                              score = score,
+                              cluster = cluster,
+                              xlink = xlink))
+  
+  L.gr$seq <- as.character(getSeq(Hsapiens, L.gr))
+  R.gr$seq <- as.character(getSeq(Hsapiens, R.gr))
+  
+  c.duplex.l <- mclapply(seq_along(L.gr), 
+                         function(peak) analyse_structure(L.gr$name[peak], L.gr$seq[peak], R.gr$seq[peak]),
+                         mc.cores = cores)
+  
+  c.duplex.dt <- rbindlist(c.duplex.l)
+  c.duplex.dt <- merge(c.dt, c.duplex.dt, by = "name")
+  c.duplex.dt$loop <- str_count(str_extract(c.duplex.dt$structure, "\\.*&\\.*"), "\\.")
+  
+  return(c.duplex.dt)
+  
+}
+
+```
+
+
 #### Functions: hybrids clustering
 
 ```{r}
@@ -267,15 +352,17 @@ get_stem_loop_sequence <- function(hybrids.dt, genome.dt) {
   return(seq.dt)
 }
 ```
+
+
 #### Data
 
 ***
 > Data directories
 
 ```{r}
-data.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021"
-plots.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3"
-ref.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/ref"
+data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021"
+plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3"
+ref.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/ref"
 ref.dir2 <- "/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets"
 ```
 
@@ -302,14 +389,6 @@ shuffled <- TRUE
 
 prob.files
 shuff.files
-```
-
-
-***
-> Short-range duplex data
-
-```{r}
-short_range.dt <- fread(paste0(data.dir, "/results/short_range_lmin_rnaduplex_structures.tsv.gz"))
 ```
 
 ***
@@ -463,7 +542,6 @@ silhouette.gg
 # ggsave(paste0(plots.dir,"/silhouette_2k.pdf"), silhouette.gg, dpi = 300, width = 4, height = 4)
 ```
 
-
 ```{r}
 n_clusters <- 2
 ```
@@ -482,7 +560,6 @@ stopifnot(rownames(kmeans.df) == rownames(stau1.prob.df))
 stau1.prob.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
 stau1.prob.df$cluster_size <- kmeans.df$cluster_size
 ```
-
 
 ```{r warning=FALSE, message=FALSE}
 stau1.prob.df$cluster <- plyr::mapvalues(stau1.prob.df$cluster, from=c(1, 2), to=c(0, 1))
@@ -577,10 +654,59 @@ clusters.gg <- append_layers(clusters.gg, annotate("rect", xmin = 10, xmax = 75,
            alpha = 0.3, fill = "#31a1b3"), position = "bottom")
 
 clusters.gg
-#ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 10)
+ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 10)
 
 ```
+
 Clusters 1,2,3 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
+
+### Define duplex arms
+
+```{r}
+dt <- as.data.table(clusters.df[.cluster != 0])
+
+p.list <- lapply(1:3, function(i) {
+  
+  message(i)
+  
+  m <- colMeans(dt[.cluster == i, .SD, .SDcols = !c("id", ".cluster", "cluster_size")])
+  lmin <- which(diff(sign(diff(m))) == 2) + 1 -51
+  lmin <- lmin[lmin > 0]
+  names(lmin) <- NULL
+  print(lmin)
+  
+  p <- ggplot(data = data.frame(coord = as.integer(names(m)), score = m), aes(x = coord, y = score)) +
+    geom_line() +
+    geom_vline(xintercept = lmin, linetype = "dashed", colour = "blue") +
+    theme_minimal_grid() +
+    labs(x = "Coordinate",
+         y = "Mean pairing probability",
+         title = paste("Cluster", i))
+  
+  return(p)
+  
+})
+
+ggsave(plot_grid(plotlist = p.list, ncol = 1), filename = file.path(plot.path, "sr_clusters_lmin.pdf"), width = 7, height = 10)
+
+# ==========
+# Identify duplexes within arms
+# ==========
+
+peaks.dt <- as.data.table(import.bed("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021/stau1.10nt_10nt.peaks.annot_id.bed.gz"))
+peaks.dt <- merge(peaks.dt, dt[, .(id, .cluster)], by.x = "name", by.y = "id")
+setnames(peaks.dt, ".cluster", "cluster")
+peaks.dt[, xlink := start + 101]
+
+
+
+cluster.duplexes.l <- lapply(1:3, function(i) get_duplex(region.dt = peaks.dt,
+                                                         cluster_number = i))
+cluster.duplexes.dt <- rbindlist(cluster.duplexes.l)
+fwrite(cluster.duplexes.dt, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz", sep = "\t")
+
+```
+
 
 ## Fig 3 C
 
@@ -590,13 +716,10 @@ Use peaks (IDs) in clusters 1, 2 and 3.
 
 The short range duplexes were used using the local minima approach applied on each of clusters 1-3.
 
-There are `r length(unique(short_range.dt$name))` peaks in clusters 1,2,3.
+There are `r length(unique(cluster.duplexes.dt$name))` peaks in clusters 1,2,3.
 
 ```{r}
-# clust_prob.df <- clusters.df %>%
-#   dplyr::filter(cluster == 1 | cluster == 2 | cluster == 3)
-
-head(short_range.dt)
+nrow(cluster.duplexes.dt)
 ```
 
 #### Trim dot bracket structure to focus only on the paired regions
@@ -606,11 +729,11 @@ head(short_range.dt)
 # Trim unpaired residues at the ends of left and right arms
 
 # Separate L_db and R_db
-short_range.dt <- short_range.dt %>%
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
   separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
 
 # Get positions of paired residues within structures of each arm
-short_range.dt <- short_range.dt %>%
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
   rowwise() %>%
   mutate(paired_regions = list(get_paired_regions(id, L_db, R_db))) %>%
   mutate(L_duplex_start= paired_regions$l_start, 
@@ -620,8 +743,8 @@ short_range.dt <- short_range.dt %>%
   ungroup() %>%
   dplyr::select(-paired_regions)
 
-# Adjust genomic coordinates to only the paired region
-short_range.dt <- short_range.dt %>%
+# Adjust genomic coordinates to contain only the paired region
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
   rowwise() %>%
   mutate(L_genomic_start = case_when(strand == "+" ~ L_start + L_duplex_start - 1,
                                     TRUE ~ L_end - L_duplex_end + 1),
@@ -635,26 +758,21 @@ short_range.dt <- short_range.dt %>%
                                   TRUE ~ L_genomic_start - R_genomic_end + 1 - 2)) %>%
   ungroup()
 
+
+cluster.duplexes.dt <- dplyr::filter(cluster.duplexes.dt, loop != 0)
 ```
-
-```{r}
-short_range.dt <- dplyr::filter(short_range.dt, loop != 0)
-```
-
-
-
 
 ## Fig 3 D
 
 ### Hairpin loop size
 
 ```{r}
-hairpin_median <- short_range.dt %>%
+hairpin_median <- cluster.duplexes.dt %>%
   dplyr::summarize(Median = median(hairpin_loop, na.rm = TRUE))
 hairpin_median
 
 # Plot
-h0.gg <- ggplot(short_range.dt, aes(x = hairpin_loop)) + 
+h0.gg <- ggplot(cluster.duplexes.dt, aes(x = hairpin_loop)) + 
   #geom_histogram(bins = 45, color="black", fill = "#DEEBF7") +
   geom_density(color = "#31a1b3", bw = 0.1) +
   theme_minimal_grid() +
@@ -670,7 +788,7 @@ h0.gg
 ```
 
 ```{r}
-quantile(short_range.dt$hairpin_loop, c(.25, .50, .75, 1))
+quantile(cluster.duplexes.dt$hairpin_loop, c(.25, .50, .75, 1))
 ```
 
 ## Fig 3 E
@@ -691,9 +809,6 @@ quantile(short_range.dt$hairpin_loop, c(.25, .50, .75, 1))
 peaks.gc.gr <- resize_peaks(stau1.bedfile, left = 100, right = 100)
 ```
 
-```{r}
-data.dir
-```
 
 ```{r}
 # Save a record of the bed fie
@@ -701,7 +816,7 @@ peaks.id.gr <- peaks.gc.gr
 peaks.id.gr$name <- peaks.id.gr$id
 peaks.id.gr$id <- NULL
 
-# export.bed(peaks.id.gr, paste0(data.dir, "stau1.10nt_10nt.peaks.annot_id.bed.gz"))
+#export.bed(peaks.id.gr, paste0(data.dir, "/stau1.10nt_10nt.peaks.annot_id.bed.gz"))
 ```
 
 
@@ -748,7 +863,7 @@ peaks.df <- peaks.gc.df %>%
 peaks.df <- dplyr::rename(peaks.df, tx_name = name)
 
 # Extract the start and end position of the stem-loop individually for each arm
-arms.df <- short_range.dt %>% 
+arms.df <- cluster.duplexes.dt %>% 
   dplyr::select(name, seqnames, strand, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end)
 
 # Merge df containing the peaks starts + 100 in genomic and transcriptomic coordinates to arms dataframe
@@ -852,21 +967,13 @@ nrow(all.hybrids.dt)
 all.list <- split(all.hybrids.dt, by = c("L_seqnames", "R_seqnames"))
 all.clusters.list <- parallel::mclapply(all.list, cluster_hybrids, percent_overlap = 0.5, mc.cores = 4)
 all.clusters.dt <- rbindlist(all.clusters.list, use.names = TRUE, fill = TRUE)
-```
 
-
-```{r}
 #all.clusters.dt[L_seqnames == R_seqnames][!L_seqnames %in% c("tRNA", "rDNA", "rRNA_5S")][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)]
 all.collapsed  <- collapse_clusters(all.clusters.dt, mode = "wide")
-```
 
-```{r}
 # Get genomic coordinates
 all.collapsed <- convert_coordinates(all.collapsed, genes.gr)
 
-```
-
-```{r}
 # Export bed file
 all.collapsed.dt <- data.table(all.collapsed)
 # export_genomic_bed(all.collapsed.dt, paste0(data.dir, "/collapsed_hybrid_duplexes.bed"))
@@ -875,7 +982,7 @@ all.collapsed.dt <- data.table(all.collapsed)
 ```{r}
 # Export reformated file, it will be used for clustering all datasets
 
-fwrite(short_range.reformated.gc.df, paste0(data.dir, "/results/short_range_duplexes.tsv.gz"), sep = "\t")
+fwrite(short_range.reformated.gc.df, paste0(data.dir, "/short_range_duplexes.tsv.gz"), sep = "\t")
 
 ```
 
@@ -887,13 +994,13 @@ nonhyb_overlapped.dt <- short_range.reformated.gc.df[unique(ol$queryHits),]
 ```
 
 ```{r}
-nonhyb_count <- nrow(short_range.dt)
+nonhyb_count <- nrow(cluster.duplexes.dt)
 hyb_clusters_count <- nrow(all.collapsed)
 nonhyb_ol_count <- nrow(nonhyb_overlapped.dt)
 
 olap_counts <- c(Predicted_short_range_duplexes = nonhyb_count-nonhyb_ol_count, hiCLIP_duplexes = hyb_clusters_count-nonhyb_ol_count, "Predicted_short_range_duplexes&hiCLIP_duplexes" = nonhyb_ol_count)
 
-#pdf(file=paste0(plots.dir,"/short_range_overlap.pdf"), onefile=FALSE, width = 7, height = 5) 
+pdf(file=paste0(plots.dir,"/short_range_overlap.pdf"), onefile=FALSE, width = 7, height = 5) 
 
 upset(fromExpression(olap_counts),
       order.by = "freq",
@@ -907,7 +1014,7 @@ upset(fromExpression(olap_counts),
       empty.intersections = "off"
       )
 
-#dev.off()
+dev.off()
 ```
 
 
@@ -919,39 +1026,22 @@ upset(fromExpression(olap_counts),
 > Short-range structure that overlaps with hybrid duplexes
 
 ```{r}
-semi_join(short_range.dt, nonhyb_overlapped.dt, by = "name")
+semi_join(cluster.duplexes.dt, nonhyb_overlapped.dt, by = "name")
 
-# ID11446
-
-# ID13102
 ```
 ```{r}
-ex1.df <- dplyr::filter(short_range.dt, name == "ID10081")
+ex1.df <- dplyr::filter(cluster.duplexes.dt, name == "ID10081")
 ```
 
 ***
 > Short-range structure that doesn't overlap with hybrid duplexes
 
 ```{r}
-anti_join(short_range.dt, nonhyb_overlapped.dt, by = "name")
-
-# ID10131
-
-# ID1020
-
-# ID10262
-
-# small loop ID10335
-
-# ............(((((.....(((((((...((((&...))))...))))))).))))).... ID10376
-
-# ID1040
-
-#ID10436 .......(((..((((((.((((((.....&...)))))).)))))).))).   loop=8
+anti_join(cluster.duplexes.dt, nonhyb_overlapped.dt, by = "name")
 ```
 
 ```{r}
-ex2.df <- dplyr::filter(short_range.dt, name == "ID10083")
+ex2.df <- dplyr::filter(cluster.duplexes.dt, name == "ID10083")
 ```
 
 ```{r}
@@ -976,24 +1066,22 @@ clusters_examples_bp.dt <- clusters_examples.dt[, .(L_genomic_seqnames, L_genomi
 #fwrite(clusters_examples_bp.dt, sep = "\t", col.names = FALSE, file = "long_range_examples.bp")
 ```
 
-```{r}
-short_range_exaples.dt
-```
+
 
 ```{r}
 fa.dt <- data.table(gene_id = names(fa.dss), sequence = as.character(fa.dss))
 short_range.reformated.gc.df <- get_sequence(as.data.table(short_range.reformated.gc.df), fa.dt)
 stopifnot(!any(is.na(c(short_range.reformated.gc.df$L_sequence, short_range.reformated.gc.df$L_sequence))))
-short_range.dt <- left_join(short_range.dt, dplyr::select(short_range.reformated.gc.df, name, L_sequence, R_sequence))
+cluster.duplexes.dt <- left_join(cluster.duplexes.dt, dplyr::select(short_range.reformated.gc.df, name, L_sequence, R_sequence))
 ```
 
 ```{r}
 x <- get_stem_loop_sequence(as.data.table(short_range.reformated.gc.df), fa.dt)
-short_range.dt <- left_join(short_range.dt, dplyr::select(x, name, stem_loop_sequence))
+cluster.duplexes.dt <- left_join(cluster.duplexes.dt, dplyr::select(x, name, stem_loop_sequence))
 ```
 
 ```{r}
-dplyr::filter(short_range.dt, name == "ID10083" | name == "ID10081")
+dplyr::filter(cluster.duplexes.dt, name == "ID10083" | name == "ID10081")
 ```
 
 
@@ -1004,7 +1092,7 @@ dplyr::filter(short_range.dt, name == "ID10083" | name == "ID10081")
 ### Duplex length
 
 ```{r}
-short_range.dt <- short_range.dt %>%
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
   rowwise() %>%
   mutate(total_paired = str_count(L_db, "\\(")) %>%
   ungroup()
@@ -1012,15 +1100,15 @@ short_range.dt <- short_range.dt %>%
 
 
 ```{r}
-m_motif_structures <- list(nrow(short_range.dt))
+m_motif_structures <- list(nrow(cluster.duplexes.dt))
 names(m_motif_structures) <- "M motif duplexes (clusters 1, 2, 3)"
-m_motif_min10bp <- list(nrow(short_range.dt[short_range.dt$total_paired >= 10,]))
+m_motif_min10bp <- list(nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 10,]))
 names(m_motif_min10bp) <-"M motif duplexes >= 10 bp"
 
-m_motif_max9bp <- list(nrow(short_range.dt) - nrow(short_range.dt[short_range.dt$total_paired >= 10,]))
+m_motif_max9bp <- list(nrow(cluster.duplexes.dt) - nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 10,]))
 names(m_motif_max9bp) <- "M motif duplexes < 10 bp"
 
-no_m_motif <- list(nrow(stau1.prob.df) - nrow(short_range.dt))
+no_m_motif <- list(nrow(stau1.prob.df) - nrow(cluster.duplexes.dt))
 names(no_m_motif) <- "No M motif"
 structure_types.ls <- c(no_m_motif, m_motif_max9bp, m_motif_min10bp)
 types.df <- data.frame(structure_types = names(structure_types.ls), count = unlist(structure_types.ls, use.names=FALSE))
@@ -1052,12 +1140,12 @@ pie.gg
 
 
 ```{r}
-total_paired_median <- short_range.dt %>%
+total_paired_median <- cluster.duplexes.dt %>%
   dplyr::summarize(Median = median(total_paired, na.rm = TRUE))
 total_paired_median
 
 # Plot
-s.gg <- ggplot(short_range.dt, aes(x=total_paired)) + 
+s.gg <- ggplot(cluster.duplexes.dt, aes(x=total_paired)) + 
   #geom_histogram(bins = 45, color="black", fill = "#DEEBF7") +
   geom_density(color = "#31a1b3") +
   theme_minimal_grid() +
@@ -1249,8 +1337,8 @@ merged.gg
 ```{r}
 # p = c(0, 0.25, 0.50, 0.75, 1)
 #   
-#   coord.dt <- short_range.dt
-#   coord.dt$q <- cut(short_range.dt$score, 
+#   coord.dt <- cluster.duplexes.dt
+#   coord.dt$q <- cut(cluster.duplexes.dt$score, 
 #                     breaks = quantile(coord.dt$score, probs = p), 
 #                     include.lowest = TRUE, 
 #                     labels = 0:(length(p) - 2))
