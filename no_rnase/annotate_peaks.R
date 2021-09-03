@@ -54,7 +54,7 @@ option_list <- list(make_option(c("", "--bed"), action = "store", type = "charac
 opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
-data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/forgi"
+data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid"
 
 
 

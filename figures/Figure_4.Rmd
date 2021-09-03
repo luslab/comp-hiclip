@@ -447,12 +447,25 @@ stau1.region.df <- stau1.dt %>%
   dplyr::select(name, L_region, R_region) %>%
   pivot_longer(c(L_region, R_region), names_to = "arm", values_to = "region")
 
-plot_stacked_barchart(stau1.region.df, region, simplify = FALSE) +
+
+region_colours <- c("ncRNA" = "#fbb04e", "intron" = "#bfbb60", "UTR5" = "#a2ceaa",
+                    "rRNA" = "#4f6980", "UTR3" = "#f47942", "CDS" = "#638b66",
+                    "tRNA" = "#849db1")
+
+reg.gg <- plot_stacked_barchart(stau1.region.df, region, simplify = FALSE) +
   theme_minimal_grid() + 
+  scale_fill_manual(values = region_colours) +
   ggtitle("STAU1") +
-  guides(fill=guide_legend(title="Duplex arm location"))
+  guides(fill=guide_legend(title="Duplex arm location")) +
+  coord_flip() +
+    theme(legend.position = "top")
 
 ```
+
+```{r}
+ggsave(paste0(plots.dir, "/stau1_arm_regions.pdf"), reg.gg, width = 6, height = 4, dpi = 300)
+```
+
 
 
 ```{r}
@@ -474,7 +487,27 @@ stau1.dt <- stau1.dt %>%
   mutate(type = case_when(L_gene_id == R_gene_id ~ "Intragenic",
                           TRUE ~ "Intergenic"))
 
-plot_stacked_barchart(stau1.dt, column = type, simplify = FALSE)
+ii.gg <- plot_stacked_barchart(stau1.dt, column = type, simplify = FALSE) +
+  scale_fill_tableau(palette = "Seattle Grays") +
+  theme_minimal_grid() +
+  guides(fill=guide_legend(title="Duplex location")) +
+  guides(fill=guide_legend(title="Duplex arm location")) +
+  coord_flip() +
+    theme(legend.position = "top")
+
+ii.gg
+```
+```{r}
+ggsave(paste0(plots.dir, "/stau1_intra_inter.pdf"), ii.gg, width = 6, height = 4, dpi = 300)
+```
+
+
+
+```{r}
+intra_stau1.dt <- stau1.dt %>%
+  dplyr::filter(type == "Intragenic")
+
+nrow(intra_stau1.dt)
 ```
 
 #### Intramolecular locations
@@ -497,10 +530,19 @@ stau1.regions.gg <- plot_stacked_barchart(stau1_duplex_regions.df, region_pairs,
   #scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(5)) +
   scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#F1948A","#999999","#17A589","#56B4E9"))(5)) +
   theme_minimal_grid() +
-  guides(fill=guide_legend(title="Duplex location"))
+  guides(fill=guide_legend(title="Duplex location")) +
+  guides(fill=guide_legend(title="Duplex arm location")) +
+  coord_flip() +
+    theme(legend.position = "top") +
+  scale_fill_manual(values = region_colours) 
   
+
+
 stau1.regions.gg
 # ggsave(paste0(data.dir, "stau_regions.pdf"), stau1.regions.gg, width = 4, height = 5, dpi = 300)
+
+#ggsave(paste0(plots.dir, "/stau1_arm_regions.pdf"), stau1.regions.gg, width = 5, height = 4, dpi = 300)
+
 ```
 
 ```{r}
