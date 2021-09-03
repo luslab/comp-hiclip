@@ -28,6 +28,7 @@ library(GenomicFeatures)
 library(rtracklayer)
 library(parallel)
 library(RColorBrewer)
+library(patchwork)
 set.seed(42)
 ```
 
@@ -260,7 +261,20 @@ pheatmap(scaled.mat,
          annotation_colors = list("cluster" = metabolism_colours),
          filename = file.path(plot.path, "rna_metabolism_heatmap.pdf"),
          width = 2,
-         height = 6)
+         height = 4)
+
+pheatmap(t(scaled.mat), 
+         cluster_cols = FALSE, show_colnames = FALSE, scale = "none",
+         breaks = unique(c(seq(-b, -2.5, length.out = 10), 
+                           seq(-2.5, 2.5, length.out = 100), 
+                           seq(2.5, b, length.out = 10))), 
+         color = rev(colorRampPalette(brewer.pal(n = 11, name = "RdBu"))(120)),
+         cluster_rows = FALSE,
+         annotation_col = annot.df,
+         annotation_colors = list("cluster" = metabolism_colours),
+         filename = file.path(plot.path, "rna_metabolism_heatmap_h.pdf"),
+         width = 10,
+         height = 2)
 
 pheatmap(scaled.mat, 
          cluster_cols = FALSE, show_rownames = FALSE, scale = "none",
@@ -453,7 +467,7 @@ p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = utr3_width, fill =
   geom_boxplot(width = 0.5, outlier.shape = NA) +
   coord_cartesian(ylim = c(0, 10000)) +
   scale_fill_manual(values = metabolism_colours) +
-  theme_minimal_grid() + theme(legend.position = "top") +
+  theme_minimal_grid() + theme(legend.position = "none") +
   labs(x = "",
        y = "3' UTR length",
        fill = "")
@@ -468,7 +482,7 @@ p
 p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = loop, fill = metabolism_cluster)) +
   geom_boxplot(width = 0.5, outlier.shape = NA) +
   scale_fill_manual(values = metabolism_colours) +
-  theme_minimal_grid() + theme(legend.position = "top") +
+  theme_minimal_grid() + theme(legend.position = "none") +
   scale_y_log10() + annotation_logticks(sides = "l") +
   labs(x = "",
        y = "Duplex span",
@@ -482,7 +496,7 @@ p
 p <- ggplot(utr3.duplexes.dt, aes(x = loop, fill = metabolism_cluster)) +
   geom_density() +
   scale_fill_manual(values = metabolism_colours) +
-  theme_minimal_grid() + theme(legend.position = "top") +
+  theme_minimal_grid() + theme(legend.position = "none") +
   facet_grid(metabolism_cluster ~ .) +
   scale_x_log10() + annotation_logticks(sides = "b") +
   labs(y = "Density",
@@ -500,7 +514,7 @@ p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = circ_score, fill =
   geom_boxplot(width = 0.5, outlier.shape = NA) +
   coord_cartesian(ylim = c(0, 0.35)) +
   scale_fill_manual(values = metabolism_colours) +
-  theme_minimal_grid() + theme(legend.position = "top") +
+  theme_minimal_grid() + theme(legend.position = "none") +
   labs(x = "",
        y = "Circularisation score",
        fill = "")
@@ -516,13 +530,25 @@ utr3.duplexes.melted.dt <- melt.data.table(utr3.duplexes.dt[, .(metabolism_clust
 p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
   geom_density() + 
   facet_grid(metabolism_cluster ~ .) +
-  theme_minimal_grid() + theme(legend.position = "top") +
+  theme_minimal_grid() + theme(legend.position = "right") +
   scale_color_economist(labels = c("L", "R")) +
   labs(x = "Proportion along 3' UTR",
        y = "Density",
        colour = "Duplex arm")
   
-ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start.pdf"), width = 4, height = 8)
+ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start.pdf"), width = 5, height = 8)
+
+# p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
+#   geom_density() + 
+#   facet_grid(. ~ metabolism_cluster) +
+#   theme_minimal_grid() + theme(legend.position = "right") +
+#   scale_color_economist(labels = c("L", "R")) +
+#   labs(x = "Proportion along 3' UTR",
+#        y = "Density",
+#        colour = "Duplex arm")
+#   
+# ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start_h.pdf"), width = 8, height = 3)
+
 p
 ```
 
@@ -531,20 +557,43 @@ p
 ```{r}
 utr3.duplexes.melted.dt <- melt.data.table(utr3.duplexes.dt[, .(metabolism_cluster, ensg, L_abs_start, R_abs_end)], id.vars = c("ensg", "metabolism_cluster"))
 
-p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
-  geom_density() +
-  facet_grid(metabolism_cluster ~ variable,
-             labeller = labeller(variable = c(L_abs_start = "Left", R_abs_end = "Right"))) +
-  theme_minimal_grid() + theme(legend.position = "none") +
-  scale_color_economist(labels = c("L", "R")) +
-  labs(x = "Distance from 3' UTR start/end",
-     y = "Density",
-     colour = "Duplex arm") +
-  coord_cartesian(xlim = c(-10000, 10000))
+# p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
+#   geom_density() +
+#   facet_grid(metabolism_cluster ~ variable,
+#              labeller = labeller(variable = c(L_abs_start = "Left", R_abs_end = "Right"))) +
+#   theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
+#   scale_color_economist(labels = c("L", "R")) +
+#   labs(x = "Distance from 3' UTR start/end",
+#      y = "Density",
+#      colour = "Duplex arm") +
+#   coord_cartesian(xlim = c(-10000, 10000))
+# 
+# ggsave(p, filename = file.path(plot.path, "absolute_arm_locations.pdf"), width = 6, height = 4)
 
-ggsave(p, filename = file.path(plot.path, "absolute_arm_locations.pdf"), width = 6, height = 4)
-p
+p.l <- ggplot(utr3.duplexes.melted.dt[variable == "L_abs_start"], aes(x = value)) +
+  geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[4]) +
+  facet_grid(metabolism_cluster ~ .,
+             labeller = labeller(metabolism_cluster = c(A = "", B = "", C = ""))) +
+  theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Distance from 3' UTR start/end",
+       y = "Count") +
+  coord_cartesian(xlim = c(-1000, 10000), ylim = c(0, 100))
+
+p.r <- ggplot(utr3.duplexes.melted.dt[variable == "R_abs_end"], aes(x = value)) +
+  geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[2]) +
+  facet_grid(metabolism_cluster ~ .) +
+  theme_minimal_grid() + 
+  theme(legend.position = "none", 
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.text.y = element_blank()) +
+  labs(x = "",
+     y = "") +
+  coord_cartesian(xlim = c(-10000, 1000), ylim = c(0, 100))
+
+ggsave(p.l + p.r, filename = file.path(plot.path, "absolute_arm_locations_histogram.pdf"), width = 6, height = 4)
+p.l + p.r
 ```
+
 ## Degradation and distance
 
 ```{r}
