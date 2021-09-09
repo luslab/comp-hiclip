@@ -9,20 +9,17 @@ suppressPackageStartupMessages(library(parallel))
 # Data
 # ==========
 
-
-data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/"
 results.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/merged_clusters/stau1_atlas"
 
 # Linker
-linker.dt <- fread(paste0(data.dir, "/results_linker/linker.clusters.mfe.tsv.gz"))
+linker.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/linker.clusters.mfe.tsv.gz")
 
 # No linker
-nolinker.dt <- fread(paste0(data.dir, "/results_nolinker/all.hybrids.tsv.gz"))
+nolinker.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nolinker/atlas/all.hybrids.tsv.gz")
 nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
 
-# Non-hybrids, files produced in Figure_2.Rmd
-# nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/stau1_nonhybrid.gc.txt") # old short-range structure analyses
-nonhybrid.dt <- fread(paste0(data.dir, "lmin/short_range_duplexes.tsv.gz"))
+# Non-hybrids, files produced in Figure_3.Rmd
+nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/lmin/short_range_duplexes.tsv.gz")
 nonhybrid.dt$sample <- "stau1_nonhybrid"
 
 
@@ -30,7 +27,6 @@ nonhybrid.dt$sample <- "stau1_nonhybrid"
 # Annotation files
 # ==========
 
-#ref.dir <- "/Users/iosubi/Dropbox (The Francis Crick)/comp_hiclip/ref"
 ref.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/"
 
 genes.gr <- rtracklayer::import.gff2(paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz"))
