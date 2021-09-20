@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(pheatmap)
 library(viridis)
 library(RColorBrewer)
-
+ library(tictoc)
 
 library(primavera)
 library(rtracklayer)
@@ -250,6 +250,41 @@ upset(fromExpression(upset.input),
 dev.off()
 ```
 
+# S1A - RNA abundance of overlapping genes
+
+```{r}
+ol.genes <- unique(c(bedpe.dt$L_seqnames.x, bedpe.dt$L_seqnames.y, bedpe.dt$R_seqnames.x, bedpe.dt$R_seqnames.y))
+nol.genes <- unique(c(linker.bedpe.dt$L_seqnames, linker.bedpe.dt$R_seqnames, nolinker.bedpe.dt$L_seqnames, nolinker.bedpe.dt$R_seqnames))
+
+gene.counts.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/4suseq/GSE84722_ST1.txt.gz")
+gene.counts.dt$mean_count <- rowMeans(gene.counts.dt[, .(RZ_Mature_copies, RH_Mature_copies, PA_Mature_copies)], na.rm = TRUE)
+gene.counts.dt[, ensg := tstrsplit(Gene, "\\.")[[1]]]
+
+counts.dt <- data.table(gene = c(ol.genes, nol.genes),
+                        type = c(rep("Overlap", length(ol.genes)), rep("No overlap", length(nol.genes))))
+counts.dt <- counts.dt[!grepl("_", gene)]
+counts.dt[, ensg := tstrsplit(tstrsplit(gene, ":")[[2]], "\\.")[[1]]]
+
+counts.dt <- merge(counts.dt, gene.counts.dt[, .(ensg, mean_count)], by = "ensg")
+
+p <- ggplot(counts.dt, aes(x = type, y = mean_count, fill = type)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA) +
+  scale_y_log10() +
+  annotation_logticks(sides = "l") +
+  scale_fill_brewer(palette = "Accent") +
+  coord_cartesian(ylim = c(1e-1, 1e3)) +
+  # geom_label(data = gene.counts.dt[mean_count > 0, .N, by = .(stau)], aes(label = N, y = 0), vjust = -0.1) +
+  labs(x = "",
+       y = "Mean gene copy number",
+       fill = "") +
+  theme_minimal_grid() + theme(legend.position = "none")
+
+ggsave(p, filename = file.path(plot.path, "overlap_rnaabundance.pdf"), width = 5, height = 4)
+
+p
+```
+
+
 # 1H - Duplex span
 
 ```{r}
@@ -271,7 +306,7 @@ p <- ggplot(intragenic.clusters.dt, aes(x = loop, colour = exp)) +
        colour = "",
        linetype = "")  
 
-ggsave(p, filename = file.path(plot.path, "intragenic_linker_nolinker_duplex_span.pdf"), width = 7, height = 4)
+ggsave(p, filename = file.path(plot.path, "intragenic_linker_nolinker_duplex_span.pdf"), width = 5, height = 4)
 
 p
 ```

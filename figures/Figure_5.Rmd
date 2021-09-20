@@ -15,20 +15,20 @@ output:
 ---
 
 ```{r}
-library(primavera)
-library(data.table)
-library(ggplot2)
-library(cowplot)
-library(scales)
-library(ggthemes)
-library(UpSetR)
-library(pheatmap)
-library(viridis)
-library(GenomicFeatures)
-library(rtracklayer)
-library(parallel)
-library(RColorBrewer)
-library(patchwork)
+suppressPackageStartupMessages(library(primavera))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(cowplot))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(UpSetR))
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(GenomicFeatures))
+suppressPackageStartupMessages(library(rtracklayer))
+suppressPackageStartupMessages(library(parallel))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(patchwork))
 set.seed(42)
 ```
 
@@ -87,7 +87,7 @@ gene.counts.dt <- gene.counts.dt[Gene %in% gene.info.dt[Simple == "protein_codin
 
 # Annotate with Staufen 3' UTR binding
 gene.counts.dt[, ensg := sapply(strsplit(Gene, "\\."), "[[", 1)]
-gene.counts.dt[ensg %in% stau1.genes, stau := "STAU1"][ensg %in% stau1_paris.genes, stau := "STAU1 & PARIS"][ensg %in% paris.genes, stau := "PARIS"][is.na(stau), stau := "None"]
+gene.counts.dt[ensg %in% stau1.genes, stau := "STAU1"][ensg %in% stau1_paris.genes, stau := "STAU1"][ensg %in% paris.genes, stau := "PARIS"][is.na(stau), stau := "None"]
 gene.counts.dt$stau <- factor(gene.counts.dt$stau, levels = c("None", "PARIS", "STAU1", "STAU1 & PARIS"))
 
 # Plot
@@ -103,7 +103,7 @@ p <- ggplot(gene.counts.dt[mean_count > 0], aes(x = stau, y = mean_count)) +
        fill = "") +
   theme_minimal_grid() + theme(legend.position = "none")
 
-ggsave(p, filename = file.path(plot.path, "rna_abundance.pdf"), width = 5, height = 4)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_abundance.pdf"), width = 5, height = 4)
 p
 ```
 
@@ -127,7 +127,7 @@ p <- ggplot(loc.dt, aes(x = stau, y = CytNuc)) +
        fill = "") +
   theme_minimal_grid() + theme(legend.position = "none")
 
-ggsave(p, filename = file.path(plot.path, "rna_localisation.pdf"), width = 5, height = 4)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_localisation.pdf"), width = 5, height = 4)
 p
 ```
 
@@ -144,7 +144,7 @@ p <- ggplot(loc.dt, aes(x = stau, y = TrP)) +
        fill = "") +
   theme_minimal_grid() + theme(legend.position = "none")
 
-ggsave(p, filename = file.path(plot.path, "rna_translation.pdf"), width = 5, height = 4)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_translation.pdf"), width = 5, height = 4)
 p
 ```
 
@@ -218,16 +218,18 @@ p <- ggplot(rates.melted.dt, aes(x = stau, y = value)) +
   labs(x = "",
        y = "Rate",
        fill = "") +
-  theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
+  theme_minimal_grid() + theme(legend.position = "none")
+  # theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
 
-ggsave(p, filename = file.path(plot.path, "rna_metabolism.pdf"), width = 9, height = 6)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_metabolism.pdf"), width = 9, height = 6)
 p
 ```
 
 # RNA metabolism heatmap
 
 ```{r}
-mat.dt <- rates.dt[stau %in% c("STAU1 & PARIS"), .(ensg, Synthesis, Processing, Degradation)]
+# mat.dt <- rates.dt[stau %in% c("STAU1 & PARIS"), .(ensg, Synthesis, Processing, Degradation)]
+mat.dt <- rates.dt[stau %in% c("STAU1"), .(ensg, Synthesis, Processing, Degradation)]
 mat.dt <- mat.dt[!is.na(Synthesis) | !is.na(Processing) | !is.na(Degradation)]
 mat <- as.matrix(log10(mat.dt[, -1]))
 rownames(mat) <- mat.dt$ensg
@@ -238,19 +240,29 @@ scaled.mat <- scaled.mat[!rowSums(is.na(scaled.mat)), ]
 b <- max(abs(scaled.mat))
 
 # PAM clustering
+p <- factoextra::fviz_nbclust(scaled.mat, FUNcluster = cluster::pam, method = "silhouette", k.max = 5)
+p + theme_minimal_grid()
+```
+
+```{r}
 k.pam <- cluster::pam(scaled.mat, k = 3, metric = "euclidean", stand = TRUE)
 annot.df <- data.frame(k.pam$clustering)
 annot.df$cluster <- NA
-annot.df[annot.df$k.pam.clustering == 1, ]$cluster <- "B"
-annot.df[annot.df$k.pam.clustering == 2, ]$cluster <- "C"
-annot.df[annot.df$k.pam.clustering == 3, ]$cluster <- "A"
+# annot.df[annot.df$k.pam.clustering == 1, ]$cluster <- "B"
+# annot.df[annot.df$k.pam.clustering == 2, ]$cluster <- "C"
+# annot.df[annot.df$k.pam.clustering == 3, ]$cluster <- "A"
+annot.df[annot.df$k.pam.clustering == which.max(k.pam$medoids[, "Degradation"]), ]$cluster <- "A"
+annot.df[annot.df$k.pam.clustering == which.min(k.pam$medoids[, "Degradation"]), ]$cluster <- "C"
+annot.df[is.na(annot.df$cluster), ]$cluster <- "B"
 annot.df$k.pam.clustering <- NULL
 
 stopifnot(all(rownames(annot.df) %in% rownames(scaled.mat))) # Ensure they are all there, before adjusting rows
 annot.order <- rownames(annot.df)[order(annot.df$cluster, decreasing = FALSE)]
 scaled.mat <- scaled.mat[match(annot.order, rownames(scaled.mat)), ]
 
-pheatmap(scaled.mat, 
+if(interactive()) { 
+  
+  pheatmap(scaled.mat, 
          cluster_cols = FALSE, show_rownames = FALSE, scale = "none",
          breaks = unique(c(seq(-b, -2.5, length.out = 10), 
                            seq(-2.5, 2.5, length.out = 100), 
@@ -262,19 +274,21 @@ pheatmap(scaled.mat,
          filename = file.path(plot.path, "rna_metabolism_heatmap.pdf"),
          width = 2,
          height = 4)
+  
+# pheatmap(t(scaled.mat), 
+#          cluster_cols = FALSE, show_colnames = FALSE, scale = "none",
+#          breaks = unique(c(seq(-b, -2.5, length.out = 10), 
+#                            seq(-2.5, 2.5, length.out = 100), 
+#                            seq(2.5, b, length.out = 10))), 
+#          color = rev(colorRampPalette(brewer.pal(n = 11, name = "RdBu"))(120)),
+#          cluster_rows = FALSE,
+#          annotation_col = annot.df,
+#          annotation_colors = list("cluster" = metabolism_colours),
+#          filename = file.path(plot.path, "rna_metabolism_heatmap_h.pdf"),
+#          width = 10,
+#          height = 2)
 
-pheatmap(t(scaled.mat), 
-         cluster_cols = FALSE, show_colnames = FALSE, scale = "none",
-         breaks = unique(c(seq(-b, -2.5, length.out = 10), 
-                           seq(-2.5, 2.5, length.out = 100), 
-                           seq(2.5, b, length.out = 10))), 
-         color = rev(colorRampPalette(brewer.pal(n = 11, name = "RdBu"))(120)),
-         cluster_rows = FALSE,
-         annotation_col = annot.df,
-         annotation_colors = list("cluster" = metabolism_colours),
-         filename = file.path(plot.path, "rna_metabolism_heatmap_h.pdf"),
-         width = 10,
-         height = 2)
+}
 
 pheatmap(scaled.mat, 
          cluster_cols = FALSE, show_rownames = FALSE, scale = "none",
@@ -472,7 +486,7 @@ p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = utr3_width, fill =
        y = "3' UTR length",
        fill = "")
 
-ggsave(p, filename = file.path(plot.path, "utr3_length.pdf"), width = 4, height = 4)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "utr3_length.pdf"), width = 4, height = 4)
 p
 ```
 
@@ -488,7 +502,7 @@ p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = loop, fill = metab
        y = "Duplex span",
        fill = "")
 
-ggsave(p, filename = file.path(plot.path, "duplex_span.pdf"), width = 4, height = 4)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "duplex_span.pdf"), width = 4, height = 4)
 p
 ```
 
@@ -503,7 +517,7 @@ p <- ggplot(utr3.duplexes.dt, aes(x = loop, fill = metabolism_cluster)) +
        x = "Duplex span",
        fill = "")
 
-ggsave(p, filename = file.path(plot.path, "duplex_span_density.pdf"), width = 4, height = 8)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "duplex_span_density.pdf"), width = 4, height = 8)
 p
 ```
 
@@ -519,7 +533,7 @@ p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = circ_score, fill =
        y = "Circularisation score",
        fill = "")
 
-ggsave(p, filename = file.path(plot.path, "circ_score.pdf"), width = 4, height = 4)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "circ_score.pdf"), width = 4, height = 4)
 p
 ```
 ## Relative starts
@@ -536,7 +550,7 @@ p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
        y = "Density",
        colour = "Duplex arm")
   
-ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start.pdf"), width = 5, height = 8)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start.pdf"), width = 5, height = 8)
 
 # p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
 #   geom_density() + 
@@ -570,16 +584,16 @@ utr3.duplexes.melted.dt <- melt.data.table(utr3.duplexes.dt[, .(metabolism_clust
 # 
 # ggsave(p, filename = file.path(plot.path, "absolute_arm_locations.pdf"), width = 6, height = 4)
 
-p.l <- ggplot(utr3.duplexes.melted.dt[variable == "L_abs_start"], aes(x = value)) +
+p.l <- ggplot(utr3.duplexes.melted.dt[variable == "L_abs_start"], aes(x = value, y = ..density..)) +
   geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[4]) +
   facet_grid(metabolism_cluster ~ .,
              labeller = labeller(metabolism_cluster = c(A = "", B = "", C = ""))) +
   theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Distance from 3' UTR start/end",
-       y = "Count") +
-  coord_cartesian(xlim = c(-1000, 10000), ylim = c(0, 100))
+       y = "Density") +
+  coord_cartesian(xlim = c(-1000, 10000), ylim = c(0, 1e-3))
 
-p.r <- ggplot(utr3.duplexes.melted.dt[variable == "R_abs_end"], aes(x = value)) +
+p.r <- ggplot(utr3.duplexes.melted.dt[variable == "R_abs_end"], aes(x = value, y = ..density..)) +
   geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[2]) +
   facet_grid(metabolism_cluster ~ .) +
   theme_minimal_grid() + 
@@ -588,9 +602,9 @@ p.r <- ggplot(utr3.duplexes.melted.dt[variable == "R_abs_end"], aes(x = value)) 
         axis.text.y = element_blank()) +
   labs(x = "",
      y = "") +
-  coord_cartesian(xlim = c(-10000, 1000), ylim = c(0, 100))
+  coord_cartesian(xlim = c(-10000, 1000), ylim = c(0, 1e-3))
 
-ggsave(p.l + p.r, filename = file.path(plot.path, "absolute_arm_locations_histogram.pdf"), width = 6, height = 4)
+if(interactive()) ggsave(p.l + p.r, filename = file.path(plot.path, "absolute_arm_locations_histogram.pdf"), width = 6, height = 4)
 p.l + p.r
 ```
 
@@ -613,6 +627,6 @@ p <- ggplot(utr3.duplexes.dt, aes(y = Degradation)) +
      colour = "Duplex arm") +
   theme_minimal_grid()
 
-ggsave(p, filename = file.path(plot.path, "degradation_arm_distance.pdf"), width = 4, height = 4)
+if(!interactive()) ggsave(p, filename = file.path(plot.path, "degradation_arm_distance.pdf"), width = 4, height = 4)
 p
 ```
