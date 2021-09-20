@@ -44,12 +44,12 @@ suppressPackageStartupMessages(library(parallel))
 suppressPackageStartupMessages(library(viridis))
 suppressPackageStartupMessages(library(gginnards))
 suppressPackageStartupMessages(library(factoextra))
+suppressPackageStartupMessages(library(BSgenome.Hsapiens.UCSC.hg38))
 theme_set(theme_bw() +
             theme(legend.position = "top"))
 ```
 
 ```{r}
-library(BSgenome.Hsapiens.UCSC.hg38)
 Hsapiens <- BSgenome.Hsapiens.UCSC.hg38
 ```
 
@@ -426,9 +426,6 @@ peaks.gr <- keepStandardChromosomes(peaks.gr, pruning.mode = "coarse")
 peaks.gr <- dropSeqlevels(peaks.gr, c("chrM", "chrY"), pruning.mode = "coarse")
 ```
 
-```{r}
-peaks.gr
-```
 
 ```{r}
 # Get region type
@@ -651,10 +648,10 @@ clusters.gg <- plot_cluster_mean(clusters.df, 51) +
   scale_y_continuous(position = "right") +
   theme(strip.background = element_blank(), strip.text.x = element_blank())
 clusters.gg <- append_layers(clusters.gg, annotate("rect", xmin = 10, xmax = 75, ymin = -Inf, ymax = Inf, 
-           alpha = 0.3, fill = "#31a1b3"), position = "bottom")
+           alpha = 0.5, fill = "#31a1b3"), position = "bottom")
 
 clusters.gg
-ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 10)
+# ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 10)
 
 ```
 
@@ -708,6 +705,11 @@ fwrite(cluster.duplexes.dt, "~/Dropbox (The Francis Crick)/comp_hiclip/short_ran
 ```
 
 
+```{r}
+# cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz")
+```
+
+
 ## Fig 3 C
 
 ### Structure analyses
@@ -720,6 +722,11 @@ There are `r length(unique(cluster.duplexes.dt$name))` peaks in clusters 1,2,3.
 
 ```{r}
 nrow(cluster.duplexes.dt)
+```
+
+
+```{r}
+cluster.duplexes.dt
 ```
 
 #### Trim dot bracket structure to focus only on the paired regions
@@ -764,6 +771,55 @@ cluster.duplexes.dt <- dplyr::filter(cluster.duplexes.dt, loop != 0)
 
 ## Fig 3 D
 
+### Hybridisation energy
+
+```{r}
+mfe <- fread("~/Desktop/short_range_duplexes.mfe.tsv.gz")
+mfe <- distinct(mfe)
+mfe <- dplyr::filter(mfe, !(str_detect(L_sequence, "N") | str_detect(R_sequence, "N")))
+```
+
+```{r}
+# Density plot
+mfe.df <- pivot_longer(mfe, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+
+mfe.df <- mfe.df %>%
+  mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
+                            (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
+```
+
+```{r}
+
+```
+```{r}
+max(mfe$mfe)
+```
+
+
+
+```{r}
+mfe.dens.gg <- ggplot(mfe.df, aes(x = MFE, linetype = Sample)) + 
+  geom_density(alpha = 0.8, color = "#31a1b3") +
+  # annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
+  scale_linetype_manual(values=c("longdash", "solid")) +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "right") +
+  ylab("Density") +
+  xlab("Hybridisation energy (kcal/mol)") +
+  geom_vline(data=mfe_median, aes(xintercept=Median),
+             linetype="dashed", color = "#31a1b3" )
+
+mfe.dens.gg
+ggsave(paste0(plots.dir,"/","stau1_short_range_hybridisation_energy.pdf"), mfe.dens.gg, width = 5, height = 4)
+```
+
+
+
+
+## Fig 3 D
+
+
 ### Hairpin loop size
 
 ```{r}
@@ -784,7 +840,7 @@ h0.gg <- ggplot(cluster.duplexes.dt, aes(x = hairpin_loop)) +
   ylab("Density")
 
 h0.gg
-# ggsave(paste0(plots.dir,"/",prefix,"_hairpin_lengths.pdf"), h0.gg, width = 5, height = 4)
+ggsave(paste0(plots.dir,"/",prefix,"_hairpin_lengths.pdf"), h0.gg, width = 5, height = 4)
 ```
 
 ```{r}
@@ -976,13 +1032,13 @@ all.collapsed <- convert_coordinates(all.collapsed, genes.gr)
 
 # Export bed file
 all.collapsed.dt <- data.table(all.collapsed)
-# export_genomic_bed(all.collapsed.dt, paste0(data.dir, "/collapsed_hybrid_duplexes.bed"))
+#export_genomic_bed(all.collapsed.dt, paste0(data.dir, "/collapsed_hybrid_duplexes.bed"))
 ```
 
 ```{r}
 # Export reformated file, it will be used for clustering all datasets
 
-fwrite(short_range.reformated.gc.df, paste0(data.dir, "/short_range_duplexes.tsv.gz"), sep = "\t")
+#fwrite(short_range.reformated.gc.df, paste0(data.dir, "/short_range_duplexes.tsv.gz"), sep = "\t")
 
 ```
 
@@ -1029,6 +1085,9 @@ dev.off()
 semi_join(cluster.duplexes.dt, nonhyb_overlapped.dt, by = "name")
 
 ```
+
+Candidates: ID11592, ID12707, ID16902
+
 ```{r}
 ex1.df <- dplyr::filter(cluster.duplexes.dt, name == "ID10081")
 ```

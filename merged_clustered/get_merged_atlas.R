@@ -71,7 +71,7 @@ all.hybrids.dt <- all.hybrids.dt[!grepl("tRNA", R_seqnames)]
 nrow(all.hybrids.dt)
 
 # ==========
-# Remove rRNA and tRNA hybrids
+# Cluster hybrids
 # ==========
 
 all.list <- split(all.hybrids.dt, by = c("L_seqnames", "R_seqnames"))
