@@ -33,6 +33,7 @@ suppressPackageStartupMessages(library(stringr))
 suppressPackageStartupMessages(library(Biostrings))
 suppressPackageStartupMessages(library(mixtools))
 suppressPackageStartupMessages(library(stringi))
+suppressPackageStartupMessages(library(UpSetR))
 ```
 
 #### Functions
@@ -215,7 +216,7 @@ get_nucleotide_frequency <- function(duplexes.df) {
   # Extract the paired residues from each arm's sequence
   duplexes.df <- duplexes.df %>%
     rowwise() %>%
-    mutate(paired_regions = list(extract_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
+    mutate(paired_regions = list(get_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
     mutate(L_paired_residues = paired_regions$l_paired_residues,
            R_paired_residues = paired_regions$r_paired_residues) %>%
     ungroup() %>%
@@ -279,8 +280,10 @@ plot_stacked_barchart <- function(data.df, column, group=NULL, simplify=TRUE) {
   
   if (!("id" %in% colnames(data.df))) {
     data.df$id <- rownames(data.df)
+    
   } else {
-    next
+    #next
+    data.df$id <- data.df$id
   }
   
   data_counts.df <- data.df %>%
@@ -299,8 +302,8 @@ plot_stacked_barchart <- function(data.df, column, group=NULL, simplify=TRUE) {
   
   if (simplify) {
     data_counts.df <- data_counts.df %>%
-      mutate(category = case_when((percentage < 1) ~ "Other",
-                                 (percentage >= 1) ~ {{column}}))
+      mutate(category = case_when((percentage <= 0.75) ~ "Other",
+                                 (percentage > 0.7) ~ {{column}}))
     
     data_counts.df <- data_counts.df %>%
       group_by({{group}}, category) %>%
@@ -446,23 +449,26 @@ plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_4"
 
 ```{r}
 # Clusters (collapsed)
-stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed.mfe.tsv.gz"))
+# stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed.mfe.tsv.gz"))
+stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.mfe.tsv.gz"))
 paris.dt <- fread(paste0(data.dir,"/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 paris.mfe.dt <- fread(paste0(data.dir, "/paris_atlas/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz"))
 
 # Structure annotation
 # stau1: all clusters
-stau1_forgi.dt <- fread(paste0(data.dir,"/stau1_atlas/merged_atlas.clusters.collapsed.forgi.tsv.gz"))
+#stau1_forgi.dt <- fread(paste0(data.dir,"/stau1_atlas/merged_atlas.clusters.collapsed.forgi.tsv.gz"))
+stau1_forgi.dt <- fread(paste0(data.dir,"/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.forgi.tsv.gz"))
 
-# paris: only intra-genic 3'UTR
+# paris: only intragenic 3'UTR
 paris_forgi.dt <- fread(paste0(data.dir,"/paris_atlas/paris.3utr.all.atlas_clusters.gc.annotated.forgi.tsv.gz"))
+```
 
+
+```{r}
 # Clustered hybrids
 stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
 paris.hybrids.dt <- fread(paste0(data.dir, "/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 ```
-
-
 
 
 # Main figure
@@ -489,9 +495,7 @@ paris.dt <- paris.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
 paris.dt <- paris.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
 paris.dt <- paris.dt[!grepl("tRNA", L_seqnames)]
 paris.dt <- paris.dt[!grepl("tRNA", R_seqnames)]
-```
 
-```{r}
 nrow(paris.dt) 
 ```
 
@@ -525,19 +529,6 @@ reg.gg
 # ggsave(paste0(plots.dir, "/stau1_arm_regions.pdf"), reg.gg, width = 6, height = 4, dpi = 300)
 ```
 
-
-```{r}
-# stau1_duplex_regions.df <- stau1.dt %>%
-#   rowwise() %>%
-#   mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
-#   ungroup()
-
-# plot_stacked_barchart(stau1_duplex_regions.df, region_pairs, simplify = TRUE) +
-#   ggtitle("STAU1 duplex locations") +
-#   # scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(7)) +
-#   theme_minimal_grid() 
-```
-
 #### Intramolecular vs intermolecular
 
 ```{r}
@@ -563,6 +554,7 @@ ii.gg
 intra_stau1.dt <- stau1.dt %>%
   dplyr::filter(type == "Intragenic")
 
+nrow(intra_stau1.dt)
 ```
 
 There are `r nrow(intra_stau1.dt)` intramolecular duplexes within STAU1 hiCLIP duplex atlas.
@@ -570,7 +562,21 @@ There are `r nrow(intra_stau1.dt)` intramolecular duplexes within STAU1 hiCLIP d
 #### Intramolecular locations
 
 ```{r warning=FALSE}
+# Filter out duplexes with no structure
+intra_stau1.dt <- intra_stau1.dt %>%
+  dplyr::filter((!str_detect(L_sequence, "N"))) %>%
+  dplyr::filter((!str_detect(R_sequence, "N")))
 
+nrow(intra_stau1.dt)
+```
+
+```{r}
+interregion_colours <- c("CDS - CDS" = "#AF7AC5", "CDS - ncRNA" = "#B03A2E", "CDS - UTR3" = "#F1948A",
+                    "CDS - UTR5" = "#E69F00", "ncRNA - ncRNA" = "#999999", "Other" = "#17A589",
+                    "UTR3 - UTR3" = "#56B4E9", "UTR5 - UTR5" = "#2874A6")
+```
+
+```{r warning=FALSE}
 # Filter out intronic regions 
 intra_stau1.dt <- intra_stau1.dt %>%
   dplyr::filter(L_region != "intron" & R_region != "intron")
@@ -580,10 +586,9 @@ stau1_duplex_regions.df <- intra_stau1.dt %>%
   mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
   ungroup()
 
-stau1.regions.gg <- plot_stacked_barchart(stau1_duplex_regions.df, region_pairs, simplify = TRUE) +
+stau1.regions.gg <- plot_stacked_barchart(stau1_duplex_regions.df, region_pairs, simplify = T) +
   ggtitle("STAU1") +
-  #scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(5)) +
-  scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#F1948A","#999999","#17A589","#56B4E9"))(5)) +
+  scale_fill_manual(values = interregion_colours) +
   theme_minimal_grid() +
   guides(fill=guide_legend(title="Duplex location")) +
   guides(fill=guide_legend(title="Duplex arm location")) +
@@ -594,14 +599,12 @@ stau1.regions.gg
 
 ```
 
-```{r}
-nrow(intra_stau1.dt)
-```
+
 
 ***
 > PARIS locations
 
-#### Intragenic vs intergenic
+#### Intramolecular vs intermolecular
 
 ```{r}
 paris.dt <- paris.dt %>%
@@ -642,9 +645,7 @@ The are `r nrow(intra_paris.dt)` intramolecular PARIS duplexes, excluding intron
 ```{r}
 paris_regions.gg <- plot_stacked_barchart(intra_paris_duplex_regions.df, region_pairs, simplify = TRUE) +
   ggtitle("PARIS") +
-  #scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(9)) +
-  #scale_fill_manual(values = colorRampPalette(brewer.pal(8, "Set2"))(8)) +
-  scale_fill_manual(values = colorRampPalette(c("#AF7AC5","#B03A2E","#F1948A","#E69F00","#999999","#17A589","#56B4E9","#2874A6"))(8)) +
+  scale_fill_manual(values = interregion_colours) +
   theme_minimal_grid() +
   guides(fill=guide_legend(title="Duplex location"))
 
@@ -659,7 +660,7 @@ paris_regions.gg
 To get more comparable datasets, we focused on the 3'UTR intragenic duplexes for both STAU1 and PARIS. 
 
 ```{r}
-stau1.utr3.df <- stau1.dt %>%
+stau1.utr3.df <- intra_stau1.dt %>%
   dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3") %>%
   mutate(Experiment = "STAU1")
 
@@ -698,6 +699,7 @@ nrow(paris.utr3.df)
 
 #### Need to adjust the genomic coordinates to focus on the stem of the structure
 
+
 ```{r}
 utr3_clusters.df <- trim_duplex_overhangs(utr3_clusters.df)
 ```
@@ -727,8 +729,7 @@ span_median <- utr3_clusters.df %>%
     group_by(Experiment) %>%
     dplyr::summarize(Median = median(duplex_span, na.rm=TRUE))
 span_median
-```
-```{r}
+
 span_mean <- utr3_clusters.df %>%
     group_by(Experiment) %>%
     dplyr::summarize(Mean = mean(duplex_span, na.rm=TRUE))
@@ -738,7 +739,7 @@ span_mean
 
 ```{r}
 duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
-  geom_density(alpha = 0.8, adjust = 1.5) +
+  geom_density(adjust = 1.5) +
   scale_x_log10() + annotation_logticks() +
   scale_color_tableau() +
   theme_minimal_grid() + 
@@ -749,8 +750,19 @@ duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experime
              linetype="dashed")
 
 duplex_span.gg
-ggsave(paste0(plots.dir, "/duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
+#ggsave(paste0(plots.dir, "/duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
 ```
+### Span groups
+
+```{r}
+utr3_clusters.df <- utr3_clusters.df %>%
+  dplyr::mutate(span_group = case_when(duplex_span < 20 ~ "short-range",
+                                       duplex_span >= 20 & duplex_span <= 100 ~ "medium-range",
+                                       duplex_span > 100 ~ "long-range"))
+
+plot_stacked_barchart(data.df = utr3_clusters.df, column = span_group, group = Experiment, simplify = FALSE)
+```
+
 
 ## Fig S4 C
 
@@ -839,8 +851,24 @@ total_paired.gg <- ggplot(utr3_clusters.df,
   annotate("text", label = paste0("p < 2.2e-16"), x = 1.5, y = 80)
 total_paired.gg
 
-ggsave(paste0(plots.dir, "/total_paired.pdf"), total_paired.gg, dpi = 300, width = 4, height = 6)
+# ggsave(paste0(plots.dir, "/total_paired.pdf"), total_paired.gg, dpi = 300, width = 4, height = 6)
 ```
+
+### Separate by the range of the interaction
+
+```{r}
+total_paired2.gg <- ggplot(utr3_clusters.df,
+                         aes(x = Experiment, y=total_paired, fill=Experiment)) +
+  geom_boxplot() +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Base-pairs per duplex (bp)") +
+  facet_grid(cols = vars(span_group))
+total_paired2.gg 
+```
+
 
 ## Fig 4 E
 
@@ -890,7 +918,7 @@ The mean difference per bp in MFE between STAU1 and PARIS is `r mean(stau1.norm_
 Wilxox test p value for the MFE/bp difference is: `r wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val`
 
 ```{r}
-# wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val
+wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val
 ```
 
 The MFE/bp median is: 
@@ -925,8 +953,34 @@ mfe.dens.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, colo
              linetype="dashed")
 
 mfe.dens.gg
-ggsave(paste0(plots.dir, "/hybridisation_energy.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
+# ggsave(paste0(plots.dir, "/hybridisation_energy.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
 ```
+
+
+```{r}
+# test min 8 bp
+mfe_median <- utr3_clusters.df %>%
+    group_by(Experiment, span_group) %>%
+    dplyr::summarize(Median = median(normalised_mfe, na.rm = TRUE))
+mfe_median
+
+mfe.dens2.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, color = Experiment)) + 
+  geom_density(alpha = 0.8) +
+  #annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
+  scale_linetype_manual(values=c("longdash", "solid")) +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  facet_grid(rows = vars(Experiment), cols = vars(span_group)) +
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("Normalised hybridisation energy (kcal/mol)/bp") +
+  geom_vline(data=mfe_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed") 
+
+mfe.dens2.gg
+
+```
+
 
 ## Fig 4 F
 
@@ -968,7 +1022,7 @@ utr3_clusters.df <- utr3_clusters.df %>%
 
 paired_percentage_median <- utr3_clusters.df %>%
     group_by(Experiment) %>%
-    dplyr::summarize(Median = median(paired_percentage, na.rm=TRUE))
+    dplyr::summarize(Median = median(paired_percentage, na.rm = TRUE))
 paired_percentage_median
 ```
 
@@ -995,8 +1049,35 @@ paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = Ex
   annotate("text", label = paste0("p = ", paired_ratio.pval), x = 80, y = 0.07)
 
 paired_metric.gg
-ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
+# ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
 ```
+### Sparate by range 
+
+```{r}
+paired_percentage_median <- utr3_clusters.df %>%
+    group_by(Experiment, span_group) %>%
+    dplyr::summarize(Median = median(paired_percentage, na.rm=TRUE))
+paired_percentage_median
+```
+
+```{r}
+paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = Experiment)) + 
+  geom_density() +
+  scale_fill_tableau() +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "right") +
+  ylab("Density") +
+  xlab("Paired residues (%)") +
+  #ggtitle("3'UTR-3'UTR clusters paired metric") +
+  geom_vline(data=paired_percentage_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed") +
+  facet_grid(rows = vars(span_group))
+  #annotate("text", label = paste0("p = ", paired_ratio.pval), x = 80, y = 0.07)
+
+paired_metric.gg
+```
+
 
 ## Fig 4 G
 
@@ -1047,8 +1128,25 @@ bulges.gg <- ggplot(utr3_clusters.df,
   geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
 bulges.gg
-ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 4, height = 6)
+# ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 4, height = 6)
 ```
+
+
+```{r}
+bulges2.gg <- ggplot(utr3_clusters.df,
+                         aes(x = Experiment, y=bulge_count, fill=Experiment)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  #ggtitle("Bulges per duplex") +
+  ylab("Bulges per duplex") +
+  facet_grid(cols = vars(span_group))
+bulges2.gg
+```
+
 ## Fig 4 H
 
 ***
@@ -1120,61 +1218,192 @@ symmetry.gg <- plot_stacked_barchart(symmetry.df, column = symmetry_type, group 
   guides(fill = guide_legend(title = "Structure type")) +
     theme_void()
 symmetry.gg 
-ggsave(paste0(plots.dir, "/symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
+# ggsave(paste0(plots.dir, "/symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
 ```
+```{r}
+data_counts.df <- symmetry.df %>%
+    dplyr::select(name, Experiment, span_group, symmetry_type) %>%
+    distinct() %>%
+    group_by(Experiment, span_group, symmetry_type) %>%
+    summarise(counts = n()) %>%
+    arrange(desc(symmetry_type)) %>%
+    mutate(percentage = scales::percent(counts / sum(counts), accuracy = 0.01)) %>%
+    mutate(percentage = as.numeric(sub("%","", percentage))) %>%
+    ungroup() %>%
+    group_by(Experiment, span_group) %>%
+    mutate(pos = cumsum(percentage) - percentage/2)
+  
+    data_counts.df <- data_counts.df %>%
+      mutate(category = symmetry_type)
+
+  
+  bar = ggplot() + 
+    geom_bar(aes(y = percentage, x = "", fill = category), data = data_counts.df,
+                            stat="identity", width = 0.5, color="black") +
+    ggrepel::geom_text_repel(data = data_counts.df, aes(x = "", y = pos, label=paste0(round(percentage, 1),"%")), size=5, nudge_x = 0.4,
+                                 segment.size = 0.5, segment.color = '#515A5A') + # label=paste0(round(percentage, 2),"%"))
+    facet_grid(cols = vars(span_group), rows = vars(Experiment)) +
+    #facet_wrap(. ~ Experiment, scales = "free") +
+    scale_fill_brewer(palette = "PuBuGn") +
+    theme(legend.position="right", legend.direction="vertical",
+          legend.title = element_blank()) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Percentage") +
+    theme_minimal()
+```
+```{r}
+bar
+```
+
+
+***
+> Symmetry
+
+```{r}
+symmetry2.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths == R_i_widths ~ "Symmetric",
+                                   stem_type == "Interrupted stem" & L_i_widths_sorted != R_i_widths_sorted & L_i_widths != R_i_widths ~ "Asymmetric",
+                                   stem_type == "Interrupted stem" & L_i_widths != R_i_widths & L_i_widths_sorted == R_i_widths_sorted ~ "Balanced",
+                                   stem_type == "Perfect duplex" ~ "Perfect duplex")) %>%
+  ungroup()
+
+symmetry2.gg <- plot_stacked_barchart(symmetry2.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
+  scale_fill_brewer(palette = "PuBuGn") +
+  coord_polar("y", start=0) +
+  guides(fill = guide_legend(title = "Structure type")) +
+    theme_void()
+symmetry2.gg 
+```
+```{r}
+data_counts2.df <- symmetry2.df %>%
+    dplyr::select(name, Experiment, span_group, symmetry_type) %>%
+    distinct() %>%
+    group_by(Experiment, span_group, symmetry_type) %>%
+    summarise(counts = n()) %>%
+    arrange(desc(symmetry_type)) %>%
+    mutate(percentage = scales::percent(counts / sum(counts), accuracy = 0.01)) %>%
+    mutate(percentage = as.numeric(sub("%","", percentage))) %>%
+    ungroup() %>%
+    group_by(Experiment, span_group) %>%
+    mutate(pos = cumsum(percentage) - percentage/2)
+  
+data_counts2.df <- data_counts2.df %>%
+    mutate(category = symmetry_type)
+
+  
+  bar2 = ggplot() + 
+    geom_bar(aes(y = percentage, x = "", fill = category), data = data_counts2.df,
+                            stat="identity", width = 0.5, color="black") +
+    ggrepel::geom_text_repel(data = data_counts.df, aes(x = "", y = pos, label=paste0(round(percentage, 1),"%")), size=5, nudge_x = 0.4,
+                                 segment.size = 0.5, segment.color = '#515A5A') + # label=paste0(round(percentage, 2),"%"))
+    facet_grid(cols = vars(span_group), rows = vars(Experiment)) +
+    #facet_wrap(. ~ Experiment, scales = "free") +
+    scale_fill_brewer(palette = "PuBuGn") +
+    theme(legend.position="right", legend.direction="vertical",
+          legend.title = element_blank()) +
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+    ylab("Percentage") +
+    theme_minimal()
+
+bar2
+```
+
+
+
 
 # Supplementary figure
 
 ## Figure S4 A
 
 Breakdown of the atlas
+ How many duplexes are supported by multiple sources?
 
 ```{r}
-stau1.hybrids.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/merged_clusters/stau1_atlas/merged_atlas.clusters.tsv.gz")
-```
+#stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz"))
 
-```{r}
+nrow(stau1.dt)
 # Total number of hybrids
 nrow(stau1.hybrids.dt)
 ```
 
 ```{r}
-stau1.hybrids.dt
-```
+clustered_short_range.df <- dplyr::filter(stau1.hybrids.dt, sample == "stau1_nonhybrid" & str_detect(cluster, "C"))
+clustered_short_range.ls <- clustered_short_range.df$name
 
-```{r}
-stau1.cluster.hybrids.df <- stau1.hybrids.dt %>%
-  dplyr::filter(str_detect(cluster, "C"))
-```
+stau1.hybrids.dt <- stau1.hybrids.dt %>%
+  mutate(cluster = case_when((sample == "stau1_nonhybrid" & !(name %in% clustered_short_range.ls)) ~ name,
+                             TRUE ~ cluster))
 
-```{r}
 stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
   rowwise() %>%
-  mutate(name = paste(cluster, L_seqnames, R_seqnames, sep = "-")) %>%
+  mutate(id = case_when(cluster == name ~ cluster,
+                        TRUE ~ paste(cluster, L_seqnames, R_seqnames, sep = "-"))) %>%
   ungroup()
 
-stopifnot(length(unique(stau1.cluster.hybrids.df$name)) == nrow(stau1.dt))
+stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
+  dplyr::filter(str_detect(cluster, "C") | str_detect(cluster, "ID"))
+
+nrow(stau1.cluster.hybrids.df) # number of hybrids that were assigned a cluster
+
+stopifnot(length(unique(stau1.cluster.hybrids.df$id)) == nrow(stau1.dt))
 ```
 
-How many clusters contain hybrids from same sample or different samples
+How many clusters contain hybrids from same sample or different samples?
 
 ```{r}
- stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
-  group_by(name) %>%
+ stau1.cluster.hybrids_summary.df <- stau1.cluster.hybrids.df %>%
+  group_by(id) %>%
   #mutate(sample_set = list(sort(unique(sample)))) %>%
-  summarize(sample_set = paste(sort(unique(sample)),collapse=",")) %>%
+  summarize(sample_set = paste(sort(unique(sample)), collapse=",")) %>%
   ungroup() 
 
-stau1.samples.df <- stau1.cluster.hybrids.df %>%
-  dplyr::select(name, sample_set) %>%
+stau1.samples.df <- stau1.cluster.hybrids_summary.df %>%
+  dplyr::select(id, sample_set) %>%
   distinct()
 
 table(stau1.samples.df$sample_set)
 ```
 
+Focus on 3'UTR-3'UTR intramolecular interactions only:
+
+```{r}
+stau1.samples.df$Experiment <- "STAU1"
+utr3_clusters.df <- left_join(utr3_clusters.df, dplyr::select(stau1.samples.df, Experiment, id, sample_set), by = c("Experiment", c("name" = "id")))
+```
+
+
+```{r}
+source_counts.df <- utr3_clusters.df %>%
+  dplyr::filter(Experiment == "STAU1") %>%
+  dplyr::select(name, Experiment, span_group, sample_set) %>%
+  distinct() %>%
+    group_by(sample_set) %>%
+    summarise(counts = n()) 
+
+source_counts.df
+```
+
+
+```{r}
+source.upset.input <- c("stau1_linker" = source_counts.df[source_counts.df$sample_set == "stau1_linker",]$counts[1],
+                        "stau1_nolinker" = source_counts.df[source_counts.df$sample_set == "stau1_nolinker",]$counts[1],
+                        "stau1_nonhybrid" = source_counts.df[source_counts.df$sample_set == "stau1_nonhybrid",]$counts[1],
+               "stau1_linker&stau1_nolinker" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nolinker",]$counts[1],
+               "stau1_linker&stau1_nonhybrid" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nonhybrid",]$counts[1],
+               "stau1_nolinker&stau1_nonhybrid" = source_counts.df[source_counts.df$sample_set == "stau1_nolinker,stau1_nonhybrid",]$counts[1],
+               "stau1_linker&stau1_nolinker&stau1_nonhybrid" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nolinker,stau1_nonhybrid",]$counts[1])
+
+#pdf(file.path(plots.dir, "stau1_duplex_source_upset.pdf"), width = 7, height = 5)
+upset(fromExpression(source.upset.input), order.by = "freq",
+      mainbar.y.label = "Intersecting number of duplexes",
+      sets.x.label = "Total number of duplexes")
+#dev.off()
+```
+
 ## Figure S4 B
 
-Overlap with PARIS
+Overlap with PARIS for 3'UTR intramolecular duplexes
 
 ```{r}
 stau1.utr3.dt <- data.table(stau1.utr3.df)
@@ -1214,14 +1443,18 @@ file.remove(ol)
 upset.input <- c("STAU1" = nrow(stau1.utr3.dt) - nrow(bedpe.dt),
                "PARIS" = nrow(paris.utr3.dt) - nrow(bedpe.dt),
                "STAU1&PARIS" = nrow(bedpe.dt))
+```
 
-pdf(file.path(plots.dir, "stau1_paris_upset.pdf"), width = 7, height = 5)
-upset(fromExpression(upset.input), 
+
+```{r}
+#pdf(file.path(plots.dir, "stau1_paris_upset.pdf"), width = 7, height = 5)
+UpSetR::upset(fromExpression(upset.input), 
       order.by = "freq",
       mainbar.y.label = "Intersecting number of duplexes",
       sets.x.label = "Total number of duplexes")
-dev.off()
+#dev.off()
 ```
+# Extras/ scraps
 
 ***
 > GC Pairs
@@ -1229,10 +1462,7 @@ dev.off()
 ```{r}
 utr3_clusters.df <- utr3_clusters.df %>%
   mutate(id = paste(Experiment, name, sep = "-"))
-```
 
-
-```{r}
 paired_res.df <- utr3_clusters.df %>%
   rowwise() %>%
   mutate(paired_res = list(get_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
@@ -1240,18 +1470,9 @@ paired_res.df <- utr3_clusters.df %>%
          R_paired_residues = paired_res$r_paired_residues) %>%
   ungroup() %>%
   dplyr::select(-paired_res)
-```
 
-```{r}
 paired_res.df <- get_gc_pairs(paired_res.df)
-
-```
-
-
-```{r}
-paired_res.df
-
-fwrite(paired_res.df, "~/Desktop/stau1_paris_gc.tsv.gz", sep ="\t")
+# fwrite(paired_res.df, "~/Desktop/stau1_paris_gc.tsv.gz", sep ="\t")
 ```
 
 ```{r}
@@ -1267,13 +1488,32 @@ gc_pairs.gg <- ggplot(paired_res.df, aes(x = GC_percentage, color = Experiment))
   theme_minimal_grid() + 
   theme(legend.position = "top") +
   ylab("Density") +
-  xlab("G:C/C:G pairs (%) ") +
+  xlab("G:C and C:G pairs (%) ") +
   geom_vline(data=gc_median, aes(xintercept=Median, color=Experiment),
-             linetype="dashed")
-
+             linetype="dashed") 
 gc_pairs.gg
 # ggsave(paste0(plots.dir, "/gc_percentage.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
 
+```
+```{r}
+gc_median <- paired_res.df %>%
+    group_by(Experiment, span_group) %>%
+    dplyr::summarize(Median = median(GC_percentage, na.rm=TRUE))
+gc_median
+
+gc_pairs.gg <- ggplot(paired_res.df, aes(x = GC_percentage, color = Experiment)) + 
+  geom_density(alpha = 0.8, adjust = 1.5) +
+  #scale_x_log10() + annotation_logticks() +
+  scale_color_tableau() +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("G:C and C:G pairs (%) ") +
+  geom_vline(data=gc_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed") +
+  facet_grid(rows = vars(span_group))
+
+gc_pairs.gg
 ```
 
 
@@ -1300,9 +1540,6 @@ gc_pairs.gg
 
 
 ```
-
-
-
 
 ***
 > Bulge spacing
@@ -1352,11 +1589,6 @@ bulge_s.gg
 Calculate the nucleotide frequency for the paired residues in each dataset
 
 ```{r}
-nrow(utr3_clusters.df)
-```
-
-
-```{r}
 utr3_clusters.df <- get_nucleotide_frequency(utr3_clusters.df)
 utr3_clusters.df <- utr3_clusters.df %>%
     dplyr::arrange(desc(Experiment), desc(total_paired))
@@ -1372,52 +1604,13 @@ nuc_freq.gg <- plot_nucleotide_frequency(utr3_clusters.df)$plot +
   ggtitle("Nucleotide frequencies in each arm")
 
 nuc_freq.gg
-```
-
-```{r}
 # ggsave(paste0(data.dir, "nuc_freq.pdf"), nuc_freq.gg, dpi = 300, width = 4, height = 7)
 ```
 
-# Extras/ scraps
-
-***
-> STAU1 hiCLIP binding energy
-
 ```{r}
-# stau1.mfe.df <- pivot_longer(stau1.dt, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
-# stau1.mfe.df <- stau1.mfe.df %>%
-#   mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
-#                             (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
-# 
-# stau1.mfe.gg <- ggplot(stau1.mfe.df, aes(x = MFE, linetype = Sample, color = Sample)) + 
-#   geom_density() +
-#   scale_linetype_manual(values=c("longdash", "solid")) +
-#   scale_color_manual(values = colorRampPalette(c("#808080", "#004C99"))(2)) +
-#   #scale_color_tableau(direction = -1) +
-#   theme_minimal_grid() + 
-#   theme(legend.position = "top") +
-#   #theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-#   ylab("Density") +
-#   xlab("MFE (kcal/mol)") +
-#   ggtitle("STAU1 clusters binding energy") 
-# 
-# stau1.mfe.gg
-# ggsave(paste0(data.dir,"stau1_clusters_MFE.pdf"), stau1.mfe.gg, dpi=300, height = 7, width = 6)
+nuc_freq.gg
 ```
 
-***
-> Symmetry
 
-```{r}
-# symmetry2.df <- utr3_clusters.df %>%
-#   rowwise() %>%
-#   mutate(symmetry_type = case_when(stem_type == "Interrupted stem" & L_i_widths == R_i_widths ~ "Symmetric",
-#                                    stem_type == "Interrupted stem" & L_i_widths_sorted != R_i_widths_sorted & L_i_widths != R_i_widths ~ "Asymmetric",
-#                                    stem_type == "Interrupted stem" & L_i_widths != R_i_widths & L_i_widths_sorted == R_i_widths_sorted ~ "Balanced",
-#                                    stem_type == "Perfect duplex" ~ "Perfect duplex")) %>%
-#   ungroup()
-# 
-# plot_stacked_barchart(symmetry2.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
-#   scale_fill_brewer(palette = "Blues") +
-#   theme_minimal_grid()
-```
+
+
