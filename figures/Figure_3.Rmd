@@ -442,7 +442,6 @@ peak_regions.df$type <- factor(peak_regions.df$type, levels = c("UTR5", "CDS", "
 ```
 
 
-
 ```{r}
 region_colours <- c("ncRNA" = "#fbb04e", "intron" = "#bfbb60", "UTR5" = "#a2ceaa",
                     "rRNA" = "#4f6980", "UTR3" = "#f47942", "CDS" = "#638b66",
@@ -458,10 +457,11 @@ peak_regions.gg <- plot_stacked_barchart(peak_regions.df, column = type)$plot +
   #  geom_text(data = peak_regions.df, aes(x = 0.65, y = 90, label = paste0("n = ", nrow(peak_regions.df))), inherit.aes = FALSE, size = 6) 
   
 peak_regions.gg
-ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
+# ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
 
 ### STAU1 unpaired probability metaprofile
+
 
 ```{r}
 prob.file <- prob.files[str_detect(prob.files, "stau1")]
@@ -659,14 +659,15 @@ Clusters 1,2,3 contain structures with higher paired probability downstream the 
 
 ### Define duplex arms
 
+
 ```{r}
-dt <- as.data.table(clusters.df[.cluster != 0])
+dt <- as.data.table(clusters.df[clusters.df$cluster != 0,])
 
 p.list <- lapply(1:3, function(i) {
   
   message(i)
   
-  m <- colMeans(dt[.cluster == i, .SD, .SDcols = !c("id", ".cluster", "cluster_size")])
+  m <- colMeans(dt[cluster == i, .SD, .SDcols = !c("id", "cluster", "cluster_size")])
   lmin <- which(diff(sign(diff(m))) == 2) + 1 -51
   lmin <- lmin[lmin > 0]
   names(lmin) <- NULL
@@ -684,23 +685,28 @@ p.list <- lapply(1:3, function(i) {
   
 })
 
-ggsave(plot_grid(plotlist = p.list, ncol = 1), filename = file.path(plot.path, "sr_clusters_lmin.pdf"), width = 7, height = 10)
+# ggsave(plot_grid(plotlist = p.list, ncol = 1), filename = file.path(plot.path, "sr_clusters_lmin.pdf"), width = 7, height = 10)
+```
 
+
+```{r}
 # ==========
 # Identify duplexes within arms
 # ==========
 
 peaks.dt <- as.data.table(import.bed("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021/stau1.10nt_10nt.peaks.annot_id.bed.gz"))
-peaks.dt <- merge(peaks.dt, dt[, .(id, .cluster)], by.x = "name", by.y = "id")
-setnames(peaks.dt, ".cluster", "cluster")
+peaks.dt <- merge(peaks.dt, dt[, .(id, cluster)], by.x = "name", by.y = "id")
+# setnames(peaks.dt, ".cluster", "cluster")
 peaks.dt[, xlink := start + 101]
-
-
 
 cluster.duplexes.l <- lapply(1:3, function(i) get_duplex(region.dt = peaks.dt,
                                                          cluster_number = i))
+```
+
+
+```{r}
 cluster.duplexes.dt <- rbindlist(cluster.duplexes.l)
-fwrite(cluster.duplexes.dt, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz", sep = "\t")
+# fwrite(cluster.duplexes.dt, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz", sep = "\t")
 
 ```
 
@@ -720,14 +726,6 @@ The short range duplexes were used using the local minima approach applied on ea
 
 There are `r length(unique(cluster.duplexes.dt$name))` peaks in clusters 1,2,3.
 
-```{r}
-nrow(cluster.duplexes.dt)
-```
-
-
-```{r}
-cluster.duplexes.dt
-```
 
 #### Trim dot bracket structure to focus only on the paired regions
 
@@ -769,6 +767,66 @@ cluster.duplexes.dt <- cluster.duplexes.dt %>%
 cluster.duplexes.dt <- dplyr::filter(cluster.duplexes.dt, loop != 0)
 ```
 
+#### Duplex length
+
+```{r}
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
+  rowwise() %>%
+  mutate(total_paired = str_count(L_db, "\\(")) %>%
+  ungroup()
+```
+
+
+```{r}
+m_motif_structures <- list(nrow(cluster.duplexes.dt))
+names(m_motif_structures) <- "M motif duplexes (clusters 1, 2, 3)"
+m_motif_min8bp <- list(nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 8,]))
+names(m_motif_min8bp) <-"M motif duplexes >= 8 bp"
+
+m_motif_max9bp <- list(nrow(cluster.duplexes.dt) - nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 8,]))
+names(m_motif_max9bp) <- "M motif duplexes < 8 bp"
+
+no_m_motif <- list(nrow(stau1.prob.df) - nrow(cluster.duplexes.dt))
+names(no_m_motif) <- "No M motif"
+structure_types.ls <- c(no_m_motif, m_motif_max9bp, m_motif_min8bp)
+types.df <- data.frame(structure_types = names(structure_types.ls), count = unlist(structure_types.ls, use.names=FALSE))
+
+data_counts.df <- types.df %>%
+  mutate(percentage = scales::percent(count / sum(count))) %>%
+  mutate(percentage = as.numeric(sub("%","", percentage))) %>%
+    #mutate(percentage = counts*100 / sum(counts)) %>%
+  mutate(pos = cumsum(percentage) - percentage/2)
+
+# data_counts.df$structure_types <- factor(data_counts.df$structure_types, levels = "No M motif", "M motif duplexes < 10 bp", "M motif duplexes >= 10 bp")
+```
+
+
+```{r}
+
+types_colours <- c("No M motif" = "#216b77", "M motif duplexes >= 8 bp" = "#31a1b3", "M motif duplexes < 8 bp" = "#7DCEA0")
+pie.gg <- ggplot(data_counts.df, aes(x="", y=count, fill=reorder(structure_types, count))) +
+    geom_bar(stat = "identity", width = 0.05, color="black") +
+    coord_polar("y", start=0) +
+    #scale_fill_brewer(palette = "Blues", direction = -1) +
+    scale_fill_manual(values = types_colours) +
+    ggrepel::geom_label_repel(aes(label = paste0(percentage,"%")), size = 3.5, show.legend = FALSE, position = position_stack(vjust = .5)) +
+    ggrepel::geom_label_repel(aes(label = count), size = 2.5, show.legend = FALSE, position = position_stack(vjust = .3)) +
+    guides(fill = guide_legend(title = "Structure type")) +
+    theme_void() # remove background, grid, numeric labels
+
+pie.gg
+
+#ggsave(paste0(plots.dir,"/",prefix,"_structure_types.pdf"), pie.gg, width = 5, height = 4, dpi = 300)
+```
+
+```{r}
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
+  mutate(structure_type = case_when(total_paired < 8 ~ "M motif duplexes < 8 bp",
+                                    TRUE ~ "M motif duplexes >= 8 bp"))
+
+```
+
+
 ## Fig 3 D
 
 ### Hybridisation energy
@@ -777,44 +835,102 @@ cluster.duplexes.dt <- dplyr::filter(cluster.duplexes.dt, loop != 0)
 mfe <- fread("~/Desktop/short_range_duplexes.mfe.tsv.gz")
 mfe <- distinct(mfe)
 mfe <- dplyr::filter(mfe, !(str_detect(L_sequence, "N") | str_detect(R_sequence, "N")))
+
+cluster.duplexes.dt <- left_join(cluster.duplexes.dt, dplyr::select(mfe, name, mean_shuffled_mfe), by = "name")
 ```
+
+
+```{r}
+cluster.duplexes.dt$mean_shuffled_mfe <- as.numeric(cluster.duplexes.dt$mean_shuffled_mfe)
+cluster.duplexes.dt$mfe <- as.numeric(cluster.duplexes.dt$mfe)
+
+```
+
 
 ```{r}
 # Density plot
-mfe.df <- pivot_longer(mfe, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+mfe.df <- pivot_longer(cluster.duplexes.dt, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
 
 mfe.df <- mfe.df %>%
   mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
                             (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
-```
 
-```{r}
+mfe_median <- cluster.duplexes.dt %>%
+  group_by(structure_type) %>%
+  dplyr::summarize(Median = median(mfe, na.rm = TRUE))
 
 ```
-```{r}
-max(mfe$mfe)
-```
-
 
 
 ```{r}
-mfe.dens.gg <- ggplot(mfe.df, aes(x = MFE, linetype = Sample)) + 
-  geom_density(alpha = 0.8, color = "#31a1b3") +
+bp_colours <- c("M motif duplexes >= 8 bp" = "#31a1b3", "M motif duplexes < 8 bp" = "#7DCEA0")
+
+mfe.dens.gg <- ggplot(mfe.df, aes(x = MFE, linetype = Sample, color = structure_type)) + 
+  geom_density() + # color = c("#31a1b3", "#5ec3d3")
   # annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
   scale_linetype_manual(values=c("longdash", "solid")) +
-  scale_color_tableau() +
-  theme_minimal_grid() + 
+  scale_color_manual(values = bp_colours) +
   theme(legend.position = "right") +
+  theme_minimal_grid() + 
   ylab("Density") +
   xlab("Hybridisation energy (kcal/mol)") +
   geom_vline(data=mfe_median, aes(xintercept=Median),
              linetype="dashed", color = "#31a1b3" )
 
 mfe.dens.gg
-ggsave(paste0(plots.dir,"/","stau1_short_range_hybridisation_energy.pdf"), mfe.dens.gg, width = 5, height = 4)
+# ggsave(paste0(plots.dir,"/","stau1_short_range_hybridisation_energy.pdf"), mfe.dens.gg, width = 7, height = 4)
 ```
 
 
+```{r}
+# Add stats:
+stau1.mfe.ls <- dplyr::filter(cluster.duplexes.dt, structure_type == "M motif duplexes >= 8 bp")$mfe
+stau1.shuffled.mfe.ls <- dplyr::filter(cluster.duplexes.dt, structure_type == "M motif duplexes >= 8 bp")$mean_shuffled_mfe
+wilcox.test(stau1.mfe.ls, stau1.shuffled.mfe.ls)
+
+
+mfe.ls <- dplyr::filter(cluster.duplexes.dt, structure_type == "M motif duplexes < 8 bp")$mfe
+shuffled.mfe.ls <- dplyr::filter(cluster.duplexes.dt, structure_type == "M motif duplexes < 8 bp")$mean_shuffled_mfe
+wilcox.test(mfe.ls, shuffled.mfe.ls)
+```
+
+#### Normalise to number of bp
+
+```{r}
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
+  rowwise() %>%
+  mutate(normalised_mfe = mfe/total_paired,
+         normalised_mean_shuffled_mfe = mean_shuffled_mfe/total_paired) %>%
+  ungroup()
+
+# Density plot
+mfe.df <- pivot_longer(cluster.duplexes.dt, cols = c(normalised_mfe, normalised_mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+
+mfe.df <- mfe.df %>%
+  mutate(Sample = case_when((Sample == "normalised_mfe") ~ "STAU1",
+                            (Sample == "normalised_mean_shuffled_mfe") ~ "Shuffled control"))
+
+mfe_median <- cluster.duplexes.dt %>%
+  group_by(structure_type) %>%
+  dplyr::summarize(Median = median(normalised_mfe, na.rm = TRUE))
+
+
+bp_colours <- c("M motif duplexes >= 8 bp" = "#31a1b3", "M motif duplexes < 8 bp" = "#7DCEA0")
+
+mfe.dens2.gg <- ggplot(mfe.df, aes(x = MFE, linetype = Sample, color = structure_type)) + 
+  geom_density() + # color = c("#31a1b3", "#5ec3d3")
+  # annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
+  scale_linetype_manual(values=c("longdash", "solid")) +
+  scale_color_manual(values = bp_colours) +
+  theme(legend.position = "right") +
+  theme_minimal_grid() + 
+  ylab("Density") +
+  xlab("Normalised hybridisation energy (kcal/mol)/bp") +
+  geom_vline(data=mfe_median, aes(xintercept=Median),
+             linetype="dashed", color = "#31a1b3" )
+
+mfe.dens2.gg
+```
 
 
 ## Fig 3 D
@@ -837,10 +953,42 @@ h0.gg <- ggplot(cluster.duplexes.dt, aes(x = hairpin_loop)) +
   scale_x_log10() + annotation_logticks(sides = "b") + #breaks=c(3,5,7, 10,30))
   # ggtitle("Distribution of hairpin loop sizes") +
   xlab("Hairpin loop size (nt)") +
-  ylab("Density")
+  ylab("Density") +
+  facet_grid(~structure_type)
 
 h0.gg
-ggsave(paste0(plots.dir,"/",prefix,"_hairpin_lengths.pdf"), h0.gg, width = 5, height = 4)
+```
+
+
+```{r}
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
+  dplyr::filter(structure_type == "M motif duplexes >= 8 bp")
+```
+
+```{r}
+nrow(cluster.duplexes.dt)
+```
+
+```{r}
+hairpin_median <- cluster.duplexes.dt %>%
+  dplyr::summarize(Median = median(hairpin_loop, na.rm = TRUE))
+hairpin_median
+
+# Plot
+hairpin.gg <- ggplot(cluster.duplexes.dt, aes(x = hairpin_loop)) + 
+  #geom_histogram(bins = 45, color="black", fill = "#DEEBF7") +
+  geom_density(color = "#31a1b3", bw = 0.1) +
+  theme_minimal_grid() +
+  geom_vline(data=hairpin_median, aes(xintercept=Median), color = "grey",
+             linetype="dashed") +
+  scale_x_log10() + annotation_logticks(sides = "b") + #breaks=c(3,5,7, 10,30))
+  # ggtitle("Distribution of hairpin loop sizes") +
+  xlab("Hairpin loop size (nt)") +
+  ylab("Density") +
+  facet_grid(~structure_type)
+
+hairpin.gg
+# ggsave(paste0(plots.dir,"/",prefix,"_hairpin_lengths.pdf"), hairpin.gg, width = 5, height = 4)
 ```
 
 ```{r}
@@ -1148,54 +1296,7 @@ dplyr::filter(cluster.duplexes.dt, name == "ID10083" | name == "ID10081")
 
 ## Fig 3 D
 
-### Duplex length
 
-```{r}
-cluster.duplexes.dt <- cluster.duplexes.dt %>%
-  rowwise() %>%
-  mutate(total_paired = str_count(L_db, "\\(")) %>%
-  ungroup()
-```
-
-
-```{r}
-m_motif_structures <- list(nrow(cluster.duplexes.dt))
-names(m_motif_structures) <- "M motif duplexes (clusters 1, 2, 3)"
-m_motif_min10bp <- list(nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 10,]))
-names(m_motif_min10bp) <-"M motif duplexes >= 10 bp"
-
-m_motif_max9bp <- list(nrow(cluster.duplexes.dt) - nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 10,]))
-names(m_motif_max9bp) <- "M motif duplexes < 10 bp"
-
-no_m_motif <- list(nrow(stau1.prob.df) - nrow(cluster.duplexes.dt))
-names(no_m_motif) <- "No M motif"
-structure_types.ls <- c(no_m_motif, m_motif_max9bp, m_motif_min10bp)
-types.df <- data.frame(structure_types = names(structure_types.ls), count = unlist(structure_types.ls, use.names=FALSE))
-
-data_counts.df <- types.df %>%
-  mutate(percentage = scales::percent(count / sum(count))) %>%
-  mutate(percentage = as.numeric(sub("%","", percentage))) %>%
-    #mutate(percentage = counts*100 / sum(counts)) %>%
-  mutate(pos = cumsum(percentage) - percentage/2)
-
-types_colours <- c("No M motif" = "#216b77", "M motif duplexes >= 10 bp" = "#31a1b3", "M motif duplexes < 10 bp" = "#5ec3d3")
-
-# data_counts.df$structure_types <- factor(data_counts.df$structure_types, levels = "No M motif", "M motif duplexes < 10 bp", "M motif duplexes >= 10 bp")
-  
-  pie.gg <- ggplot(data_counts.df, aes(x="", y=count, fill=reorder(structure_types, count))) +
-    geom_bar(stat = "identity", width = 0.05, color="black", alpha = 0.5) +
-    coord_polar("y", start=0) +
-    #scale_fill_brewer(palette = "Blues", direction = -1) +
-    scale_fill_manual(values = types_colours) +
-    ggrepel::geom_label_repel(aes(label = paste0(percentage,"%")), size = 3.5, show.legend = FALSE, position = position_stack(vjust = .5)) +
-    ggrepel::geom_label_repel(aes(label = count), size = 2.5, show.legend = FALSE, position = position_stack(vjust = .3)) +
-    guides(fill = guide_legend(title = "Structure type")) +
-    theme_void() # remove background, grid, numeric labels
-
-pie.gg
-
-# ggsave(paste0(plots.dir,"/",prefix,"_structure_types.pdf"), pie.gg, width = 5, height = 4, dpi = 300)
-```
 
 
 ```{r}
