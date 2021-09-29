@@ -78,8 +78,8 @@ nextflow run nf-core/clipseq -r dev \
 
 # Group crosslinks from high and low RNase conditions
 
-zcat $RESULTSDIR/xlinks/stau1_high.xl.bed.gz stau1_low.xl.bed.gz | \
-sort -k1,1 -k2,2 -k3,3 -k6,6 | \
+zcat $RESULTSDIR/xlinks/stau1_high.xl.bed.gz $RESULTSDIR/xlinks/stau1_low.xl.bed.gz | \
+sort -k1,1 -k2,2n -k3,3n -k6,6 | \
 bedtools groupby -i stdin -g 1,2,3,6 -c 5 -o sum | \
 awk '{OFS="\t"}{print $1, $2, $3, ".", $5, $4}' | \
 pigz > $RESULTSDIR/xlinks/stau1.xl.bed.gz
