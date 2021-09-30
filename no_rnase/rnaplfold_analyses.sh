@@ -45,3 +45,18 @@ cd $RESULTSDIR
 
 # Profile for shuffled control
 ./get_structure_metaprofile.R --bed=$HURDIR/ELAVL1_merged.3nt_3nt.peaks.annot.bed.gz --prob=$RESULTSDIR/ELAVL1_threeutrs.rnaplfold.shuffled.bed.gz --prefix=$RESULTSDIR/ELAVL1_shuffled
+
+
+## TDP43 analyses
+
+# Annotate peaks with transcript id
+./annotate_peaks.R --bed=$TARDP_DIR/tardp.10nt_10nt.peaks.bed.gz --txdb=$RESULTSDIR/gencode.v33.txdb.sqlite
+
+# RNAplfold (3'UTRs of STAU1-bound transcripts)
+./run_rnaplfold.R --bed=$TARDP_DIR/tardp.10nt_10nt.peaks.annot.bed.gz --txdb=$RESULTSDIR/gencode.v33.txdb.sqlite --prefix=$RESULTSDIR/TARDP --shuffle
+
+# Generate RNAplfold unpaired probability metaprofile (-100nt and +100nt window)
+./get_structure_metaprofile.R --bed=$TARDP_DIR/tardp.10nt_10nt.peaks.annot.bed.gz --prob=$RESULTSDIR/TARDP_threeutrs.rnaplfold.bed.gz --prefix=$RESULTSDIR/TARDP
+
+# Profile for shuffled control
+./get_structure_metaprofile.R --bed=$TARDP_DIR/tardp.10nt_10nt.peaks.annot.bed.gz --prob=$RESULTSDIR/TARDP_threeutrs.rnaplfold.shuffled.bed.gz --prefix=$RESULTSDIR/TARDP_shuffled

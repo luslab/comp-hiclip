@@ -360,7 +360,7 @@ get_stem_loop_sequence <- function(hybrids.dt, genome.dt) {
 > Data directories
 
 ```{r}
-data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/xl_plus_100/sept_2021"
+data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021"
 plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3"
 ref.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/ref"
 ref.dir2 <- "/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets"
@@ -389,6 +389,12 @@ shuffled <- TRUE
 
 prob.files
 shuff.files
+```
+
+
+```{r}
+length(prob.files)
+length(shuff.files)
 ```
 
 ***
@@ -460,6 +466,9 @@ peak_regions.gg
 # ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
 
+
+## Fig 3 B
+
 ### STAU1 unpaired probability metaprofile
 
 
@@ -511,7 +520,7 @@ stau1.profile.gg
 # ggsave(paste0(plots.dir,"/",prefix,"_metaprofile_paired.pdf"), stau1.profile.gg, width = 4, height = 4, dpi = 300)
 ```
 
-## Fig 3 B
+## Fig 3 C
 
 ### STAU1 unpaired probability clusters
 
@@ -651,8 +660,16 @@ clusters.gg <- append_layers(clusters.gg, annotate("rect", xmin = 10, xmax = 75,
            alpha = 0.5, fill = "#31a1b3"), position = "bottom")
 
 clusters.gg
-# ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3, height = 10)
 
+
+```
+
+
+```{r}
+clusters.gg <- clusters.gg +
+  theme_minimal_grid()
+
+# ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3.5, height = 10)
 ```
 
 Clusters 1,2,3 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
@@ -716,7 +733,7 @@ cluster.duplexes.dt <- rbindlist(cluster.duplexes.l)
 ```
 
 
-## Fig 3 C
+## Fig 3 D
 
 ### Structure analyses
 
@@ -827,7 +844,7 @@ cluster.duplexes.dt <- cluster.duplexes.dt %>%
 ```
 
 
-## Fig 3 D
+## Fig 3 E
 
 ### Hybridisation energy
 
@@ -933,7 +950,7 @@ mfe.dens2.gg
 ```
 
 
-## Fig 3 D
+## Fig 3 F
 
 
 ### Hairpin loop size
@@ -1076,7 +1093,7 @@ arms.df <- as.data.frame(left_join(arms.df, peaks.df, by = c("name" = "id", "seq
 ```
 
 
-#### From the annotated peaks coordinates calculate  tx coordinates of the  predicted stem
+#### From the annotated peaks coordinates calculate tx coordinates of the  predicted stem
 
 ```{r}
 # ==========
@@ -1129,102 +1146,144 @@ short_range.reformated.gc.dt <- data.table(short_range.reformated.gc.df)
 # export_genomic_bed(short_range.reformated.gc.dt, paste0(data.dir, "/predicted_duplexes.bed"))
 ```
 
-***
-> Calculate overlap with STAU1 duplexes from hybrid reads
-
-#### Cluster the linker and no linker hybrids
-
-
-```{r}
-# keep common columns
-setdiff(colnames(nolinker.dt), colnames(linker.dt))
-nolinker.dt[, c(setdiff(colnames(nolinker.dt), colnames(linker.dt))):=NULL]
-
-all.hybrids.dt <- rbind(linker.dt, nolinker.dt)
-nrow(all.hybrids.dt)
-
-all.hybrids.dt[, c("cluster", "cluster_hybrid_count"):=NULL]
-
-# ==========
-# Remove rRNA and tRNA hybrids
-# ==========
-
-all.hybrids.dt[, total_count := NULL]
-all.hybrids.dt <- all.hybrids.dt[, total_count := .N, by = .(L_seqnames, R_seqnames)]
-all.hybrids.dt <- all.hybrids.dt[L_seqnames == R_seqnames]
-all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
-all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
-all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
-all.hybrids.dt <- all.hybrids.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
-all.hybrids.dt <- all.hybrids.dt[!grepl("tRNA", L_seqnames)]
-all.hybrids.dt <- all.hybrids.dt[!grepl("tRNA", R_seqnames)]
-
-nrow(all.hybrids.dt)
-```
-
-
-```{r}
-# ==========
-# Cluster
-# ==========
-
-all.list <- split(all.hybrids.dt, by = c("L_seqnames", "R_seqnames"))
-all.clusters.list <- parallel::mclapply(all.list, cluster_hybrids, percent_overlap = 0.5, mc.cores = 4)
-all.clusters.dt <- rbindlist(all.clusters.list, use.names = TRUE, fill = TRUE)
-
-#all.clusters.dt[L_seqnames == R_seqnames][!L_seqnames %in% c("tRNA", "rDNA", "rRNA_5S")][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)]
-all.collapsed  <- collapse_clusters(all.clusters.dt, mode = "wide")
-
-# Get genomic coordinates
-all.collapsed <- convert_coordinates(all.collapsed, genes.gr)
-
-# Export bed file
-all.collapsed.dt <- data.table(all.collapsed)
-#export_genomic_bed(all.collapsed.dt, paste0(data.dir, "/collapsed_hybrid_duplexes.bed"))
-```
-
 ```{r}
 # Export reformated file, it will be used for clustering all datasets
-
-#fwrite(short_range.reformated.gc.df, paste0(data.dir, "/short_range_duplexes.tsv.gz"), sep = "\t")
+# fwrite(short_range.reformated.gc.df, paste0(data.dir, "/short_range_duplexes.tsv.gz"), sep = "\t")
 
 ```
+
+
+## Fig 3 G: Breakdown of the atlas
 
 #### Find overlaps with merged clusters (no linker and linker)
 
 ```{r}
-ol <- primavera::find_valid_hybrid_overlaps(as.data.table(short_range.reformated.gc.df), all.collapsed)
-nonhyb_overlapped.dt <- short_range.reformated.gc.df[unique(ol$queryHits),]
+data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip"
+stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.mfe.tsv.gz"))
+stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
 ```
 
 ```{r}
-nonhyb_count <- nrow(cluster.duplexes.dt)
-hyb_clusters_count <- nrow(all.collapsed)
-nonhyb_ol_count <- nrow(nonhyb_overlapped.dt)
+length(unique(stau1.dt$name))
+```
 
-olap_counts <- c(Predicted_short_range_duplexes = nonhyb_count-nonhyb_ol_count, hiCLIP_duplexes = hyb_clusters_count-nonhyb_ol_count, "Predicted_short_range_duplexes&hiCLIP_duplexes" = nonhyb_ol_count)
 
-pdf(file=paste0(plots.dir,"/short_range_overlap.pdf"), onefile=FALSE, width = 7, height = 5) 
 
-upset(fromExpression(olap_counts),
-      order.by = "freq",
-      decreasing = T,
-      number.angles = 0,
-      text.scale = 1.1,
-      point.size = 2.8,
-      line.size = 1,
+How many duplexes are supported by multiple sources?
+
+```{r}
+nrow(dplyr::filter(stau1.hybrids.dt, sample == "stau1_nonhybrid" & str_detect(cluster, "ID")))
+```
+
+```{r}
+clustered_short_range.df <- dplyr::filter(stau1.hybrids.dt, sample == "stau1_nonhybrid" & str_detect(cluster, "C"))
+clustered_short_range.ls <- clustered_short_range.df$name
+
+stau1.hybrids.dt <- stau1.hybrids.dt %>%
+  mutate(cluster = case_when((sample == "stau1_nonhybrid" & !(name %in% clustered_short_range.ls)) ~ name,
+                             TRUE ~ cluster))
+
+
+# Remove predicted duplexes with less than 8 bp
+stau1.dt <- stau1.dt %>%
+  dplyr::filter(!(str_detect(cluster, "ID") & !(name %in% cluster.duplexes.dt$name)))
+
+stau1.hybrids.dt <- stau1.hybrids.dt %>%
+  dplyr::filter(!(str_detect(cluster, "ID") & !(name %in% cluster.duplexes.dt$name)))
+
+
+stau1.cluster.hybrids.df <- stau1.hybrids.dt %>%
+  dplyr::filter(str_detect(cluster, "C") | str_detect(cluster, "ID"))
+
+stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
+  rowwise() %>%
+  mutate(id = case_when(cluster == name ~ cluster,
+                        TRUE ~ paste(cluster, L_seqnames, R_seqnames, sep = "-"))) %>%
+  ungroup()
+
+stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
+  dplyr::filter(str_detect(cluster, "C") | str_detect(cluster, "ID"))
+
+nrow(stau1.cluster.hybrids.df) # number of hybrids that were assigned a cluster
+
+stopifnot(length(unique(stau1.cluster.hybrids.df$id)) == nrow(stau1.dt))
+```
+
+How many clusters contain hybrids from same sample or different samples?
+  
+
+```{r}
+stau1.cluster.hybrids_summary.df <- stau1.cluster.hybrids.df %>%
+  group_by(id) %>%
+  #mutate(sample_set = list(sort(unique(sample)))) %>%
+  summarize(sample_set = paste(sort(unique(sample)), collapse=",")) %>%
+  ungroup() 
+
+stau1.samples.df <- stau1.cluster.hybrids_summary.df %>%
+  dplyr::select(id, sample_set) %>%
+  distinct()
+
+table(stau1.samples.df$sample_set)
+```
+
+Focus on 3'UTR-3'UTR intramolecular interactions only:
+
+
+  
+```{r}
+stau1.samples.df$Experiment <- "STAU1"
+stau1.dt$Experiment <- "STAU1"
+stau1.dt <- left_join(stau1.dt, dplyr::select(stau1.samples.df, Experiment, id, sample_set), by = c("Experiment", c("name" = "id")))
+```
+
+
+```{r}
+source_counts.df <- stau1.dt %>%
+  dplyr::filter(Experiment == "STAU1") %>%
+  dplyr::select(name, Experiment, sample_set) %>%
+  distinct() %>%
+  group_by(sample_set) %>%
+  summarise(counts = n()) 
+
+source_counts.df
+```
+```{r}
+ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3")
+```
+
+```{r}
+source.upset.input <- c("Linker" = source_counts.df[source_counts.df$sample_set == "stau1_linker",]$counts[1],
+                        "Direct" = source_counts.df[source_counts.df$sample_set == "stau1_nolinker",]$counts[1],
+                        "Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_nonhybrid",]$counts[1],
+                        "Linker&Direct" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nolinker",]$counts[1],
+                        "Linker&Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nonhybrid",]$counts[1],
+                        "Direct&Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_nolinker,stau1_nonhybrid",]$counts[1],
+                        "Linker&Direct&Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nolinker,stau1_nonhybrid",]$counts[1])
+
+pdf(file.path(plots.dir, "stau1_duplex_source_upset.pdf"), width = 7, height = 5)
+upset(fromExpression(source.upset.input), order.by = "freq",
       mainbar.y.label = "Intersecting number of duplexes",
       sets.x.label = "Total number of duplexes",
-      empty.intersections = "off"
-      )
-
+      sets.bar.color=rev(ht_colours))
 dev.off()
 ```
 
 
-## Fig 3 G
 
-### Examples of short-range structures
+## Fig 3 H: Examples of short-range structures
+
+```{r}
+# Obtain IDs of overlapped spredicted short-range structures
+```
+
+
+
+
+```{r}
+stau1.dt
+```
+
+
 
 ***
 > Short-range structure that overlaps with hybrid duplexes
@@ -1297,8 +1356,6 @@ dplyr::filter(cluster.duplexes.dt, name == "ID10083" | name == "ID10081")
 ## Fig 3 D
 
 
-
-
 ```{r}
 total_paired_median <- cluster.duplexes.dt %>%
   dplyr::summarize(Median = median(total_paired, na.rm = TRUE))
@@ -1323,8 +1380,8 @@ s.gg
 ## TDP43
 
 ```{r}
-prob.file <- prob.files[str_detect(prob.files, "tardp")]
-shuff.file <- shuff.files[str_detect(prob.files, "tardp")]
+prob.file <- prob.files[str_detect(prob.files, "TARDP")]
+shuff.file <- shuff.files[str_detect(prob.files, "TARDP")]
 prob.name <- str_split(prob.file, pattern = "\\/")[[1]]
 prob.name <- prob.name[length(prob.name)]
 prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
@@ -1332,6 +1389,9 @@ prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
 prefix <- basename(prob.file)
 prefix <- str_split(prefix, ".tsv")[[1]][1]
 ```
+
+
+
 
 ```{r}
 # Load metaprofile dataframes (df output from get_structure_metaprofile.R)
@@ -1347,6 +1407,8 @@ colnames(tardp.prob.df) <- seq(1-(ncol(tardp.prob.df)+1)/2, (ncol(tardp.prob.df)
 ```{r}
 tardp.prob.mean.df <- get_metaprofile_mean(prob.file)
 tardp.prob.mean.df$Sample <- prob.name
+
+shuffled = FALSE
 
 if (shuffled == TRUE) {
  
@@ -1369,102 +1431,78 @@ tardp.profile.gg
 ## HUR
 
 ```{r}
-prob.file <- prob.files[str_detect(prob.files, "hur")]
-shuff.file <- shuff.files[str_detect(prob.files, "hur")]
-prob.name <- str_split(prob.file, pattern = "\\/")[[1]]
-prob.name <- prob.name[length(prob.name)]
-prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
-
-prefix <- basename(prob.file)
-prefix <- str_split(prefix, ".tsv")[[1]][1]
-```
-
-```{r}
-# Load metaprofile dataframes (df output from get_structure_metaprofile.R)
-
-hur.prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
-hur.prob.df <- column_to_rownames(hur.prob.df, var = "V1")
-hur.prob.df <- drop_na(hur.prob.df)
-colnames(hur.prob.df) <- seq(1-(ncol(hur.prob.df)+1)/2, (ncol(hur.prob.df)-1)/2) # center colnames on zero
-
+hur.prob.file <- prob.files[str_detect(prob.files, "ELAV")]
+hur.shuff.file <- shuff.files[str_detect(prob.files, "ELAV")]
 ```
 
 
 ```{r}
-hur.prob.mean.df <- get_metaprofile_mean(prob.file)
-hur.prob.mean.df$Sample <- prob.name
+get_metaprofile_dataframe <- function(prob.file, shuff.file = NULL, shuffled = FALSE) {
+  
+  prob.name <- str_split(prob.file, pattern = "\\/")[[1]]
+  prob.name <- prob.name[length(prob.name)]
+  prob.name <- str_to_upper(str_split(prob.name, pattern = "_")[[1]][1]) #RBP name
+  
+  prefix <- basename(prob.file)
+  prefix <- str_split(prefix, ".tsv")[[1]][1]
+  
+  # Load metaprofile dataframes (df output from get_structure_metaprofile.R)
+  
+  rbp.prob.df <- data.table::fread(prob.file, skip = 1, data.table = FALSE)
+  rbp.prob.df <- column_to_rownames(rbp.prob.df, var = "V1")
+  rbp.prob.df <- drop_na(rbp.prob.df)
+  colnames(rbp.prob.df) <- seq(1-(ncol(rbp.prob.df)+1)/2, (ncol(rbp.prob.df)-1)/2) # center colnames on zero
+  
+  rbp.prob.mean.df <- get_metaprofile_mean(prob.file)
+  rbp.prob.mean.df$Sample <- prob.name
+  
+  if (shuffled == TRUE) {
+   
+    rbp.shuff.mean.df <- get_metaprofile_mean(shuff.file)
+    rbp.shuff.mean.df$Sample <- "Control (shuffled)"
+    rbp.data.df <- rbind(rbp.prob.mean.df, rbp.shuff.mean.df)
+    rbp.data.df$peaks_count <- nrow(rbp.prob.df)
+  } else {
+    rbp.data.df <- rbp.prob.mean.df
+    rbp.data.df$peaks_count <- nrow(rbp.prob.df)
+  }
 
-if (shuffled == TRUE) {
- 
-  hur.shuff.mean.df <- get_metaprofile_mean(shuff.file)
-  hur.shuff.mean.df$Sample <- "Control (shuffled)"
-  hur.data.df <- rbind(hur.prob.mean.df, hur.shuff.mean.df)
-  hur.data.df$peaks_count <- nrow(hur.prob.df)
-} else {
-  hur.data.df <- hur.prob.mean.df
-  hur.data.df$peaks_count <- nrow(hur.prob.df)
+return(rbp.data.df)
+  
 }
 
-# plot the mean probability and standard error of the mean
-hur.profile.gg <- plot_metaprofile(hur.data.df)
-hur.profile.gg <- append_layers(hur.profile.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
-           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
-hur.profile.gg
-
 ```
+
+
+```{r}
+hur.df <- get_metaprofile_dataframe(hur.prob.file, hur.shuff.file, shuffled = TRUE)
+```
+
+
+
+```{r}
+hur.df
+```
+
 
 
 # Combine all RBPs (Figure 3 B)
 
 ```{r}
-hur.data.df$Experiment <- as.factor("HuR")
-tardp.data.df$Experiment <- as.factor("TDP43")
-stau1.data.df$Experiment <- as.factor("STAU1")
-
-merged.data.df <- rbind(stau1.data.df, hur.data.df, tardp.data.df)
-```
-
-
-```{r}
-merged.gg <- ggplot(merged.data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
-    geom_ribbon(aes(ymin=(mean_prob-std_prob), ymax=(mean_prob+std_prob)), color = "grey80", fill = "grey80") +
-    geom_line(aes(linetype = Sample)) +
-    scale_linetype_manual(values=c("longdash", "solid","solid", "solid" ))+
-    scale_color_manual(values=c('#E69F00', '#222222', '#222222', '#222222'))+
-    geom_vline(xintercept = 0, linetype = "dashed", color ="grey60", size = 0.5) +
-    ylim(c(0.40, 0.60))+
-    xlab("Distance relative to the peak start (nt)")+
-    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-    ylab("Mean probability") +
-    labs(linetype = "Sample") +
-    geom_text(aes(x = 55, y = 0.59,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 4) +
-  facet_grid(rows = vars(Experiment))
-
-merged.gg <-
-  append_layers(merged.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
-           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
-merged.gg <- merged.gg + theme(strip.background = element_blank())
-merged.gg
-```
-
-```{r}
-#ggsave(paste0(data.dir,"/RBPs_metaprofile_paired.pdf"), merged.gg, width = 3, height = 5)
-```
-
-## All in one plot
-
-```{r}
-data.df <- merged.data.df %>%
-  dplyr::filter(!((Sample == "Control (shuffled)" & Experiment == "HuR") | (Sample == "Control (shuffled)" & Experiment == "TDP43")))
-```
-
-```{r}
+# Get number of peaks
 stau1.counts <- unique(stau1.data.df$peaks_count)
 hur.counts <- unique(hur.data.df$peaks_count)
 tardp.counts <- unique(tardp.data.df$peaks_count)
-```
 
-```{r}
+hur.data.df$Experiment <- as.factor("HUR")
+tardp.data.df$Experiment <- as.factor("TDP-43")
+stau1.data.df$Experiment <- as.factor("STAU1")
+merged.data.df <- rbind(stau1.data.df, hur.data.df, tardp.data.df)
+data.df <- merged.data.df %>%
+  dplyr::filter(!((Sample == "Control (shuffled)" & Experiment == "HUR") | (Sample == "Control (shuffled)" & Experiment == "TDP-43")))
+
+data.df$Sample <- plyr::mapvalues(data.df$Sample, from=c("ELAVL1", "TARDP"), to=c("HUR", "TDP-43"))
+
 merged.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
   scale_fill_manual(values=c('#222222','#E69F00', '#CD5C5C', '#A569BD')) +
   scale_color_manual(values=c('#222222','#E69F00', '#CD5C5C', '#A569BD')) +
@@ -1480,17 +1518,16 @@ merged.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample,
     labs(linetype = "Sample") +
     # geom_text(aes(x = 55, y = 0.60,label = paste0("n = ", peaks_count)), inherit.aes = FALSE, size = 3) 
   geom_text(aes(x = -80, y = 0.43,label = paste0("n = ", hur.counts)), inherit.aes = FALSE, size = 4, color = "#E69F00") +
-  geom_text(aes(x = -80, y = 0.415,label = paste0("n = ", hur.counts)), inherit.aes = FALSE, size = 4, color = "#CD5C5C") +
+  geom_text(aes(x = -80, y = 0.415,label = paste0("n = ", stau1.counts)), inherit.aes = FALSE, size = 4, color = "#CD5C5C") +
   geom_text(aes(x = -80, y = 0.40,label = paste0("n = ", tardp.counts)), inherit.aes = FALSE, size = 4, color = "#A569BD") 
-  #facet_grid(~Experiment)
 
 merged.gg <-
   append_layers(merged.gg, annotate("rect", xmin = 15, xmax = 75, ymin = -Inf, ymax = Inf, 
-           alpha = 0.5, fill = "#DEEBF7"), position = "bottom")
+           alpha = 0.5, fill = "#31a1b3"), position = "bottom")
 merged.gg <- merged.gg + theme(strip.background = element_blank())
 merged.gg
 
-# ggsave(paste0(data.dir,"/RBPs_metaprofile_paired_v2.pdf"), merged.gg, width = 4, height = 4)
+# ggsave(paste0(plots.dir,"/RBPs_paired_metaprofile.pdf"), merged.gg, width = 6.5, height = 4, dpi = 300)
 ```
 
 
