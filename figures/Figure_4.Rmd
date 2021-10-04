@@ -144,10 +144,14 @@ trim_duplex_overhangs <- function(clusters.df) {
   # Adjust genomic coordinates to only include the paired region
   clusters.df <- clusters.df %>%
     rowwise() %>%
-    mutate(L_genomic_duplex_start = L_genomic_start + L_duplex_start - 1,
-           L_genomic_duplex_end= L_genomic_start + L_duplex_end - 1, 
-           R_genomic_duplex_start = R_genomic_start + R_duplex_start - 1,
-           R_genomic_duplex_end = R_genomic_start + R_duplex_end - 1) %>%
+    mutate(L_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_start - 1,
+                                      TRUE ~ L_genomic_end - L_duplex_end + 1),
+           L_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_end - 1,
+                                    TRUE ~ L_genomic_end - L_duplex_start + 1),
+           R_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_start - 1,
+                                      TRUE ~ R_genomic_end - R_duplex_end + 1),
+           R_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_end - 1,
+                                    TRUE ~ R_genomic_end - R_duplex_start + 1)) %>%
     ungroup()
   
   return(clusters.df)
