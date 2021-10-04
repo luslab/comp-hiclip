@@ -120,8 +120,10 @@ get_paired_regions <- function(id, L_db, R_db) {
   return(results.ls)
   
 }
+```
 
 
+```{r}
 trim_duplex_overhangs <- function(clusters.df) {
   
   # Separate L_db and R_db
@@ -142,16 +144,12 @@ trim_duplex_overhangs <- function(clusters.df) {
   # Adjust genomic coordinates to only include the paired region
   clusters.df <- clusters.df %>%
     rowwise() %>%
-    mutate(L_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_start - 1,
-                                      TRUE ~ L_genomic_end - L_duplex_end + 1),
-           L_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_end - 1,
-                                    TRUE ~ L_genomic_end - L_duplex_start + 1),
-           R_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_start - 1,
-                                      TRUE ~ R_genomic_end - R_duplex_end + 1),
-           R_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_end - 1,
-                                    TRUE ~ R_genomic_end - R_duplex_start + 1)) %>%
+    mutate(L_genomic_duplex_start = L_genomic_start + L_duplex_start - 1,
+           L_genomic_duplex_end= L_genomic_start + L_duplex_end - 1, 
+           R_genomic_duplex_start = R_genomic_start + R_duplex_start - 1,
+           R_genomic_duplex_end = R_genomic_start + R_duplex_end - 1) %>%
     ungroup()
-    
+  
   return(clusters.df)
 }
 
@@ -435,192 +433,6 @@ plot_nucleotide_frequency <- function(data.df) {
 ```
 
 
-```{r}
-create_empty_grl <- function(mcol.ls, datatype.ls) {
-    
-  names(datatype.ls) <- mcol.ls
-  df <- do.call(data.frame, datatype.ls)
-  gr <- GRanges(c(seqnames = NULL,ranges = NULL,strand = NULL)) 
-  mcols(gr) <- df
-    
-  return(gr)
-    
-}
-
-get_loop_size <- function(utr3.duplexes.dt, utr3.grl) {
-  
-  L.gr <- convert_to_granges(utr3.duplexes.dt, arm = "L", genomic = TRUE)
-  R.gr <- convert_to_granges(utr3.duplexes.dt, arm = "R", genomic = TRUE)
-  stopifnot(all(countOverlaps(L.gr, utr3.grl) != 0))
-  stopifnot(all(countOverlaps(R.gr, utr3.grl) != 0))
-  duplexes.grl <- split(c(L.gr, R.gr), c(L.gr, R.gr)$name)
-  utr3.dt <- lapply(1:length(duplexes.grl), function(i) {
-    
-    # message(i)
-    x <- duplexes.grl[[i]]
-    
-    # First get 3' UTR for the transcript
-    ol <- findOverlaps(x, utr3.grl)
-    stopifnot(length(ol) > 0)
-    
-    if(length(unique(subjectHits(ol))) == 1) {
-      
-      utr3 <- utr3.grl[unique(subjectHits(ol))]
-      
-      utr3 <- unlist(utr3)
-      utr3$tx_name <- names(utr3)
-      names(utr3) <- NULL
-      
-    } else {
-      
-      sel.ol <- unique(subjectHits(ol))
-      sel.ol <- sel.ol[sapply(sel.ol, function(y) all(queryHits(ol[subjectHits(ol) == y]) == c(1, 2)))] # Keep only ones where both arms overlapped by same 3' UTR overlapped
-      #stopifnot(length(sel.ol) != 0)
-      
-      if ((length(sel.ol) == 0)) {
-        
-        print(x)
-        utr3 <- create_empty_grl(mcol.ls, datatype.ls)
-        # utr3$tx_name <-NA
-        names(utr3) <- NULL
-        
-      } else {
-        
-        utr3 <- utr3.grl[sel.ol]
-        
-        utr3.tx.dt <- txlengths.dt[tx_name %in% names(utr3)] # select matching tx
-        utr3.tx.dt[gene_id %in% x$L_gene_id] # keep only same genes
-        utr3 <- utr3[names(utr3) %in% utr3.tx.dt[1]] # select longest 3' UTR 
-        
-        utr3 <- unlist(utr3)
-        utr3$tx_name <- names(utr3)
-        names(utr3) <- NULL
-        
-      }
-      
-    }
-    
-    
-    if (length(utr3) > 0) {
-      
-      utr3.dt <- data.table(name = unique(x$name),
-                            ensg = unique(x$ensg),
-                            utr3_start = min(start(utr3)),
-                            utr3_end = max(end(utr3)),
-                            utr3_width = sum(width(utr3)))
-      
-      g <- gaps(utr3, start = min(start(utr3)), end = max(end(utr3)))
-      g <- g[seqnames(g) == unique(seqnames(utr3))]
-      g <- g[strand(g) == unique(strand(utr3))]
-      
-      # Reversed order if strand is neg to match utr3
-      if(unique(strand(utr3)) == "-") {
-        g <- sort(g, decreasing = TRUE)
-      } else {
-        g <- sort(g)
-      }
-      utr3.dt[, utr3_intron := sum(width(g))]
-      
-      # Between arms   
-      L.ol <- which(countOverlaps(utr3, x[1]) > 0)
-      R.ol <- which(countOverlaps(utr3, x[2]) > 0)  
-      
-      if(L.ol == R.ol) {
-        
-        utr3.dt[, intron := 0]
-        
-      } else {
-        
-        stopifnot(R.ol > L.ol) # Should be this for all
-        k <- seq(L.ol, R.ol - 1, by = 1) # which introns to keep
-        utr3.dt[, intron := sum(width(g[k]))]
-        
-      }
-      
-      # Relative starts accounting for introns
-      if(as.character(strand(x[1])) == "-") {
-        
-        L_abs_start <- max(end(utr3)) - end(x[1]) + 1
-        if(L.ol != 1) {
-          L_abs_start <- L_abs_start - sum(width(g[seq(1, L.ol - 1, by = 1)]))
-        }
-        R_abs_start <- max(end(utr3)) - end(x[2]) + 1
-        if(R.ol != 1) {
-          R_abs_start <- R_abs_start - sum(width(g[seq(1, R.ol - 1, by = 1)]))
-        }
-        
-      } else {
-        
-        L_abs_start <- start(x[1]) - min(start(utr3)) + 1
-        if(L.ol != 1) {
-          L_abs_start <- L_abs_start - sum(width(g[seq(1, L.ol - 1)]))
-        }
-        R_abs_start <- start(x[2]) - min(start(utr3)) + 1
-        if(R.ol != 1) {
-          R_abs_start <- R_abs_start - sum(width(g[seq(1, R.ol - 1)]))
-        }
-        
-      }
-      
-      # Relative ends accounting for introns
-      if(as.character(strand(x[2])) == "-") {
-        
-        R_abs_end <- start(x[2]) - min(start(utr3)) + 1
-        if(R.ol != length(utr3)) {
-          R_abs_end <- R_abs_end - sum(width(g[seq(R.ol, length(utr3) - 1, by = 1)]))
-        }
-        
-      } else {
-        
-        R_abs_end <- max(end(utr3)) - end(x[2]) + 1
-        if(R.ol != length(utr3)) {
-          R_abs_end <- R_abs_end - sum(width(g[seq(R.ol, length(utr3) - 1)]))
-        }
-        
-      }  
-      
-      utr3.dt[, `:=` (L_abs_start = L_abs_start,
-                      R_abs_start = R_abs_start,
-                      R_abs_end = R_abs_end)]
-      
-      stopifnot(all(c(utr3.dt$L_abs_start,
-                      utr3.dt$R_abs_start, 
-                      utr3.dt$R_abs_end) < utr3.dt$utr3_width))
-      
-      stopifnot(all(elementNROWS(utr3.dt) == 1))
-      
-    } else {
-      
-      utr3.dt <- data.table(name = unique(x$name),
-                            ensg = unique(x$ensg),
-                            utr3_start = NA,
-                            utr3_end = NA,
-                            utr3_width = NA)
-      
-    }
-    
-    return(utr3.dt)
-    
-  })
-  
-  stopifnot(all(elementNROWS(utr3.dt) == 1))
-  utr3.dt <- rbindlist(utr3.dt)
-  
-  utr3.duplexes.dt <- merge(utr3.duplexes.dt, utr3.dt, by = c("name", "ensg"))
-  utr3.duplexes.dt[R_abs_end < 0, R_abs_end := 0] # Some extend off end of annotated transcript
-  utr3.duplexes.dt[, R_abs_end := -R_abs_end] # As distance from end
-  # Calculations
-  utr3.duplexes.dt[, `:=` (loop = R_start - L_end - 1 - intron,
-                           L_rel_start = L_abs_start/utr3_width,
-                           R_rel_start = R_abs_start/utr3_width)]
-  stopifnot(nrow(utr3.duplexes.dt[loop > utr3_width]) == 0)
-  
-  return(utr3.duplexes.dt)
-  
-}
-```
-
-
 #### Data
 
 ```{r}
@@ -631,12 +443,16 @@ plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_4"
 ```{r}
 # Clusters (collapsed)
 
-stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.mfe.tsv.gz"))
+stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz"))
+stau1.mfe.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed.mfe.tsv.gz"))
 paris.dt <- fread(paste0(data.dir,"/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 paris.mfe.dt <- fread(paste0(data.dir, "/paris_atlas/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz"))
 
+short_range.mfe.dt <- fread(paste0(data.dir, "/short_range/sept_2021/short_range_duplexes.mfe.tsv.gz"))
+short_range.forgi.dt <- fread(paste0(data.dir, "/short_range/sept_2021/short_range_duplexes.forgi.tsv.gz"))
+
 # Structure annotation
-stau1_forgi.dt <- fread(paste0(data.dir,"/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.forgi.tsv.gz"))
+stau1_forgi.dt <- fread(paste0(data.dir,"/stau1_atlas/merged_atlas.clusters.collapsed.forgi.tsv.gz"))
 
 # paris: only intragenic 3'UTR
 paris_forgi.dt <- fread(paste0(data.dir,"/paris_atlas/paris.3utr.all.atlas_clusters.gc.annotated.forgi.tsv.gz"))
@@ -646,6 +462,31 @@ stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.t
 paris.hybrids.dt <- fread(paste0(data.dir, "/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 ```
 
+```{r}
+# Merge predicted structures mfe and forgi tables to the proximity ligation dupelxes
+
+# Filter only for IDs in the cluster files
+id.ls <- dplyr::filter(stau1.dt, str_detect(cluster, "ID"))$name
+
+short_range.mfe.dt <- dplyr::filter(short_range.mfe.dt, name %in% id.ls)
+short_range.forgi.dt <- dplyr::filter(short_range.forgi.dt, id %in% id.ls)
+
+short_range.mfe.dt <- dplyr::select(short_range.mfe.dt, name, L_sequence, R_sequence, mfe, structure, mean_shuffled_mfe, sd_shuffled_mfe)
+stau1.mfe.dt <- dplyr::select(stau1.mfe.dt, name,L_sequence, R_sequence, mfe, structure, mean_shuffled_mfe, sd_shuffled_mfe)
+
+mfe.dt <- rbind(stau1.mfe.dt, short_range.mfe.dt)
+stopifnot(nrow(mfe.dt) == nrow(stau1.dt)) 
+
+# Add mfe columns to stau1.dt
+stau1.dt <- left_join(stau1.dt, mfe.dt, by = "name")
+stau1.dt <- distinct(stau1.dt)
+#fwrite(stau1.dt, paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.mfe.tsv.gz"), sep = "\t")
+
+# Now forgi
+stau1_forgi.dt <- rbind(stau1_forgi.dt, short_range.forgi.dt)
+stau1_forgi.dt <- distinct(stau1_forgi.dt)
+#fwrite(stau1_forgi.dt, paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.forgi.tsv.gz"), sep = "\t")
+```
 
 # Main figure
 
@@ -671,11 +512,7 @@ paris.dt <- paris.dt[!grepl("tRNA", R_seqnames)]
 The number of PARIS duplexes excluding rRNA and tRNA is `r nrow(paris.dt)`
 The number of STAU1 hiCLIP + short-range duplexes is `r nrow(stau1.dt)`
 
-## Fig 4 B
-
-***
-> Duplex locations
-
+# Fig 4 A: Duplex locations
 
 #### Intramolecular vs intermolecular
 
@@ -690,7 +527,6 @@ intra_stau1.dt <- stau1.dt %>%
 
 There are `r nrow(intra_stau1.dt)` intramolecular duplexes within STAU1 hiCLIP duplex atlas.
 
-#### Intramolecular locations
 
 ```{r warning=FALSE}
 # Filter out duplexes with no duplex binding energy
@@ -700,6 +536,9 @@ intra_stau1.dt <- intra_stau1.dt %>%
 
 nrow(intra_stau1.dt)
 ```
+
+***
+> STAU1 locations
 
 ```{r}
 interregion_colours <- c("CDS - CDS" = "#638b66", "CDS - ncRNA" = "#B03A2E", "CDS - UTR3" = "#A9CCE3",
@@ -730,9 +569,6 @@ stau1.regions.gg
 # ggsave(paste0(plots.dir, "/stau1_arm_region_pairs.pdf"), stau1.regions.gg, width = 5, height = 8, dpi = 300)
 
 ```
-
-
-
 ***
 > PARIS locations
 
@@ -744,11 +580,6 @@ paris.dt <- paris.dt %>%
                           TRUE ~ "Inter-transcript"))
 intra_paris.dt <- paris.dt %>%
   dplyr::filter(type == "Intra-transcript")
-```
-
-## Fig 4 B
-
-```{r}
 
 # Filter out intronic regions 
 intra_paris.dt <- intra_paris.dt %>%
@@ -774,9 +605,6 @@ paris_regions.gg <- plot_stacked_barchart(intra_paris_duplex_regions.df, region_
 paris_regions.gg
 # ggsave(paste0(plots.dir, "/paris_arm_region_pairs.pdf"), paris_regions.gg, width = 5, height = 8, dpi = 300)
 ```
-
-### Comparison with PARIS HEK293 (Lu et al. 2016)
-
 > Filter intragenic 3'UTR duplexes from both datasets
 
 To get more comparable datasets, we focused on the 3'UTR intragenic duplexes for both STAU1 and PARIS. 
@@ -801,8 +629,10 @@ utr3_stau1_forgi.df <- semi_join(stau1_forgi.dt, stau1.utr3.df, by = c("id" = "n
 utr3_paris_forgi.df <- semi_join(paris_forgi.dt, paris.utr3.df, by = c("id" = "name"))
 utr3_stau1_forgi.df$Experiment <- "STAU1"
 utr3_paris_forgi.df$Experiment <- "PARIS"
+```
 
 
+```{r}
 # Append datasets
 utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df)
 ```
@@ -817,30 +647,40 @@ nrow(stau1.utr3.df)
 nrow(paris.utr3.df)
 ```
 
-#### Need to adjust the genomic coordinates to focus on the stem of the structure
-
-```{r}
-utr3_clusters.df <- trim_duplex_overhangs(utr3_clusters.df)
-utr3_clusters.df$Experiment <- factor(utr3_clusters.df$Experiment, levels = c("STAU1", "PARIS"))
-
-```
+Need to adjust the genomic and transcriptomic coordinates to focus on the stem of the structure (for clustered duplexes only because for the short-range duplexes already done for Fig 3)
 
 ```{r}
 utr3_clusters.df <- utr3_clusters.df %>%
   mutate(detection_type = case_when(!str_detect(cluster, "ID") ~ "Proximity ligation",
                                     TRUE ~ "Prediction"))
+
+# only proximity ligation hybrids
+exp.utr3.df <- utr3_clusters.df %>%
+  dplyr::filter(detection_type == "Proximity ligation")
+
+predicted_stau1.utr3.df <- utr3_clusters.df %>%
+  dplyr::filter(detection_type == "Prediction")
+
+exp.utr3.df <- trim_duplex_overhangs(exp.utr3.df)
+
+predicted_stau1.utr3.df <- predicted_stau1.utr3.df %>%
+  mutate(L_genomic_duplex_start = L_genomic_start,
+         R_genomic_duplex_start = R_genomic_start,
+         L_genomic_duplex_end = L_genomic_end,
+         R_genomic_duplex_end = R_genomic_end)
+
+stopifnot(nrow(utr3_clusters.df) == nrow(rbind(data.table(exp.utr3.df), data.table(predicted_stau1.utr3.df), fill = TRUE)))
+
+utr3_clusters.df <- rbind(data.table(exp.utr3.df), data.table(predicted_stau1.utr3.df), fill = TRUE)
+utr3_clusters.df$Experiment <- factor(utr3_clusters.df$Experiment, levels = c("STAU1", "PARIS"))
 ```
 
 
-## Figure 4 B
+# Fig 4 B: Overlap with PARIS for 3'UTR intra-transcript duplexes
 
-Overlap with PARIS for 3'UTR intra-transcript duplexes
+Comparison with PARIS HEK293 (Lu et al. 2016)
 
 ```{r}
-# Keep only proximity ligation hybrids
-exp_stau1.utr3.df <- stau1.utr3.df %>%
-  dplyr::filter(!str_detect(cluster, "ID"))
-
 stau1.utr3.dt <- data.table(exp_stau1.utr3.df)
 paris.utr3.dt <- data.table(paris.utr3.df)
 
@@ -890,306 +730,29 @@ UpSetR::upset(fromExpression(upset.input),
 dev.off()
 ```
 
-
-```{r}
-# stau1.utr3.dt <- data.table(dplyr::filter(stau1.utr3.df, !str_detect(cluster, "ID")))
-# paris.utr3.dt <- data.table(paris.utr3.df)
-# 
-# stau1.utr3.dt <- reorient_hybrids(stau1.utr3.dt)
-# paris.utr3.dt <- reorient_hybrids(paris.utr3.dt)
-# # Sys.setenv(PATH="/Users/iosubi/opt/miniconda3/bin/")
-# bedpe.colnames <- c("L_seqnames", "L_start", "L_end", "R_seqnames", "R_start", "R_end", "name", "count", "L_strand", "R_strand")
-# stau1.utr3.bedpe.dt <- stau1.utr3.dt[, ..bedpe.colnames]
-# stau1.utr3.bedpe.dt[, `:=`(
-#   L_start = L_start - 1,
-#   R_start = R_start - 1
-# )]
-# 
-# paris.utr3.bedpe.dt <- paris.utr3.dt[, ..bedpe.colnames]
-# paris.utr3.bedpe.dt[, `:=`(
-#   L_start = L_start - 1,
-#   R_start = R_start - 1
-# )]
-# 
-# stau1.bedpe <- tempfile(tmpdir = getwd(), fileext = ".bedpe")
-# paris.bedpe <- tempfile(tmpdir = getwd(), fileext = ".bedpe")
-# 
-# ol <- tempfile(tmpdir = getwd(), fileext = ".bedpe")
-# 
-# fwrite(stau1.utr3.bedpe.dt, file = stau1.bedpe, sep = "\t", col.names = FALSE)
-# fwrite(paris.utr3.bedpe.dt, file = paris.bedpe, sep = "\t", col.names = FALSE)
-# cmd <- paste("bedtools pairtopair -rdn -a", stau1.bedpe, "-b", paris.bedpe, ">", ol)
-# system(cmd)
-# 
-# bedpe.dt <- fread(ol, col.names = c(paste0(bedpe.colnames, ".x"), paste0(bedpe.colnames, ".y")))
-# file.remove(stau1.bedpe)
-# file.remove(paris.bedpe)
-# file.remove(ol)
-# 
-# upset.input <- c("STAU1" = nrow(stau1.utr3.dt) - nrow(bedpe.dt),
-#                "PARIS" = nrow(paris.utr3.dt) - nrow(bedpe.dt),
-#                "STAU1&PARIS" = nrow(bedpe.dt))
-# 
-# #pdf(file.path(plots.dir, "stau1_paris_upset.pdf"), width = 7, height = 5)
-# UpSetR::upset(fromExpression(upset.input), 
-#       order.by = "freq",
-#       mainbar.y.label = "Intersecting number of duplexes",
-#       sets.x.label = "Total number of duplexes")
-# #dev.off()
-```
- 
-
-## Fig 4 C
-
-***
-> Hybrid spans
-
-
-
-#### Calculate hybrid spans to account for introns
+# Fig 4 C: Hybrid spans
 
 
 ```{r}
-# get_loop_size <- function(utr3.duplexes.dt, utr3.grl) {
-#   
-#   L.gr <- convert_to_granges(utr3.duplexes.dt, arm = "L", genomic = TRUE)
-#   R.gr <- convert_to_granges(utr3.duplexes.dt, arm = "R", genomic = TRUE)
-#   stopifnot(all(countOverlaps(L.gr, utr3.grl) != 0))
-#   stopifnot(all(countOverlaps(R.gr, utr3.grl) != 0))
-#   duplexes.grl <- split(c(L.gr, R.gr), c(L.gr, R.gr)$name)
-#   utr3.dt <- lapply(1:length(duplexes.grl), function(i) {
-#     
-#     # message(i)
-#     x <- duplexes.grl[[i]]
-#     
-#     # First get 3' UTR for the transcript
-#     ol <- findOverlaps(x, utr3.grl)
-#     stopifnot(length(ol) > 0)
-#     
-#     if(length(unique(subjectHits(ol))) == 1) {
-#       
-#       utr3 <- utr3.grl[unique(subjectHits(ol))]
-#       
-#       utr3 <- unlist(utr3)
-#       utr3$tx_name <- names(utr3)
-#       names(utr3) <- NULL
-#       
-#     } else {
-#       
-#       sel.ol <- unique(subjectHits(ol))
-#       sel.ol <- sel.ol[sapply(sel.ol, function(y) all(queryHits(ol[subjectHits(ol) == y]) == c(1, 2)))] # Keep only ones where both arms overlapped by same 3' UTR overlapped
-#       stopifnot(length(sel.ol) != 0)
-#       
-#       utr3 <- utr3.grl[sel.ol]
-#       
-#       utr3.tx.dt <- txlengths.dt[tx_name %in% names(utr3)] # select matching tx
-#       utr3.tx.dt[gene_id %in% x$L_gene_id] # keep only same genes
-#       utr3 <- utr3[names(utr3) %in% utr3.tx.dt[1]] # select longest 3' UTR 
-#       
-#       utr3 <- unlist(utr3)
-#       utr3$tx_name <- names(utr3)
-#       names(utr3) <- NULL
-#       
-#     }
-#     
-#     # Then work out introns
-#     utr3.dt <- data.table(name = unique(x$name),
-#                           ensg = unique(x$ensg),
-#                           utr3_start = min(start(utr3)),
-#                           utr3_end = max(end(utr3)),
-#                           utr3_width = sum(width(utr3)))
-#     
-#     g <- gaps(utr3, start = min(start(utr3)), end = max(end(utr3)))
-#     g <- g[seqnames(g) == unique(seqnames(utr3))]
-#     g <- g[strand(g) == unique(strand(utr3))]
-#     
-#     # Reversed order if strand is neg to match utr3
-#     if(unique(strand(utr3)) == "-") {
-#       g <- sort(g, decreasing = TRUE)
-#     } else {
-#       g <- sort(g)
-#     }
-#     utr3.dt[, utr3_intron := sum(width(g))]
-#     
-#     # Between arms   
-#     L.ol <- which(countOverlaps(utr3, x[1]) > 0)
-#     R.ol <- which(countOverlaps(utr3, x[2]) > 0)  
-#     
-#     if(L.ol == R.ol) {
-#       
-#       utr3.dt[, intron := 0]
-#       
-#     } else {
-#       
-#       stopifnot(R.ol > L.ol) # Should be this for all
-#       k <- seq(L.ol, R.ol - 1, by = 1) # which introns to keep
-#       utr3.dt[, intron := sum(width(g[k]))]
-#       
-#     }
-#     
-#     # Relative starts accounting for introns
-#     if(as.character(strand(x[1])) == "-") {
-#       
-#       L_abs_start <- max(end(utr3)) - end(x[1]) + 1
-#       if(L.ol != 1) {
-#         L_abs_start <- L_abs_start - sum(width(g[seq(1, L.ol - 1, by = 1)]))
-#       }
-#       R_abs_start <- max(end(utr3)) - end(x[2]) + 1
-#       if(R.ol != 1) {
-#         R_abs_start <- R_abs_start - sum(width(g[seq(1, R.ol - 1, by = 1)]))
-#       }
-#       
-#     } else {
-#       
-#       L_abs_start <- start(x[1]) - min(start(utr3)) + 1
-#       if(L.ol != 1) {
-#         L_abs_start <- L_abs_start - sum(width(g[seq(1, L.ol - 1)]))
-#       }
-#       R_abs_start <- start(x[2]) - min(start(utr3)) + 1
-#       if(R.ol != 1) {
-#         R_abs_start <- R_abs_start - sum(width(g[seq(1, R.ol - 1)]))
-#       }
-#       
-#     }
-#     
-#     # Relative ends accounting for introns
-#     if(as.character(strand(x[2])) == "-") {
-#       
-#       R_abs_end <- start(x[2]) - min(start(utr3)) + 1
-#       if(R.ol != length(utr3)) {
-#         R_abs_end <- R_abs_end - sum(width(g[seq(R.ol, length(utr3) - 1, by = 1)]))
-#       }
-#       
-#     } else {
-#       
-#       R_abs_end <- max(end(utr3)) - end(x[2]) + 1
-#       if(R.ol != length(utr3)) {
-#         R_abs_end <- R_abs_end - sum(width(g[seq(R.ol, length(utr3) - 1)]))
-#       }
-#       
-#     }  
-#     
-#     utr3.dt[, `:=` (L_abs_start = L_abs_start,
-#                     R_abs_start = R_abs_start,
-#                     R_abs_end = R_abs_end)]
-#     
-#     stopifnot(all(c(utr3.dt$L_abs_start,
-#                     utr3.dt$R_abs_start, 
-#                     utr3.dt$R_abs_end) < utr3.dt$utr3_width))
-#     
-#     return(utr3.dt)
-#     
-#   })
-#   stopifnot(all(elementNROWS(utr3.dt) == 1))
-#   utr3.dt <- rbindlist(utr3.dt)
-#   
-#   utr3.duplexes.dt <- merge(utr3.duplexes.dt, utr3.dt, by = c("name", "ensg"))
-#   utr3.duplexes.dt[R_abs_end < 0, R_abs_end := 0] # Some extend off end of annotated transcript
-#   utr3.duplexes.dt[, R_abs_end := -R_abs_end] # As distance from end
-#   # Calculations
-#   utr3.duplexes.dt[, `:=` (loop = R_start - L_end - 1 - intron,
-#                            L_rel_start = L_abs_start/utr3_width,
-#                            R_rel_start = R_abs_start/utr3_width)]
-#   stopifnot(nrow(utr3.duplexes.dt[loop > utr3_width]) == 0)
-#   
-#   return(utr3.duplexes.dt)
-#   
-# }
+utr3_clusters.df <- utr3_clusters.df %>%
+  rowwise() %>%
+  mutate(duplex_span = case_when(L_genomic_strand == "+" ~ R_genomic_duplex_start - L_genomic_duplex_end + 1 - 2,
+                                  L_genomic_strand == "-" ~ L_genomic_duplex_start - R_genomic_duplex_end + 1 - 2)) %>%
+  ungroup()
 
-```
-
-
-```{r}
-
-TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.txdb.sqlite")
-txlengths.dt <- data.table(transcriptLengths(TxDb, with.cds_len = TRUE,
-                                             with.utr5_len = TRUE,
-                                             with.utr3_len = TRUE))
-setorder(txlengths.dt, gene_id, -utr3_len)
-utr3.grl <- threeUTRsByTranscript(TxDb, use.names = TRUE)
-```
-
-
-```{r}
-utr3_paris.dt <- data.table(dplyr::filter(utr3_clusters.df, Experiment == "PARIS"))
-utr3_stau1.dt <- data.table(dplyr::filter(utr3_clusters.df, Experiment == "STAU1")) #  & detection_type == "Proximity ligation")
-
-utr3_stau1.dt[, ensg := sapply(strsplit(L_gene_id, "\\."), "[[", 1)]
-utr3_paris.dt[, ensg := sapply(strsplit(L_gene_id, "\\."), "[[", 1)]
-
-#utr3_stau1.dt <- get_loop_size(utr3_stau1.dt, utr3.grl)
-#fwrite(utr3_stau1.dt, file = "~/Desktop/stau1_utr3_loop_lengths.tsv.gz", sep = "\t")
-
-```
-
-
-```{r}
-utr3_paris.dt <- get_loop_size(utr3_paris.dt, utr3.grl)
-# nrow(rbind(utr3_stau1.dt, utr3_paris.dt))
-
-```
-
-```{r}
-```
-
-
-### Now PARIS
-
-
-
-```{r}
-#test <- dplyr::filter(utr3_paris.dt, str_detect(name, "C001-ZNF652"))
-#test <- data.table(test)
-
-#utr3.duplexes.dt <- utr3_paris.dt
-#utr3.duplexes.dt <- utr3.duplexes.dt[1:10, ]
-#utr3.duplexes.dt <- rbind(utr3.duplexes.dt, test)
-```
-
-
-```{r}
-mcol.ls = c('exon_id','exon_name','exon_rank') 
-datatype.ls = list(integer(),character(),integer())
-```
-
-
-```{r}
-
-
-
-
-
-
-```{r}
-# utr3_clusters.df <- utr3_clusters.df %>%
-#   rowwise() %>%
-#   mutate(duplex_span1 = R_start - L_end - 1) %>%
-#   ungroup()
-
-# utr3_clusters.df <- utr3_clusters.df %>%
-#   rowwise() %>%
-#   mutate(duplex_span = case_when(L_genomic_strand == "+" ~ R_genomic_duplex_start - L_genomic_duplex_end + 1 - 2,
-#                                   L_genomic_strand == "-" ~ L_genomic_duplex_start - R_genomic_duplex_end + 1 - 2)) %>%
-#   ungroup()
-```
-
-
-
-```{r}
-span_median <- utr3_stau1.dt %>%
+span_median <- utr3_clusters.df %>%
     group_by(Experiment, detection_type) %>%
-    dplyr::summarize(Median = median(loop, na.rm=TRUE))
+    dplyr::summarize(Median = median(duplex_span, na.rm=TRUE))
 span_median
 
-span_mean <- utr3_stau1.dt %>%
+span_mean <- utr3_clusters.df %>%
     group_by(Experiment, detection_type) %>%
-    dplyr::summarize(Mean = mean(loop, na.rm=TRUE))
+    dplyr::summarize(Mean = mean(duplex_span, na.rm=TRUE))
 span_mean
 ```
 
-
 ```{r}
-duplex_span.gg <- ggplot(utr3_stau1.dt, aes(x = loop, color = Experiment)) + 
+duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
   geom_density(adjust = 1.5) +
   scale_linetype_manual(values=c("dotted", "solid")) +
   scale_x_log10() + annotation_logticks(sides = "b") +
@@ -1200,10 +763,10 @@ duplex_span.gg <- ggplot(utr3_stau1.dt, aes(x = loop, color = Experiment)) +
   xlab("Duplex span (nt) ") +
   geom_vline(data=span_median, aes(xintercept=Median, color=Experiment),
              linetype="dashed") +
-  facet_grid(rows = vars(detection_type), scales = "free_y")
+  facet_grid(rows = vars(factor(detection_type, levels = c("Proximity ligation", "Prediction"))), scales = "free_y")
 
 duplex_span.gg
-#ggsave(paste0(plots.dir, "/duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 6.5, height = 4)
+# ggsave(paste0(plots.dir, "/duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 6.5, height = 4)
 ```
 ### Span groups
 
@@ -1217,22 +780,15 @@ utr3_clusters.df <- utr3_clusters.df %>%
 plot_stacked_barchart(data.df = dplyr::filter(utr3_clusters.df, !str_detect(cluster, "ID")), column = span_group, group = Experiment, simplify = FALSE)
 ```
 
-
-## Fig S4 C
+# Fig S4 C
 
 We can fit a 2-component Gaussian mixture model to the bimodal STAU1 distribution
-
-
-```{r}
-utr3_stau1.dt[utr3_stau1.dt$Experiment == "STAU1" & utr3_stau1.dt$detection_type == "Proximity ligation" & utr3_stau1.dt$loop == 0 ,]
-```
-
 
 ```{r}
 # Extract data for gauss mixture model
 
 set.seed(42)
-mixmdl <- normalmixEM(log10(utr3_stau1.dt[utr3_stau1.dt$Experiment == "STAU1" & utr3_stau1.dt$detection_type == "Proximity ligation" & utr3_stau1.dt$loop > 0 ,]$loop), k = 2)
+mixmdl <- normalmixEM(log10(utr3_clusters.df[utr3_clusters.df$Experiment == "STAU1" & utr3_clusters.df$detection_type == "Proximity ligation" & utr3_clusters.df$duplex_span > 0 ,]$duplex_span), k = 2)
 
 mix.gg <- ggplot() +
   geom_histogram(data = data.frame(x = mixmdl$x), aes(x, ..density..), bins = 100, fill = "grey75") +
@@ -1249,17 +805,12 @@ mix.gg <- ggplot() +
 
 mix.gg
 
-#ggsave(paste0(plots.dir, "/duplex_span_gauss_mixture.pdf"), mix.gg, dpi = 300, width = 4, height = 4)
+ggsave(paste0(plots.dir, "/duplex_span_gauss_mixture.pdf"), mix.gg, dpi = 300, width = 4, height = 4)
 ```
 
 This gives us two distributions with mean duplex spans of `r round(10^mixmdl$mu, 3)[1]` and `r round(10^mixmdl$mu, 3)[2]` and lambdas of `r round(mixmdl$lambda, 3)[1]` and `r round(mixmdl$lambda, 3)[2]` respectively.
 
-
-## Fig 4 D
-
-
-***
-> Stem lengths
+# Fig 4 D: Stem lengths
 
 Compare the number of paired residues within each duplex
 
@@ -1276,14 +827,6 @@ utr3_bp.df <- utr3_forgi.df %>%
 utr3_clusters.df <- left_join(utr3_clusters.df, utr3_bp.df, by = c("Experiment", c("name" = "id")))
 ```
 
-
-### Filter out predicted structures with stems shorter than 8 bp
-
-```{r}
-# utr3_clusters.df <- utr3_clusters.df %>%
-#   dplyr::filter(!(str_detect(cluster, "ID") & total_paired < 8))
-```
-
 ```{r}
 # Wilcox.test
 stau1.bp.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1" & !str_detect(cluster, "ID"))$total_paired
@@ -1296,18 +839,6 @@ mean(paris.bp.ls)
 
 wilcox.test(stau1.bp.ls, paris.bp.ls, alternative = "two.sided")
 ```
-
-```{r}
-# Counts for the plot
-# utr3_counts <- list(nrow(dplyr::filter(utr3_clusters.df, Experiment == "STAU1" & !str_detect(cluster, "ID"))), nrow(paris.utr3.df))
-# names(utr3_counts) <- c("STAU1", "PARIS")
-# utr3_counts.df <- as.data.frame(t(data.frame(utr3_counts)))
-# utr3_counts.df <- dplyr::rename(utr3_counts.df, counts = V1)
-# utr3_counts.df <- rownames_to_column(utr3_counts.df, var = "Experiment")
-
-```
-
-### Separate by the range of the interaction
 
 ```{r}
 span_counts <- utr3_clusters.df %>%
@@ -1328,18 +859,14 @@ total_paired.gg <- ggplot(utr3_clusters.df,
   theme(legend.position = "top") +
   ylab("Base-pairs per duplex (bp)") +
   ylim(-1.5, 40) +
-  #facet_grid(cols = vars(factor(span_group, levels=c("long range", "medium range", "short range", "predicted short range")))) +
+  facet_grid(cols = vars(factor(span_group, levels=c("long range", "medium range", "short range", "predicted short range")))) +
   geom_label(data = span_counts, aes(label=counts, y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 3)
 total_paired.gg 
-#ggsave(paste0(plots.dir, "/total_paired.pdf"), total_paired.gg, dpi = 300, width = 5, height = 6)
+# ggsave(paste0(plots.dir, "/total_paired.pdf"), total_paired.gg, dpi = 300, width = 5, height = 6)
 ```
 
-
-## Fig 4 E
-
-***
-> Hybridisation energy
+# Fig 4 E: Hybridisation energy
 
 ```{r}
 # Normalise MFE scores to number of paired res
@@ -1419,44 +946,11 @@ mfe.dens2.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, col
 
 mfe.dens2.gg
 
-#ggsave(paste0(plots.dir, "/hybridisation_energy.pdf"), mfe.dens2.gg, dpi = 300, width = 5.2, height = 4)
+# ggsave(paste0(plots.dir, "/hybridisation_energy.pdf"), mfe.dens2.gg, dpi = 300, width = 5.2, height = 4)
 
 ```
 
-```{r}
-
-# utr3_clusters_mfe2.df <- pivot_longer(utr3_clusters.df, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
-# 
-# utr3_clusters_mfe2.df <- utr3_clusters_mfe2.df %>%
-#   mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
-#                             (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
-# 
-# mfe_median3 <- utr3_clusters.df %>%
-#     group_by(Experiment, span_group) %>%
-#     dplyr::summarize(Median = median(mfe, na.rm = TRUE))
-# mfe_median
-# 
-# mfe.dens3.gg <- ggplot(utr3_clusters_mfe2.df, aes(x = MFE, linetype = Sample, color = Experiment)) + 
-#   geom_density(alpha = 0.8) +
-#   #annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
-#   scale_linetype_manual(values=c("longdash", "solid")) +
-#   scale_color_tableau() +
-#   theme_minimal_grid() + 
-#   facet_grid(rows = vars(Experiment), cols = vars(span_group)) +
-#   theme(legend.position = "top") +
-#   ylab("Density") +
-#   xlab("Normalised hybridisation energy (kcal/mol)/bp") +
-#   geom_vline(data=mfe_median3, aes(xintercept=Median, color=Experiment),
-#              linetype="dashed") 
-# 
-# mfe.dens3.gg
-
-```
-
-## Fig 4 F
-
-***
-> Proportion of paired residues
+# Fig 4 F: Proportion of paired residues
 
 The *paired metric* is a measure that takes into account the ratio of paired residues to non-paired residues (bulges and internal loops) in each duplex. The formula is:
 
@@ -1480,12 +974,10 @@ Calculate the percentage of paired residues:
 ```{r}
 # Calculate paired metric
 unpaired.df <- get_unpaired_total(utr3_forgi.df, group = Experiment)
+utr3_clusters.df <- left_join(utr3_clusters.df, unpaired.df, by = c("Experiment", c("name" = "id")))
 ```
 
-
 ```{r}
-utr3_clusters.df <- left_join(utr3_clusters.df, unpaired.df, by = c("Experiment", c("name" = "id")))
-
 paired_metric.df <- get_paired_metric(utr3_clusters.df, group = Experiment)
 utr3_clusters.df <- left_join(utr3_clusters.df, paired_metric.df, by = c("Experiment", "name"))
 
@@ -1528,16 +1020,10 @@ paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = Ex
   #annotate("text", label = paste0("p = ", paired_ratio.pval), x = 80, y = 0.07)
 
 paired_metric.gg
-#ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
+# gsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
 ```
 
-
-## Fig 4 G
-
-***
-> Number of bulges
-
-
+# Fig 4 G: Number of bulges
 
 ```{r}
 bulges.df <- utr3_forgi.df %>%
@@ -1555,8 +1041,12 @@ bulges.df <- utr3_forgi.df %>%
 utr3_clusters.df <- left_join(utr3_clusters.df, bulges.df, by = c("Experiment", c("name" = "id")))
 
 utr3_clusters.df <- utr3_clusters.df %>%
+  dplyr::select(-L_db, -R_db)
+
+utr3_clusters.df <- utr3_clusters.df %>%
     replace(is.na(.), 0)
 ```
+
 
 ```{r}
 # Wilcox.test
@@ -1576,7 +1066,7 @@ utr3_clusters.df$Experiment <- factor(utr3_clusters.df$Experiment, levels = c("S
 
 bulges.gg <- ggplot(utr3_clusters.df,
                          aes(x = Experiment, y=bulge_count, fill=Experiment)) +
-  geom_boxplot(outlier.shape = NA, width = 0.5) +
+  geom_boxplot(width = 0.5) +
   scale_fill_brewer(palette="Blues") +
   theme(legend.position="right", legend.direction="vertical") +
   scale_fill_tableau() +
@@ -1584,18 +1074,15 @@ bulges.gg <- ggplot(utr3_clusters.df,
   theme(legend.position = "top") +
   #ggtitle("Bulges per duplex") +
   ylab("Bulges per duplex") +
-  ylim(-1.5, 10) +
+  ylim(-1.5, 16) +
   facet_grid(cols = vars(factor(span_group, levels = c("long range", "medium range", "short range", "predicted short range")))) +
    geom_label(data = span_counts, aes(label=counts, y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 3)
 bulges.gg
-#ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 5, height = 6)
+ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 5, height = 6)
 ```
 
-## Fig 4 H
-
-***
-> Symmetry classification
+# Fig 4 H: Symmetry classification
 
 
 The *symmetry classification* is a measure that takes into account the relative position and numbers of bulges and internal loops in each predicted stem-loop structure
@@ -1652,19 +1139,6 @@ unique(symmetry.df$symmetry_type)
 stopifnot(nrow(dplyr::filter(symmetry.df, is.na(symmetry_type))) == 0)
 ```
 
-
-
-
-```{r warning=FALSE}
-# Get percentages of stem_types
-# symmetry.gg <- plot_stacked_barchart(symmetry.df, column = symmetry_type, group = Experiment, simplify = FALSE) +
-#   scale_fill_brewer(palette = "PuBuGn") +
-#   coord_polar("y", start=0) +
-#   guides(fill = guide_legend(title = "Structure type")) +
-#     theme_void()
-# symmetry.gg 
-# ggsave(paste0(plots.dir, "/symmetry.pdf"), symmetry.gg, dpi = 300, width = 7, height = 4)
-```
 ```{r}
 data_counts.df <- symmetry.df %>%
     dplyr::select(name, Experiment, span_group, symmetry_type) %>%
@@ -1681,7 +1155,6 @@ data_counts.df <- symmetry.df %>%
 data_counts.df <- data_counts.df %>%
       mutate(category = symmetry_type)
 ```
-
 
 ```{r}
 bar = ggplot() + 
@@ -1701,9 +1174,8 @@ bar
 # ggsave(paste0(plots.dir, "/symmetry.pdf"), bar, dpi = 300, width = 7, height = 4)
 ```
 
-
 ***
-> Symmetry
+> Symmetry incl "Balanced"
 
 ```{r}
 symmetry2.df <- utr3_clusters.df %>%
@@ -1746,17 +1218,6 @@ data_counts2.df <- data_counts2.df %>%
 
 bar2
 ```
-
-
-
-
-# Supplementary figure
-
-
-
-
-
-
 
 # Extras/ scraps
 
@@ -1819,8 +1280,6 @@ gc_pairs.gg <- ggplot(paired_res.df, aes(x = GC_percentage, color = Experiment))
 
 gc_pairs.gg
 ```
-
-
 
 ```{r}
 gc_median <- paired_res.df %>%
@@ -1915,6 +1374,36 @@ nuc_freq.gg
 nuc_freq.gg
 ```
 
+***
+> Non-normalised MFE
 
+```{r}
 
+# utr3_clusters_mfe2.df <- pivot_longer(utr3_clusters.df, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
+# 
+# utr3_clusters_mfe2.df <- utr3_clusters_mfe2.df %>%
+#   mutate(Sample = case_when((Sample == "mfe") ~ "STAU1",
+#                             (Sample == "mean_shuffled_mfe") ~ "Shuffled control"))
+# 
+# mfe_median3 <- utr3_clusters.df %>%
+#     group_by(Experiment, span_group) %>%
+#     dplyr::summarize(Median = median(mfe, na.rm = TRUE))
+# mfe_median
+# 
+# mfe.dens3.gg <- ggplot(utr3_clusters_mfe2.df, aes(x = MFE, linetype = Sample, color = Experiment)) + 
+#   geom_density(alpha = 0.8) +
+#   #annotate("text", label = "p < 2.2e-16", x = -1, y = 1.7) +
+#   scale_linetype_manual(values=c("longdash", "solid")) +
+#   scale_color_tableau() +
+#   theme_minimal_grid() + 
+#   facet_grid(rows = vars(Experiment), cols = vars(span_group)) +
+#   theme(legend.position = "top") +
+#   ylab("Density") +
+#   xlab("Normalised hybridisation energy (kcal/mol)/bp") +
+#   geom_vline(data=mfe_median3, aes(xintercept=Median, color=Experiment),
+#              linetype="dashed") 
+# 
+# mfe.dens3.gg
+
+```
 
