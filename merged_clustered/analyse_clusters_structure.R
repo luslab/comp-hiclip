@@ -10,12 +10,7 @@ suppressPackageStartupMessages(library(Biostrings))
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(stringr))
 
-# ==========
-# Define functions
-# ==========
 
-
-# These functions defined because of the ushuffle isssue
 shuffle_sequence <- function(sequence, number = 1, klet = 2, seed = 42) {
   system(paste0("ushuffle -seed ", seed, " -k ", klet, " -n ", number, " -s ", sequence), intern = TRUE)
 }
@@ -48,7 +43,9 @@ get_shuffled_mfe <- function(name, L_sequence, R_sequence) {
   return(unique(shuffled_mfe.dt[, .(name, mean_shuffled_mfe, sd_shuffled_mfe)]))
 }
 
-# Annotation
+# ==========
+# Define functions
+# ==========
 
 get_forgi <- function(id, db, script_path = ".") {
   
@@ -94,6 +91,7 @@ option_list <- list(make_option(c("", "--clusters"), action = "store", type = "c
                     make_option(c("", "--output"), action = "store", type = "character", help = "Output file"),
                     make_option(c("", "--nodes"), action = "store", type = "integer", default = 100, help = "Number of nodes to allocate [default: %default]"),
                     make_option(c("", "--shuffled_mfe"), action = "store_true", type = "logical", help = "Calculate shuffled binding energy (100 iterations)", default = FALSE),
+                    make_option(c("", "--clusters_only"), action = "store_true", type = "logical", help = "Calculate only for duplexes in clusters", default = FALSE),
                     make_option(c("", "--intragenic"), action = "store_true", type = "logical", help = "Consider only intragenic clusters", default = FALSE),
                     make_option(c("", "--threeutr"), action = "store_true", type = "logical", help = "Consider only 3'UTR-3'UTR clusters (for forgi annotation only)", default = FALSE))
 opt_parser = OptionParser(option_list = option_list)
@@ -118,11 +116,30 @@ if(opt$intragenic) {
   clusters.dt <- clusters.dt
 }
 
-message(paste0("Analysing ", nrow(clusters.dt), " clusters"))
-
 # Extract genomic sequence
 
 fa.dt <- data.table(gene_id = names(fa.dss), sequence = as.character(fa.dss))
+
+# focus on reads that have been clustered, if analysing the collapsed clusters
+
+if (opt$clusters_only) {
+  
+  clusters.dt <- data.table(dplyr::filter(clusters.dt, str_detect(cluster, "C")))
+  
+} else {
+  
+  clusters.dt <- clusters.dt
+}
+
+
+if (c("mfe", "structure") %in% colnames(clusters.dt)) {
+  
+  clusters.dt <- dplyr::select(clusters.dt, -mfe, -structure)
+} else {
+  clusters.dt <- clusters.dt
+}
+
+message(paste0("Analysing ", nrow(clusters.dt), " clusters"))
 
 clusters.dt <- primavera::get_sequence(clusters.dt, fa.dt)
 stopifnot(!any(is.na(c(clusters.dt$L_sequence, clusters.dt$L_sequence))))
@@ -146,11 +163,11 @@ message("RNAduplex is running..")
 
 status <- FALSE
 while(status == FALSE) {
-
+  
   squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
   if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left
   Sys.sleep(60)
-
+  
 }
 
 structure.list <- get_slurm_out(sjob)
@@ -163,6 +180,7 @@ cleanup_files(sjob) # Remove temporary files
 # structure.list <- readRDS("mfe.rds")
 structure.dt <- rbindlist(structure.list)
 clusters.dt <- merge(clusters.dt, structure.dt, by = "name")
+clusters.dt <- data.table(distinct(clusters.dt))
 
 
 # ==========
@@ -197,6 +215,8 @@ if(opt$shuffled_mfe) {
   
 }
 
+
+clusters.dt <- data.table(distinct(clusters.dt))
 fwrite(clusters.dt, opt$output, sep = "\t")
 
 

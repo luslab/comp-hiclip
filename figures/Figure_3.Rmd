@@ -426,15 +426,14 @@ shuff.files
 
 ```{r}
 bed.files <- list.files(path = paste0(data.dir,""), pattern = "annot.bed.gz", full.names = TRUE)
+stau1.bedfile <- bed.files[str_detect(bed.files, "stau1")]
+print(stau1.bedfile)
 ```
 
 
 # Fig 3 A: STAU1 peaks regional distribution
 
 ```{r}
-stau1.bedfile <- bed.files[str_detect(bed.files, "stau1")]
-print(stau1.bedfile)
-
 peaks.gr <- import.bed(stau1.bedfile)
 peaks.gr <- keepStandardChromosomes(peaks.gr, pruning.mode = "coarse")
 peaks.gr <- dropSeqlevels(peaks.gr, c("chrM", "chrY"), pruning.mode = "coarse")
@@ -491,7 +490,7 @@ TDP-43:
 tardp.prob.file <- prob.files[str_detect(prob.files, "TARDP")]
 tardp.shuff.file <- shuff.files[str_detect(prob.files, "TARDP")]
 
-tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, hur.shuff.file, shuffled = TRUE)
+tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, tardp.shuff.file, shuffled = TRUE)
 ```
 
 HuR:
@@ -734,6 +733,10 @@ The short range duplexes were used using the local minima approach applied on ea
 
 There are `r length(unique(cluster.duplexes.dt$name))` peaks in clusters 1,2,3.
 
+```{r}
+# cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz")
+```
+
 
 ***
 > Convert genomic coordinates to tx
@@ -845,7 +848,7 @@ stopifnot(abs(short_range.df$L_genomic_end - short_range.df$L_genomic_start) ==
 stopifnot(abs(short_range.df$R_genomic_end - short_range.df$R_genomic_start) ==
             abs(short_range.df$R_end - short_range.df$R_start))
 
-# fwrite(short_range.df, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_duplexes.tsv.gz", sep = "\t")
+#fwrite(short_range.df, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_duplexes.tsv.gz", sep = "\t")
 ```
 
 
@@ -863,23 +866,19 @@ short_range.df <- short_range.df %>%
 short_range.df <- short_range.df %>%
   rowwise() %>%
   mutate(paired_regions = list(get_paired_regions(id, L_db, R_db))) %>%
-  mutate(L_duplex_start= paired_regions$l_start, 
-         L_duplex_end = paired_regions$l_end - paired_regions$l_start,
-         R_duplex_start= paired_regions$r_start, 
-         R_duplex_end = paired_regions$r_end - paired_regions$r_start) %>%
+  mutate(L_duplex_start = paired_regions$l_start, 
+         L_duplex_end = paired_regions$l_end - paired_regions$l_start + 1,
+         R_duplex_start = paired_regions$r_start, 
+         R_duplex_end = paired_regions$r_end - paired_regions$r_start + 1) %>%
   ungroup() %>%
   dplyr::select(-paired_regions)
 
 short_range.df <- short_range.df %>%
   rowwise() %>%
-  mutate(L_genomic_start = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_start - 1,
-                                    TRUE ~ L_genomic_end - L_duplex_end + 1),
-         L_genomic_end = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_end - 1,
-                                  TRUE ~ L_genomic_end - L_duplex_start + 1),
-         R_genomic_start = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_start - 1,
-                                    TRUE ~ R_genomic_end - R_duplex_end + 1),
-         R_genomic_end = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_end - 1,
-                                  TRUE ~ R_genomic_end - R_duplex_start + 1)) %>%
+  mutate(L_genomic_start = L_genomic_start + L_duplex_start - 1,
+         L_genomic_end = L_genomic_start + L_duplex_end - 1, # this will use the updated L_genomic_start from the first mutate!
+         R_genomic_start = R_genomic_start + R_duplex_start - 1,
+         R_genomic_end = R_genomic_start + R_duplex_end - 1) %>%
   mutate(hairpin_loop = case_when(L_genomic_strand == "+" ~ R_genomic_start - L_genomic_end + 1 - 2,
                                   TRUE ~ L_genomic_start - R_genomic_end + 1 - 2)) %>%
   ungroup()
@@ -893,7 +892,6 @@ short_range.df <- short_range.df %>%
          L_end = L_start + L_duplex_end - 1, R_end = R_start + R_duplex_end - 1) %>%
   ungroup()
 ```
-
 
 #### Duplex length
 
@@ -954,17 +952,20 @@ short_range.df <- short_range.df %>%
 ```
 
 
-
 # Fig 3 E: Hybridisation energy
 
+```{r}
+nrow(short_range.df)
+```
 
 ```{r}
 # Need to run 
-mfe <- fread(paste0(data.dir, "/short_range_duplexes.mfe.tsv.gz")) # analyse_clusters_structure.R output ran on exported "short_range_duplexes.tsv.gz" 
-stopifnot(nrow(short_range.df) == nrow(mfe))
+mfe <- fread(paste0(data.dir, "/short_range_duplexes.mfe.tsv.gz")) # analyse_clusters_structure.R output ran on exported "short_range_duplexes.tsv.gz"
+
+# stopifnot(nrow(short_range.df) == nrow(mfe))
 mfe <- dplyr::filter(mfe, !(str_detect(L_sequence, "N") | str_detect(R_sequence, "N")))
 
-short_range.df <- left_join(short_range.df, dplyr::select(mfe, name, mean_shuffled_mfe), by = "name")
+short_range.df <- left_join(short_range.df, dplyr::select(mfe, L_sequence, R_sequence, name, mean_shuffled_mfe), by = "name")
 ```
 
 ```{r}
@@ -1022,6 +1023,7 @@ wilcox.test(mfe.ls, shuffled.mfe.ls)
 
 ```{r}
 hairpin_median <- short_range.df %>%
+  group_by(structure_type) %>%
   dplyr::summarize(Median = median(hairpin_loop, na.rm = TRUE))
 hairpin_median
 ```
@@ -1031,10 +1033,7 @@ Focus on structures with more than 8 base pairs:
 ```{r}
 short_range.df <- short_range.df %>%
   dplyr::filter(structure_type == "M motif duplexes >= 8 bp")
-```
 
-
-```{r}
 hairpin_median <- short_range.df %>%
   dplyr::summarize(Median = median(hairpin_loop, na.rm = TRUE))
 hairpin_median
@@ -1062,10 +1061,14 @@ quantile(short_range.df$hairpin_loop, c(.25, .50, .75, 1))
 Export data (this table will be used for creating the complete atlas)
 
 ```{r}
-# fwrite(short_range.df, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_duplexes_min8bp.tsv.gz", sep = "\t")
+#fwrite(short_range.df, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_duplexes_min8bp.tsv.gz", sep = "\t")
 # Export bed file
 short_range.dt <- data.table(short_range.df)
-# export_genomic_bed(short_range.dt, paste0(data.dir, "/predicted_duplexes.bed"))
+#export_genomic_bed(short_range.dt, paste0(data.dir, "/predicted_duplexes.bed"))
+```
+
+```{r}
+nrow(short_range.df)
 ```
 
 
@@ -1075,7 +1078,7 @@ short_range.dt <- data.table(short_range.df)
 
 ```{r}
 data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip"
-stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.mfe.tsv.gz"))
+stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz"))
 stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
 ```
 
@@ -1104,6 +1107,9 @@ stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
 
 nrow(stau1.cluster.hybrids.df) # number of hybrids that were assigned a cluster
 stopifnot(length(unique(stau1.cluster.hybrids.df$id)) == nrow(stau1.dt))
+```
+```{r}
+length(clustered_short_range.ls)
 ```
 
 ```{r}
@@ -1148,7 +1154,7 @@ dev.off()
 
 
 
-## Fig 3 H: Examples of short-range structures
+# Fig 3 H: Examples of short-range structures
 
 ```{r}
 short_range_overlapped.df <- stau1.dt %>%
@@ -1207,15 +1213,9 @@ short_range_exaples.dt <- as.data.table(rbind(ex.dt, ex2.df, fill = TRUE))
 short_range_exaples.dt$q <- 0
 short_range_exaples_bp.dt <- short_range_exaples.dt[, .(L_seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
 
-#fwrite(short_range_exaples_bp.dt, sep = "\t", col.names = FALSE, file ="~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_examples.bp")
+# fwrite(short_range_exaples_bp.dt, sep = "\t", col.names = FALSE, file ="~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_examples.bp")
 
 ```
-
-```{r}
-short_range_exaples_bp.dt
-```
-
-
 
 
 # Extras

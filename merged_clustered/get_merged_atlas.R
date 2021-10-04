@@ -23,7 +23,7 @@ nolinker.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hi
 nolinker.dt$sample <- "stau1_nolinker"
 
 # Non-hybrids, files produced in Figure_3.Rmd
-nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/lmin/short_range_duplexes.tsv.gz")
+nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/short_range_duplexes_min8bp.tsv.gz")
 nonhybrid.dt$sample <- "stau1_nonhybrid"
 
 
@@ -83,8 +83,6 @@ all.clusters.list <- parallel::mclapply(all.list, cluster_hybrids, percent_overl
 all.clusters.dt <- rbindlist(all.clusters.list, use.names = TRUE, fill = TRUE)
 all.clusters.dt <- convert_coordinates(all.clusters.dt, genes.gr)
 all.clusters.dt <- annotate_hybrids(all.clusters.dt, regions.gr)
-
-
 #all.clusters.dt[L_seqnames == R_seqnames][!L_seqnames %in% c("tRNA", "rDNA", "rRNA_5S")][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)]
 
 all.collapsed  <- collapse_clusters(all.clusters.dt, mode = "median")
@@ -94,27 +92,21 @@ all.collapsed.dt <- convert_coordinates(all.collapsed, genes.gr)
 # Add the rest of the non-hybrid reads
 # ==========
 
-
-nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/lmin/short_range_duplexes.tsv.gz")
+nonhybrid.dt <- fread("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/short_range_duplexes_min8bp.tsv.gz")
 nonhybrid.dt$sample <- "stau1_nonhybrid"
 nonhybrid.dt$cluster <- nonhybrid.dt$name
-
 
 test  <-  all.clusters.dt %>%
   dplyr::filter(sample == "stau1_nonhybrid")
 stopifnot(nrow(test) == nrow(nonhybrid.dt))
-
-
 short_range_clustered.df <- all.clusters.dt %>%
   dplyr::filter(str_detect(cluster, "C") & sample == "stau1_nonhybrid")
-
 
 nonhybrid.dt <- nonhybrid.dt %>%
   dplyr::filter(!(name %in% short_range_clustered.df$name)) %>%
   dplyr::select(colnames(all.collapsed.dt))
 
 nonhybrid.dt <- as.data.table(nonhybrid.dt)
-
 
 nrow(all.collapsed.dt)
 all.collapsed.dt <- rbind(all.collapsed.dt, nonhybrid.dt)
@@ -125,7 +117,6 @@ nrow(all.collapsed.dt)
 # ==========
 
 all.collapsed.dt <- annotate_hybrids(all.collapsed.dt, regions.gr)
-
 
 # ==========
 # Export tables
