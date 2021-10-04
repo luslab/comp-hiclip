@@ -315,7 +315,7 @@ get_duplex <- function(region.dt, cluster_number, cores = 4) {
 
 ```
 
-#### Functions: hybrids clustering
+#### Functions: coordinate conversion
 
 ```{r}
 resize_peaks <- function(bedfiles.list, left = 100, right = 100) {
@@ -380,6 +380,42 @@ get_stem_loop_sequence <- function(hybrids.dt, genome.dt) {
   seq.dt[, `:=`(c("gene_id", "sequence"), NULL)]
 
   return(seq.dt)
+}
+```
+
+
+```{r}
+trim_duplex_overhangs <- function(clusters.df) {
+  
+  # Separate L_db and R_db
+  clusters.df <- clusters.df %>%
+    separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
+  
+  # Get positions of paired residues within structures of each arm
+  clusters.df <- clusters.df %>%
+    rowwise() %>%
+    mutate(paired_regions = list(get_paired_regions(id, L_db, R_db))) %>%
+    mutate(L_duplex_start = paired_regions$l_start, 
+           L_duplex_end = paired_regions$l_end,
+           R_duplex_start = paired_regions$r_start, 
+           R_duplex_end = paired_regions$r_end) %>%
+    ungroup() %>%
+    dplyr::select(-paired_regions)
+  
+  # Adjust genomic coordinates to only include the paired region
+  clusters.df <- clusters.df %>%
+    rowwise() %>%
+    mutate(L_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_start - 1,
+                                      TRUE ~ L_genomic_end - L_duplex_end + 1),
+           L_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ L_genomic_start + L_duplex_end - 1,
+                                    TRUE ~ L_genomic_end - L_duplex_start + 1),
+           R_genomic_duplex_start = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_start - 1,
+                                      TRUE ~ R_genomic_end - R_duplex_end + 1),
+           R_genomic_duplex_end = case_when(L_genomic_strand == "+" ~ R_genomic_start + R_duplex_end - 1,
+                                    TRUE ~ R_genomic_end - R_duplex_start + 1)) %>%
+    ungroup()
+  
+  return(clusters.df)
 }
 ```
 
@@ -733,11 +769,6 @@ The short range duplexes were used using the local minima approach applied on ea
 
 There are `r length(unique(cluster.duplexes.dt$name))` peaks in clusters 1,2,3.
 
-```{r}
-# cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz")
-```
-
-
 ***
 > Convert genomic coordinates to tx
 
@@ -857,28 +888,15 @@ stopifnot(abs(short_range.df$R_genomic_end - short_range.df$R_genomic_start) ==
 #### Trim dot bracket structure to focus only on the paired regions and adjust genomic coordinates
 
 ```{r}
-# Trim unpaired residues at the ends of left and right arms
-# Separate L_db and R_db
-short_range.df <- short_range.df %>%
-  separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
-
 # Get positions of paired residues within structures of each arm
-short_range.df <- short_range.df %>%
-  rowwise() %>%
-  mutate(paired_regions = list(get_paired_regions(id, L_db, R_db))) %>%
-  mutate(L_duplex_start = paired_regions$l_start, 
-         L_duplex_end = paired_regions$l_end - paired_regions$l_start + 1,
-         R_duplex_start = paired_regions$r_start, 
-         R_duplex_end = paired_regions$r_end - paired_regions$r_start + 1) %>%
-  ungroup() %>%
-  dplyr::select(-paired_regions)
+
+short_range.df <- trim_duplex_overhangs(short_range.df)
 
 short_range.df <- short_range.df %>%
+  mutate(L_genomic_start = L_genomic_duplex_start, L_genomic_end = L_genomic_duplex_end,
+         R_genomic_start = R_genomic_duplex_start, R_genomic_end = R_genomic_duplex_end) %>%
+  dplyr::select(.,-contains("_genomic_duplex_")) %>%
   rowwise() %>%
-  mutate(L_genomic_start = L_genomic_start + L_duplex_start - 1,
-         L_genomic_end = L_genomic_start + L_duplex_end - 1, # this will use the updated L_genomic_start from the first mutate!
-         R_genomic_start = R_genomic_start + R_duplex_start - 1,
-         R_genomic_end = R_genomic_start + R_duplex_end - 1) %>%
   mutate(hairpin_loop = case_when(L_genomic_strand == "+" ~ R_genomic_start - L_genomic_end + 1 - 2,
                                   TRUE ~ L_genomic_start - R_genomic_end + 1 - 2)) %>%
   ungroup()
@@ -888,9 +906,11 @@ short_range.df <- dplyr::filter(short_range.df, hairpin_loop != 0)
 # Also adjust tx coordinates
 short_range.df <- short_range.df %>%
   rowwise() %>%
-  mutate(L_start = L_start + L_duplex_start - 1, R_start = R_start + R_duplex_start - 1,
-         L_end = L_start + L_duplex_end - 1, R_end = R_start + R_duplex_end - 1) %>%
-  ungroup()
+  mutate(L_tx_duplex_start = L_start + L_duplex_start - 1, R_tx_duplex_start = R_start + R_duplex_start - 1,
+         L_tx_duplex_end = L_start + L_duplex_end - 1, R_tx_duplex_end = R_start + R_duplex_end - 1) %>%
+  ungroup() %>%
+  mutate(L_start = L_tx_duplex_start, R_start = R_tx_duplex_start, L_end = L_tx_duplex_end, R_end = R_tx_duplex_end) %>%
+  dplyr::select(.,-contains("_tx_duplex_"))
 ```
 
 #### Duplex length
