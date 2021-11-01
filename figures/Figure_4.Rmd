@@ -492,19 +492,13 @@ stau1_forgi.dt <- distinct(stau1_forgi.dt)
 #fwrite(stau1_forgi.dt, paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.forgi.tsv.gz"), sep = "\t")
 ```
 
-# Main figure
-
-## Fig 4 A
-
-### Summary of atlas (counts)
-
 ***
 > STAU1 hiCLIP cluster counts
 
 The number of STAU1 clusters is `r nrow(stau1.dt)`
 
 ```{r}
-# Exclude rRNA and tRNA
+# Exclude rRNA and tRNA from PARIS duplexes
 paris.dt <- paris.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
 paris.dt <- paris.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
 paris.dt <- paris.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
@@ -555,8 +549,10 @@ interregion_colours <- c("CDS - CDS" = "#638b66", "CDS - ncRNA" = "#B03A2E", "CD
 intra_stau1.dt <- intra_stau1.dt %>%
   dplyr::filter(L_region != "intron" & R_region != "intron")
 
+nrow(intra_stau1.dt)
+
 stau1_duplex_regions.df <- intra_stau1.dt %>%
-  dplyr::filter(!str_detect(cluster, "ID")) %>%
+  dplyr::filter(!str_detect(cluster, "ID")) %>% # exclude predicted duplexes 
   rowwise() %>%
   mutate(region_pairs = paste(sort(c(L_region, R_region)), collapse = " - ")) %>%
   ungroup()
@@ -573,6 +569,9 @@ stau1.regions.gg
 # ggsave(paste0(plots.dir, "/stau1_arm_region_pairs.pdf"), stau1.regions.gg, width = 5, height = 8, dpi = 300)
 
 ```
+
+
+
 ***
 > PARIS locations
 
@@ -609,9 +608,9 @@ paris_regions.gg <- plot_stacked_barchart(intra_paris_duplex_regions.df, region_
 paris_regions.gg
 # ggsave(paste0(plots.dir, "/paris_arm_region_pairs.pdf"), paris_regions.gg, width = 5, height = 8, dpi = 300)
 ```
-> Filter intragenic 3'UTR duplexes from both datasets
+> Filter intra-transcript 3'UTR duplexes from both datasets
 
-To get more comparable datasets, we focused on the 3'UTR intragenic duplexes for both STAU1 and PARIS. 
+To get more comparable datasets, we focused on the 3'UTR intra-transcript duplexes for both STAU1 and PARIS. 
 
 ```{r}
 stau1.utr3.df <- intra_stau1.dt %>%
@@ -620,23 +619,20 @@ stau1.utr3.df <- intra_stau1.dt %>%
 
 paris.mfe.dt <- paris.mfe.dt %>%
   rowwise() %>%
-  mutate(type = case_when(L_gene_id == R_gene_id ~ "Intragenic",
-                          TRUE ~ "Intergenic"))
+  mutate(type = case_when(L_gene_id == R_gene_id ~ "Intra-transcript",
+                          TRUE ~ "Inter-transcript"))
 
 paris.utr3.df <- paris.mfe.dt %>%
   dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3") %>%
   mutate(Experiment = "PARIS")
 
 
-# Filter structure annotation files for the 3'UTR-3'UTR intragenic clusters
+# Filter structure annotation files for the 3'UTR-3'UTR intra-transcript clusters
 utr3_stau1_forgi.df <- semi_join(stau1_forgi.dt, stau1.utr3.df, by = c("id" = "name"))
 utr3_paris_forgi.df <- semi_join(paris_forgi.dt, paris.utr3.df, by = c("id" = "name"))
 utr3_stau1_forgi.df$Experiment <- "STAU1"
 utr3_paris_forgi.df$Experiment <- "PARIS"
-```
 
-
-```{r}
 # Append datasets
 utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df)
 ```
@@ -656,14 +652,20 @@ Need to adjust the genomic and transcriptomic coordinates to focus on the stem o
 ```{r}
 utr3_clusters.df <- utr3_clusters.df %>%
   mutate(detection_type = case_when(!str_detect(cluster, "ID") ~ "Proximity ligation",
-                                    TRUE ~ "Prediction"))
+                                    TRUE ~ "Predicted"))
 
 # only proximity ligation hybrids
 exp.utr3.df <- utr3_clusters.df %>%
   dplyr::filter(detection_type == "Proximity ligation")
 
+nrow(dplyr::filter(exp.utr3.df, Experiment == "STAU1"))
+```
+
+There are `r nrow(exp.utr3.df)` experimentally determined duplexes within the STAU1 atlas
+
+```{r}
 predicted_stau1.utr3.df <- utr3_clusters.df %>%
-  dplyr::filter(detection_type == "Prediction")
+  dplyr::filter(detection_type == "Predicted")
 
 exp.utr3.df <- trim_duplex_overhangs(exp.utr3.df)
 
@@ -685,6 +687,7 @@ utr3_clusters.df$Experiment <- factor(utr3_clusters.df$Experiment, levels = c("S
 Comparison with PARIS HEK293 (Lu et al. 2016)
 
 ```{r}
+exp_stau1.utr3.df <- dplyr::filter(exp.utr3.df, Experiment == "STAU1")
 stau1.utr3.dt <- data.table(exp_stau1.utr3.df)
 paris.utr3.dt <- data.table(paris.utr3.df)
 
@@ -722,6 +725,10 @@ file.remove(ol)
 upset.input <- c("STAU1" = nrow(stau1.utr3.dt) - nrow(bedpe.dt),
                "PARIS" = nrow(paris.utr3.dt) - nrow(bedpe.dt),
                "STAU1&PARIS" = nrow(bedpe.dt))
+```
+
+```{r}
+upset.input
 ```
 
 
@@ -784,7 +791,7 @@ utr3_clusters.df <- utr3_clusters.df %>%
 plot_stacked_barchart(data.df = dplyr::filter(utr3_clusters.df, !str_detect(cluster, "ID")), column = span_group, group = Experiment, simplify = FALSE)
 ```
 
-# Fig S4 C
+# Fig S4 A
 
 We can fit a 2-component Gaussian mixture model to the bimodal STAU1 distribution
 
@@ -809,10 +816,20 @@ mix.gg <- ggplot() +
 
 mix.gg
 
-ggsave(paste0(plots.dir, "/duplex_span_gauss_mixture.pdf"), mix.gg, dpi = 300, width = 4, height = 4)
+# ggsave(paste0(plots.dir, "/duplex_span_gauss_mixture.pdf"), mix.gg, dpi = 300, width = 4, height = 4)
 ```
 
 This gives us two distributions with mean duplex spans of `r round(10^mixmdl$mu, 3)[1]` and `r round(10^mixmdl$mu, 3)[2]` and lambdas of `r round(mixmdl$lambda, 3)[1]` and `r round(mixmdl$lambda, 3)[2]` respectively.
+
+```{r}
+round(10^mixmdl$mu, 3)[1]
+
+round(10^mixmdl$mu, 3)[2]
+
+round(mixmdl$lambda, 3)[1]
+
+round(mixmdl$lambda, 3)[2]
+```
 
 # Fig 4 D: Stem lengths
 
@@ -918,6 +935,10 @@ Wilxox test p value for the MFE/bp difference is: `r wilcox.test(stau1.norm_mfe.
 wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val
 ```
 
+```{r}
+length(stau1.norm_mfe.ls)
+```
+
 The MFE/bp median is: 
 
 
@@ -979,9 +1000,7 @@ Calculate the percentage of paired residues:
 # Calculate paired metric
 unpaired.df <- get_unpaired_total(utr3_forgi.df, group = Experiment)
 utr3_clusters.df <- left_join(utr3_clusters.df, unpaired.df, by = c("Experiment", c("name" = "id")))
-```
 
-```{r}
 paired_metric.df <- get_paired_metric(utr3_clusters.df, group = Experiment)
 utr3_clusters.df <- left_join(utr3_clusters.df, paired_metric.df, by = c("Experiment", "name"))
 
@@ -994,17 +1013,9 @@ utr3_clusters.df <- utr3_clusters.df %>%
 ```
 
 ```{r}
-stau1.paired_ratio.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1")$paired_percentage
-paris.paired_ratio.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$paired_percentage
-
-paired_ratio.pval <- wilcox.test(stau1.paired_ratio.ls, paris.paired_ratio.mfe.ls)$p.value
-paired_ratio.pval
-```
-
-```{r}
 paired_percentage_median <- utr3_clusters.df %>%
     group_by(Experiment, span_group) %>%
-    dplyr::summarize(Median = median(paired_percentage, na.rm=TRUE))
+    dplyr::summarize(Median = median(paired_percentage, na.rm = TRUE))
 paired_percentage_median
 
 utr3_clusters.df$Experiment <- factor(utr3_clusters.df$Experiment, levels = c("STAU1", "PARIS"))
@@ -1024,10 +1035,26 @@ paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = Ex
   #annotate("text", label = paste0("p = ", paired_ratio.pval), x = 80, y = 0.07)
 
 paired_metric.gg
-# gsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
+
+# ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
+```
+```{r}
+stau1.paired_ratio.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1"  & !str_detect(cluster, "ID"))$paired_percentage
+paris.paired_ratio.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$paired_percentage
+
+paired_ratio.pval <- wilcox.test(stau1.paired_ratio.ls, paris.paired_ratio.mfe.ls)$p.value
+paired_ratio.pval
 ```
 
-# Fig 4 G: Number of bulges
+```{r}
+paired_percentage_median <- utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Median = median(paired_percentage, na.rm = TRUE))
+paired_percentage_median
+```
+
+
+# Fig S4 B: Number of bulges
 
 ```{r}
 bulges.df <- utr3_forgi.df %>%
@@ -1083,7 +1110,7 @@ bulges.gg <- ggplot(utr3_clusters.df,
    geom_label(data = span_counts, aes(label=counts, y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 3)
 bulges.gg
-ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 5, height = 6)
+# ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 5, height = 6)
 ```
 
 # Fig 4 H: Symmetry classification

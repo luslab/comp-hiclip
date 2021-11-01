@@ -310,6 +310,7 @@ get_duplex <- function(region.dt, cluster_number, cores = 4) {
   c.duplex.dt$loop <- str_count(str_extract(c.duplex.dt$structure, "\\.*&\\.*"), "\\.")
   
   return(c.duplex.dt)
+  #return(c.duplex.l)
   
 }
 
@@ -685,7 +686,7 @@ stopifnot(nrow(stau1.prob.df) == nrow(clusters.df)) # Check same size as origina
 
 ```{r}
 col_pal <- brewer.pal(4, "Dark2")
-plot_cluster_heatmap(clusters.df, plot.title = prob.name, plot.name = paste0(plots.dir,"/",prefix,"_kmeans_minus50_paired_4clusters.png"))
+plot_cluster_heatmap(clusters.df, plot.title = "STAU1", plot.name = paste0(plots.dir,"/",prefix,"_kmeans_minus50_paired_4clusters.png"))
 
 # Export clusters data
 clusters.df <- rownames_to_column(clusters.df, var = "id")
@@ -742,6 +743,9 @@ p.list <- lapply(1:3, function(i) {
 # ggsave(plot_grid(plotlist = p.list, ncol = 1), filename = file.path(plots.dir, "sr_clusters_lmin.pdf"), width = 7, height = 10)
 ```
 
+```{r}
+cluster.duplexes.l
+```
 
 ```{r}
 # ==========
@@ -758,8 +762,11 @@ cluster.duplexes.l <- lapply(1:3, function(i) get_duplex(region.dt = peaks.dt,
 
 cluster.duplexes.dt <- rbindlist(cluster.duplexes.l)
 # fwrite(cluster.duplexes.dt, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz", sep = "\t")
+```
 
-# cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz")
+
+```{r}
+cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz")
 ```
 
 
@@ -887,6 +894,7 @@ stopifnot(abs(short_range.df$R_genomic_end - short_range.df$R_genomic_start) ==
 
 #### Trim dot bracket structure to focus only on the paired regions and adjust genomic coordinates
 
+
 ```{r}
 # Get positions of paired residues within structures of each arm
 
@@ -916,28 +924,33 @@ short_range.df <- short_range.df %>%
 #### Duplex length
 
 ```{r}
+cluster.duplexes.dt
+```
+
+
+```{r}
 # Calculate number of paired residues
-short_range.df <- short_range.df %>%
+cluster.duplexes.dt <- cluster.duplexes.dt %>%
   rowwise() %>%
-  mutate(total_paired = str_count(L_db, "\\(")) %>%
+  mutate(total_paired = str_count(structure, "\\(")) %>%
   ungroup()
 
-quantile(short_range.df$total_paired, c(.25, .50, .75, 1))
+quantile(cluster.duplexes.dt$total_paired, c(.25, .50, .75, 1))
 ```
 
 
 Separate duplexes on very short (less than 8 bp) and longer residues
 
 ```{r}
-m_motif_structures <- list(nrow(short_range.df))
+m_motif_structures <- list(nrow(cluster.duplexes.dt))
 names(m_motif_structures) <- "M motif duplexes (clusters 1, 2, 3)"
-m_motif_min8bp <- list(nrow(short_range.df[short_range.df$total_paired >= 8,]))
+m_motif_min8bp <- list(nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 8,]))
 names(m_motif_min8bp) <-"M motif duplexes >= 8 bp"
 
-m_motif_max9bp <- list(nrow(short_range.df) - nrow(short_range.df[short_range.df$total_paired >= 8,]))
+m_motif_max9bp <- list(nrow(cluster.duplexes.dt) - nrow(cluster.duplexes.dt[cluster.duplexes.dt$total_paired >= 8,]))
 names(m_motif_max9bp) <- "M motif duplexes < 8 bp"
 
-no_m_motif <- list(nrow(stau1.prob.df) - nrow(short_range.df))
+no_m_motif <- list(nrow(stau1.prob.df) - nrow(cluster.duplexes.dt))
 names(no_m_motif) <- "No M motif"
 structure_types.ls <- c(no_m_motif, m_motif_max9bp, m_motif_min8bp)
 types.df <- data.frame(structure_types = names(structure_types.ls), count = unlist(structure_types.ls, use.names=FALSE))
@@ -965,6 +978,12 @@ pie.gg
 ```
 
 ```{r}
+# Work with the annotated structures
+short_range.df <- short_range.df %>%
+  rowwise() %>%
+  mutate(total_paired = str_count(L_db, "\\(")) %>%
+  ungroup()
+
 short_range.df <- short_range.df %>%
   mutate(structure_type = case_when(total_paired < 8 ~ "M motif duplexes < 8 bp",
                                     TRUE ~ "M motif duplexes >= 8 bp"))
@@ -1102,6 +1121,17 @@ stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed
 stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
 ```
 
+```{r}
+stau1.dt
+```
+```{r}
+stau1.dt %>%
+  dplyr::filter(str_detect(cluster, "ID"))
+```
+```{r}
+dplyr::filter(stau1.hybrids.dt, sample == "stau1_nonhybrid" & !str_detect(cluster, "C"))
+```
+
 
 How many duplexes are supported by multiple sources?
 
@@ -1128,9 +1158,19 @@ stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
 nrow(stau1.cluster.hybrids.df) # number of hybrids that were assigned a cluster
 stopifnot(length(unique(stau1.cluster.hybrids.df$id)) == nrow(stau1.dt))
 ```
+
 ```{r}
-length(clustered_short_range.ls)
+# clusters composed of predicted structures only
+stau1.cluster.hybrids_summary.df %>%
+  dplyr::filter(str_detect(id, "C") & sample_set == "stau1_nonhybrid")
 ```
+```{r}
+# clusters composed of predicted + experimental hybrids
+stau1.cluster.hybrids_summary.df %>%
+  dplyr::filter(str_detect(id, "C") & str_detect(sample_set, ",stau1_nonhybrid"))
+
+```
+
 
 ```{r}
 stau1.cluster.hybrids_summary.df <- stau1.cluster.hybrids.df %>%
@@ -1141,6 +1181,8 @@ stau1.cluster.hybrids_summary.df <- stau1.cluster.hybrids.df %>%
 stau1.samples.df <- stau1.cluster.hybrids_summary.df %>%
   dplyr::select(id, sample_set) %>%
   distinct()
+
+# fwrite(stau1.cluster.hybrids_summary.df, paste0(data.dir, "/stau1.cluster.hybrids_summary.tsv.gz", sep = "\t"))
 
 stau1.dt <- left_join(stau1.dt, dplyr::select(stau1.samples.df, id, sample_set), by = c("name" = "id"))
 
@@ -1177,68 +1219,35 @@ dev.off()
 # Fig 3 H: Examples of short-range structures
 
 ```{r}
-short_range_overlapped.df <- stau1.dt %>%
-  dplyr::filter(str_detect(sample_set, ",stau1_nonhybrid"))
+fa.dt <- data.table(gene_id = names(fa.dss), sequence = as.character(fa.dss))
+x <- get_stem_loop_sequence(as.data.table(short_range.df), fa.dt)
+```
 
-short_range_overlapped.cluster.ls <- unique(short_range_overlapped.df$name)
+***
+> Duplexes in PIN1 3'UTR
 
-# Find these clusters in the hybrids table
-short_range_overlapped.id.ls <- dplyr::filter(stau1.cluster.hybrids.df, id %in% short_range_overlapped.cluster.ls)$name
+```{r}
+pin1_stau1.dt <- stau1.dt %>%
+  dplyr::filter(L_gene_name == "PIN1")
 
-short_range_overlapped.id.ls <- short_range_overlapped.id.ls[str_detect(short_range_overlapped.id.ls, "ID")]
-short_range_overlapped.id.ls
+pin1_stau1.dt$q <- 0
+pin1_stau1.bp.dt <- pin1_stau1.dt[, .(L_genomic_seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
+
+# fwrite(pin1_stau1.bp.dt, sep = "\t", col.names = FALSE, file ="~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/pin1_structures.bp")
+
+dplyr::filter(x, name %in% "ID10276")
 ```
 
 ***
 > Short-range structures that overlap with hybrid duplexes
 
 ```{r}
-short_range.df %>% dplyr::filter(name %in% short_range_overlapped.id.ls & hairpin_loop <=14)
+short_range.df %>% dplyr::filter(name %in% short_range_overlapped.id.ls & hairpin_loop <=11)
 ```
-
-Candidates: ID13704, ID11685
-
-```{r}
-ex.ls <- dplyr::filter(stau1.cluster.hybrids.df, name %in% "ID11685")$id
-ex.dt <- dplyr::filter(stau1.dt, name == ex.ls)
-```
-
-```{r}
-ex.dt$L_seqnames
-```
-
-> Short-range structure within `r ex.dt$L_seqnames` that doesn't overlap with hybrid duplexes
-
-```{r}
-ex2.df <- short_range.df %>% dplyr::filter(!(name %in% short_range_overlapped.id.ls) & L_seqnames == ex.dt$L_seqnames)
-ex2.df
-```
-
-```{r}
-ex.dt
-```
-
-
-```{r}
-fa.dt <- data.table(gene_id = names(fa.dss), sequence = as.character(fa.dss))
-
-x <- get_stem_loop_sequence(as.data.table(short_range.df), fa.dt)
-short_range2.df <- left_join(short_range.df, dplyr::select(x, name, stem_loop_sequence))
-
-ex2.df <- short_range2.df %>% dplyr::filter(name == "ID11686" | name == "ID11685")
-```
-
-```{r}
-short_range_exaples.dt <- as.data.table(rbind(ex.dt, ex2.df, fill = TRUE))
-short_range_exaples.dt$q <- 0
-short_range_exaples_bp.dt <- short_range_exaples.dt[, .(L_seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
-
-# fwrite(short_range_exaples_bp.dt, sep = "\t", col.names = FALSE, file ="~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_examples.bp")
-
-```
-
 
 # Extras
+
+Number of paired residues
 
 ```{r}
 total_paired_median <- short_range.df %>%
@@ -1262,29 +1271,3 @@ s.gg
 
 
 
-
-
-
-```{r}
-# p = c(0, 0.25, 0.50, 0.75, 1)
-#   
-#   coord.dt <- cluster.duplexes.dt
-#   coord.dt$q <- cut(cluster.duplexes.dt$score, 
-#                     breaks = quantile(coord.dt$score, probs = p), 
-#                     include.lowest = TRUE, 
-#                     labels = 0:(length(p) - 2))
-#   
-#   cols <- tableau_seq_gradient_pal('Blue')(seq(0, 1, length = length(p) - 1))
-#   cols.dt <- rbindlist(lapply(cols, function(x) data.table(paste(as.vector(col2rgb(x)), collapse = "\t"))))
-#   cols.dt[, `:=` (colour = "color:",
-#                   annotation = paste("Count quantile", 1:(length(p) - 1)))]
-#   setcolorder(cols.dt, c("colour", "V1", "annotation"))
-# 
-# coord.dt <- as.data.table(coord.dt)
-# bp.dt <- coord.dt[, .(seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
-#   setorder(bp.dt, q)
-#   
-#   fwrite(cols.dt, sep = "\t", col.names = FALSE, quote = FALSE, file = "short_range.bp")
-#   fwrite(bp.dt, sep = "\t", col.names = FALSE, file = "short_range.bp", append = TRUE)
-
-```
