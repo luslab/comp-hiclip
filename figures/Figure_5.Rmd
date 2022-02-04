@@ -29,11 +29,16 @@ suppressPackageStartupMessages(library(rtracklayer))
 suppressPackageStartupMessages(library(parallel))
 suppressPackageStartupMessages(library(RColorBrewer))
 suppressPackageStartupMessages(library(patchwork))
+suppressPackageStartupMessages(library(dunn.test))
+suppressPackageStartupMessages(library(tictoc))
 set.seed(42)
 ```
 
 ```{r}
-plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5"
+plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5_redo"
+# plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5"
+if(!dir.exists(plot.path)) dir.create(plot.path)
+
 ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3") # Nuriel Stone
 gt_colours <- c("None" = "#4f6980", "PARIS" = "#849db1", "STAU1" = "#a2ceaa", "STAU1 & PARIS" = "#638b66") # Miller Stone
 metabolism_colours = c(A = "#414451", B = "#60636a", C = "#a5acaf")
@@ -42,8 +47,10 @@ metabolism_colours = c(A = "#414451", B = "#60636a", C = "#a5acaf")
 # Load atlas
 
 ```{r}
-duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed.mfe.tsv.gz")
+# duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed.mfe.tsv.gz")
+duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz")
 utr3.duplexes.dt <- duplexes.dt[L_seqnames == R_seqnames][L_region == "UTR3"][R_region == "UTR3"]
+utr3.duplexes.dt <- utr3.duplexes.dt[!grep("^ID", cluster)]
 
 paris.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/paris_atlas/paris.3utr.all.atlas_clusters.gc.annotated.mfe.tsv.gz")
 utr3.paris.dt <- paris.dt[L_seqnames == R_seqnames][L_region == "UTR3"][R_region == "UTR3"] # To check all are intra 3' UTR
@@ -253,6 +260,11 @@ gene.counts.dt[, ensg := sapply(strsplit(Gene, "\\."), "[[", 1)]
 gene.counts.dt[ensg %in% stau1.genes, stau := "STAU1"][ensg %in% stau1_paris.genes, stau := "STAU1"][ensg %in% paris.genes, stau := "PARIS"][is.na(stau), stau := "None"]
 gene.counts.dt$stau <- factor(gene.counts.dt$stau, levels = c("None", "PARIS", "STAU1", "STAU1 & PARIS"))
 
+d <- dunn.test(x = gene.counts.dt[mean_count > 0]$mean_count, 
+               g = gene.counts.dt[mean_count > 0]$stau,
+               method = "bh",
+               alpha = 0.01)
+
 # Plot
 p <- ggplot(gene.counts.dt[mean_count > 0], aes(x = stau, y = mean_count)) +
   geom_violin(aes(fill = stau)) +
@@ -266,7 +278,7 @@ p <- ggplot(gene.counts.dt[mean_count > 0], aes(x = stau, y = mean_count)) +
        fill = "") +
   theme_minimal_grid() + theme(legend.position = "none")
 
-if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_abundance.pdf"), width = 5, height = 4)
+if(!interactive()) ggsave(p, filename = file.path(plot.path, "rna_abundance.pdf"), width = 5, height = 4)
 p
 ```
 
@@ -290,7 +302,7 @@ p <- ggplot(loc.dt, aes(x = stau, y = CytNuc)) +
        fill = "") +
   theme_minimal_grid() + theme(legend.position = "none")
 
-if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_localisation.pdf"), width = 5, height = 4)
+if(!interactive()) ggsave(p, filename = file.path(plot.path, "rna_localisation.pdf"), width = 5, height = 4)
 p
 ```
 
@@ -307,7 +319,7 @@ p <- ggplot(loc.dt, aes(x = stau, y = TrP)) +
        fill = "") +
   theme_minimal_grid() + theme(legend.position = "none")
 
-if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_translation.pdf"), width = 5, height = 4)
+if(!interactive()) ggsave(p, filename = file.path(plot.path, "rna_translation.pdf"), width = 5, height = 4)
 p
 ```
 
@@ -370,6 +382,15 @@ rates.melted.dt$stau <- factor(rates.melted.dt$stau, levels = c("None", "PARIS",
 # 
 # ggsave(p, filename = file.path(plot.path, "rna_metabolism_v.pdf"), width = 4, height = 10)
 
+wilcox.test(rates.dt[stau == "STAU1"]$Synthesis,
+            rates.dt[stau == "PARIS"]$Synthesis)
+
+wilcox.test(rates.dt[stau == "STAU1"]$Processing,
+            rates.dt[stau == "PARIS"]$Processing)
+
+wilcox.test(rates.dt[stau == "STAU1"]$Degradation,
+            rates.dt[stau == "PARIS"]$Degradation)
+
 p <- ggplot(rates.melted.dt, aes(x = stau, y = value)) +
   geom_violin(aes(fill = stau)) +
   geom_boxplot(width = 0.1, outlier.shape = NA) +
@@ -384,7 +405,7 @@ p <- ggplot(rates.melted.dt, aes(x = stau, y = value)) +
   theme_minimal_grid() + theme(legend.position = "none")
   # theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
 
-if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_metabolism.pdf"), width = 9, height = 6)
+if(!interactive()) ggsave(p, filename = file.path(plot.path, "rna_metabolism.pdf"), width = 9, height = 6)
 p
 ```
 
@@ -470,17 +491,20 @@ pheatmap(scaled.mat,
 # Duplex positions
 
 ```{r}
-utr3.duplexes.dt[, ensg := sapply(strsplit(L_gene_id, "\\."), "[[", 1)]
+# utr3.duplexes.dt[, ensg := sapply(strsplit(L_gene_id, "\\."), "[[", 1)]
 utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "A"], metabolism_cluster := "A"]
 utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "B"], metabolism_cluster := "B"]
 utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "C"], metabolism_cluster := "C"]
+utr3.duplexes.dt <- utr3.duplexes.dt[!is.na(metabolism_cluster)]
+utr3.duplexes.dt <- merge(utr3.duplexes.dt, mat.dt, by = "ensg")
+
 ```
 
 `r nrow(utr3.duplexes.dt[is.na(metabolism_cluster)])` duplexes (i.e. `r length(unique(utr3.duplexes.dt[is.na(metabolism_cluster)]$ensg))` genes do not have an associated metabolism calculation.)
 
-```{r}
-utr3.duplexes.dt <- utr3.duplexes.dt[!is.na(metabolism_cluster)]
-
+```{r, eval = FALSE}
+# utr3.duplexes.dt <- utr3.duplexes.dt[!is.na(metabolism_cluster)]
+tic()
 TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.txdb.sqlite")
 
 txlengths.dt <- data.table(transcriptLengths(TxDb, with.cds_len = TRUE,
@@ -634,12 +658,20 @@ utr3.duplexes.dt[, `:=` (loop = R_start - L_end - 1 - intron,
                          R_rel_start = R_abs_start/utr3_width)]
 stopifnot(nrow(utr3.duplexes.dt[loop > utr3_width]) == 0)
 utr3.duplexes.dt[, circ_score := loop/utr3_width]
-
+toc()
 ```
 
 ## 3' UTR length
 
 ```{r}
+kruskal.test(x = utr3.duplexes.dt$utr3_width, 
+               g = utr3.duplexes.dt$metabolism_cluster)
+
+d <- dunn.test(x = utr3.duplexes.dt$utr3_width, 
+               g = utr3.duplexes.dt$metabolism_cluster,
+               method = "bh",
+               alpha = 0.01)
+
 p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = utr3_width, fill = metabolism_cluster)) +
   geom_boxplot(width = 0.5, outlier.shape = NA) +
   coord_cartesian(ylim = c(0, 10000)) +
@@ -655,18 +687,21 @@ p
 
 ## Loop length
 
-```{r}
-p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = loop, fill = metabolism_cluster)) +
-  geom_boxplot(width = 0.5, outlier.shape = NA) +
-  scale_fill_manual(values = metabolism_colours) +
-  theme_minimal_grid() + theme(legend.position = "none") +
-  scale_y_log10() + annotation_logticks(sides = "l") +
-  labs(x = "",
-       y = "Duplex span",
-       fill = "")
-
-if(interactive()) ggsave(p, filename = file.path(plot.path, "duplex_span.pdf"), width = 4, height = 4)
-p
+```{r, eval = FALSE}
+# kruskal.test(x = utr3.duplexes.dt$loop, 
+#                g = utr3.duplexes.dt$metabolism_cluster)
+# 
+# p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = loop, fill = metabolism_cluster)) +
+#   geom_boxplot(width = 0.5, outlier.shape = NA) +
+#   scale_fill_manual(values = metabolism_colours) +
+#   theme_minimal_grid() + theme(legend.position = "none") +
+#   scale_y_log10() + annotation_logticks(sides = "l") +
+#   labs(x = "",
+#        y = "Duplex span",
+#        fill = "")
+# 
+# if(interactive()) ggsave(p, filename = file.path(plot.path, "duplex_span.pdf"), width = 4, height = 4)
+# p
 ```
 
 ```{r}
@@ -687,9 +722,17 @@ p
 ## Circularisation score
 
 ```{r}
+kruskal.test(x = utr3.duplexes.dt$circ_score, 
+               g = utr3.duplexes.dt$metabolism_cluster)
+
+d <- dunn.test(x = utr3.duplexes.dt$circ_score, 
+               g = utr3.duplexes.dt$metabolism_cluster,
+               method = "bh",
+               alpha = 0.01)
+
 p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = circ_score, fill = metabolism_cluster)) +
   geom_boxplot(width = 0.5, outlier.shape = NA) +
-  coord_cartesian(ylim = c(0, 0.35)) +
+  coord_cartesian(ylim = c(0, 0.4)) +
   scale_fill_manual(values = metabolism_colours) +
   theme_minimal_grid() + theme(legend.position = "none") +
   labs(x = "",
@@ -699,97 +742,250 @@ p <- ggplot(utr3.duplexes.dt, aes(x = metabolism_cluster, y = circ_score, fill =
 if(interactive()) ggsave(p, filename = file.path(plot.path, "circ_score.pdf"), width = 4, height = 4)
 p
 ```
-## Relative starts
+<!-- ## Relative starts -->
+
+<!-- ```{r} -->
+<!-- utr3.duplexes.melted.dt <- melt.data.table(utr3.duplexes.dt[, .(metabolism_cluster, ensg, L_rel_start, R_rel_start)], id.vars = c("ensg", "metabolism_cluster")) -->
+
+<!-- p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) + -->
+<!--   geom_density() +  -->
+<!--   facet_grid(metabolism_cluster ~ .) + -->
+<!--   theme_minimal_grid() + theme(legend.position = "right") + -->
+<!--   scale_color_economist(labels = c("L", "R")) + -->
+<!--   labs(x = "Proportion along 3' UTR", -->
+<!--        y = "Density", -->
+<!--        colour = "Duplex arm") -->
+
+<!-- if(interactive()) ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start.pdf"), width = 5, height = 8) -->
+
+<!-- # p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) + -->
+<!-- #   geom_density() +  -->
+<!-- #   facet_grid(. ~ metabolism_cluster) + -->
+<!-- #   theme_minimal_grid() + theme(legend.position = "right") + -->
+<!-- #   scale_color_economist(labels = c("L", "R")) + -->
+<!-- #   labs(x = "Proportion along 3' UTR", -->
+<!-- #        y = "Density", -->
+<!-- #        colour = "Duplex arm") -->
+<!-- #    -->
+<!-- # ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start_h.pdf"), width = 8, height = 3) -->
+
+<!-- p -->
+<!-- ``` -->
+
+<!-- ## Absolutes starts -->
+
+<!-- ```{r} -->
+<!-- utr3.duplexes.melted.dt <- melt.data.table(utr3.duplexes.dt[, .(metabolism_cluster, ensg, L_abs_start, R_abs_end)], id.vars = c("ensg", "metabolism_cluster")) -->
+
+<!-- # p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) + -->
+<!-- #   geom_density() + -->
+<!-- #   facet_grid(metabolism_cluster ~ variable, -->
+<!-- #              labeller = labeller(variable = c(L_abs_start = "Left", R_abs_end = "Right"))) + -->
+<!-- #   theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) + -->
+<!-- #   scale_color_economist(labels = c("L", "R")) + -->
+<!-- #   labs(x = "Distance from 3' UTR start/end", -->
+<!-- #      y = "Density", -->
+<!-- #      colour = "Duplex arm") + -->
+<!-- #   coord_cartesian(xlim = c(-10000, 10000)) -->
+<!-- #  -->
+<!-- # ggsave(p, filename = file.path(plot.path, "absolute_arm_locations.pdf"), width = 6, height = 4) -->
+
+<!-- p.l <- ggplot(utr3.duplexes.melted.dt[variable == "L_abs_start"], aes(x = value, y = ..density..)) + -->
+<!--   geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[4]) + -->
+<!--   facet_grid(metabolism_cluster ~ ., -->
+<!--              labeller = labeller(metabolism_cluster = c(A = "", B = "", C = ""))) + -->
+<!--   theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) + -->
+<!--   labs(x = "Distance from 3' UTR start/end", -->
+<!--        y = "Density") + -->
+<!--   coord_cartesian(xlim = c(-1000, 10000), ylim = c(0, 1e-3)) -->
+
+<!-- p.r <- ggplot(utr3.duplexes.melted.dt[variable == "R_abs_end"], aes(x = value, y = ..density..)) + -->
+<!--   geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[2]) + -->
+<!--   facet_grid(metabolism_cluster ~ .) + -->
+<!--   theme_minimal_grid() +  -->
+<!--   theme(legend.position = "none",  -->
+<!--         axis.text.x = element_text(angle = 45, hjust = 1), -->
+<!--         axis.text.y = element_blank()) + -->
+<!--   labs(x = "", -->
+<!--      y = "") + -->
+<!--   coord_cartesian(xlim = c(-10000, 1000), ylim = c(0, 1e-3)) -->
+
+<!-- if(interactive()) ggsave(p.l + p.r, filename = file.path(plot.path, "absolute_arm_locations_histogram.pdf"), width = 6, height = 4) -->
+<!-- p.l + p.r -->
+<!-- ``` -->
+
+<!-- ## Degradation and distance -->
+
+<!-- ```{r} -->
+<!-- utr3.duplexes.dt <- merge(utr3.duplexes.dt, rates.dt[, .(ensg, Degradation)], by = "ensg") -->
+
+<!-- p <- ggplot(utr3.duplexes.dt, aes(y = Degradation)) + -->
+<!--   # geom_point(aes(x = -R_abs_end)) +  -->
+<!--   scale_y_log10() + scale_x_log10() + -->
+<!--   geom_smooth(aes(x = L_abs_start),  -->
+<!--               se = FALSE, -->
+<!--               colour = ggthemes_data$economist$fg$value[4], method = "lm") + -->
+<!--   geom_smooth(aes(x = -R_abs_end),  -->
+<!--               se = FALSE, -->
+<!--               colour = ggthemes_data$economist$fg$value[2], method = "lm") + -->
+<!--   labs(x = "Distance from 3' UTR start/end", -->
+<!--      y = "Degradation", -->
+<!--      colour = "Duplex arm") + -->
+<!--   theme_minimal_grid() -->
+
+<!-- if(!interactive()) ggsave(p, filename = file.path(plot.path, "degradation_arm_distance.pdf"), width = 4, height = 4) -->
+<!-- p -->
+<!-- ``` -->
+
+# Means
+
+## 3' UTR length
 
 ```{r}
-utr3.duplexes.melted.dt <- melt.data.table(utr3.duplexes.dt[, .(metabolism_cluster, ensg, L_rel_start, R_rel_start)], id.vars = c("ensg", "metabolism_cluster"))
-
-p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
-  geom_density() + 
-  facet_grid(metabolism_cluster ~ .) +
-  theme_minimal_grid() + theme(legend.position = "right") +
-  scale_color_economist(labels = c("L", "R")) +
-  labs(x = "Proportion along 3' UTR",
-       y = "Density",
-       colour = "Duplex arm")
-  
-if(interactive()) ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start.pdf"), width = 5, height = 8)
-
-# p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
-#   geom_density() + 
-#   facet_grid(. ~ metabolism_cluster) +
-#   theme_minimal_grid() + theme(legend.position = "right") +
-#   scale_color_economist(labels = c("L", "R")) +
-#   labs(x = "Proportion along 3' UTR",
-#        y = "Density",
-#        colour = "Duplex arm")
-#   
-# ggsave(p, filename = file.path(plot.path, "relative_arm_location_start_start_h.pdf"), width = 8, height = 3)
-
-p
-```
-
-## Absolutes starts
-
-```{r}
-utr3.duplexes.melted.dt <- melt.data.table(utr3.duplexes.dt[, .(metabolism_cluster, ensg, L_abs_start, R_abs_end)], id.vars = c("ensg", "metabolism_cluster"))
-
-# p <- ggplot(utr3.duplexes.melted.dt, aes(x = value, colour = variable)) +
-#   geom_density() +
-#   facet_grid(metabolism_cluster ~ variable,
-#              labeller = labeller(variable = c(L_abs_start = "Left", R_abs_end = "Right"))) +
-#   theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
-#   scale_color_economist(labels = c("L", "R")) +
-#   labs(x = "Distance from 3' UTR start/end",
-#      y = "Density",
-#      colour = "Duplex arm") +
-#   coord_cartesian(xlim = c(-10000, 10000))
-# 
-# ggsave(p, filename = file.path(plot.path, "absolute_arm_locations.pdf"), width = 6, height = 4)
-
-p.l <- ggplot(utr3.duplexes.melted.dt[variable == "L_abs_start"], aes(x = value, y = ..density..)) +
-  geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[4]) +
-  facet_grid(metabolism_cluster ~ .,
-             labeller = labeller(metabolism_cluster = c(A = "", B = "", C = ""))) +
-  theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = "Distance from 3' UTR start/end",
-       y = "Density") +
-  coord_cartesian(xlim = c(-1000, 10000), ylim = c(0, 1e-3))
-
-p.r <- ggplot(utr3.duplexes.melted.dt[variable == "R_abs_end"], aes(x = value, y = ..density..)) +
-  geom_histogram(binwidth = 100, fill = ggthemes_data$economist$fg$value[2]) +
-  facet_grid(metabolism_cluster ~ .) +
-  theme_minimal_grid() + 
-  theme(legend.position = "none", 
-        axis.text.x = element_text(angle = 45, hjust = 1),
-        axis.text.y = element_blank()) +
+p <- ggplot(utr3.duplexes.dt[, mean(utr3_width), by = .(metabolism_cluster, L_gene_id)], aes(x = metabolism_cluster, y = V1, fill = metabolism_cluster)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 10000)) +
+  scale_fill_manual(values = metabolism_colours) +
+  theme_minimal_grid() + theme(legend.position = "none") +
   labs(x = "",
-     y = "") +
-  coord_cartesian(xlim = c(-10000, 1000), ylim = c(0, 1e-3))
+       y = "3' UTR length",
+       fill = "")
 
-if(interactive()) ggsave(p.l + p.r, filename = file.path(plot.path, "absolute_arm_locations_histogram.pdf"), width = 6, height = 4)
-p.l + p.r
-```
-
-## Degradation and distance
-
-```{r}
-utr3.duplexes.dt <- merge(utr3.duplexes.dt, rates.dt[, .(ensg, Degradation)], by = "ensg")
-
-p <- ggplot(utr3.duplexes.dt, aes(y = Degradation)) +
-  # geom_point(aes(x = -R_abs_end)) + 
-  scale_y_log10() + scale_x_log10() +
-  geom_smooth(aes(x = L_abs_start), 
-              se = FALSE,
-              colour = ggthemes_data$economist$fg$value[4], method = "lm") +
-  geom_smooth(aes(x = -R_abs_end), 
-              se = FALSE,
-              colour = ggthemes_data$economist$fg$value[2], method = "lm") +
-  labs(x = "Distance from 3' UTR start/end",
-     y = "Degradation",
-     colour = "Duplex arm") +
-  theme_minimal_grid()
-
-if(!interactive()) ggsave(p, filename = file.path(plot.path, "degradation_arm_distance.pdf"), width = 4, height = 4)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "mean_utr3_length.pdf"), width = 4, height = 4)
 p
 ```
+## Loop length
+
+```{r}
+p <- ggplot(utr3.duplexes.dt[, mean(loop), by = .(metabolism_cluster, L_gene_id)], aes(x = V1, fill = metabolism_cluster)) +
+  geom_density() +
+  scale_fill_manual(values = metabolism_colours) +
+  theme_minimal_grid() + theme(legend.position = "none") +
+  facet_grid(metabolism_cluster ~ .) +
+  scale_x_log10() + annotation_logticks(sides = "b") +
+  labs(y = "Density",
+       x = "Duplex span",
+       fill = "")
+
+if(interactive()) ggsave(p, filename = file.path(plot.path, "mean_duplex_span_density.pdf"), width = 4, height = 8)
+p
+```
+
+## Circularisation score
+
+```{r}
+p <- ggplot(utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_gene_id)], aes(x = metabolism_cluster, y = V1, fill = metabolism_cluster)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA) +
+  coord_cartesian(ylim = c(0, 0.4)) +
+  scale_fill_manual(values = metabolism_colours) +
+  theme_minimal_grid() + theme(legend.position = "none") +
+  labs(x = "",
+       y = "Circularisation score",
+       fill = "")
+
+if(interactive()) ggsave(p, filename = file.path(plot.path, "mean_circ_score.pdf"), width = 4, height = 4)
+p
+```
+# Bin rel starts
+
+```{r}
+longest.duplexes.dt <- utr3.duplexes.dt[, longest_loop := max(loop), by = ensg]
+longest.duplexes.dt <- longest.duplexes.dt[loop == longest_loop]
+stopifnot(any(duplicated(longest.duplexes.dt$ensg)))
+
+longest.duplexes.dt[0 <= L_rel_start & L_rel_start < 0.25, L_rel_q := 1]
+longest.duplexes.dt[0.25 <= L_rel_start & L_rel_start < 0.5, L_rel_q := 2]
+longest.duplexes.dt[0.5 <= L_rel_start & L_rel_start < 0.75, L_rel_q := 3]
+longest.duplexes.dt[0.75 <= L_rel_start & L_rel_start <= 1, L_rel_q := 4]
+longest.duplexes.dt[L_rel_start < 0, L_rel_q := 1]
+
+longest.duplexes.dt[0 <= R_rel_start & R_rel_start < 0.25, R_rel_q := 1]
+longest.duplexes.dt[0.25 <= R_rel_start & R_rel_start < 0.5, R_rel_q := 2]
+longest.duplexes.dt[0.5 <= R_rel_start & R_rel_start < 0.75, R_rel_q := 3]
+longest.duplexes.dt[0.75 <= R_rel_start & R_rel_start <= 1, R_rel_q := 4]
+
+longest.duplexes.dt[, rel_q := paste0(L_rel_q, "-", R_rel_q)]
+
+longest.duplexes.dt$rel_q <- factor(longest.duplexes.dt$rel_q, 
+                                       levels = c("1-1", "2-2", "3-3", "4-4",
+                                                  "1-2", "2-3", "3-4",
+                                                  "1-3", "2-4",
+                                                  "1-4"))
+
+longest.duplexes.dt[rel_q %in% c("1-1", "2-2", "3-3", "4-4"), q_span := "1Q"]
+longest.duplexes.dt[rel_q %in% c("1-2", "2-3", "3-4"), q_span := "2Q"]
+longest.duplexes.dt[rel_q %in% c("1-3", "2-4"), q_span := "3Q"]
+longest.duplexes.dt[rel_q %in% c("1-4"), q_span := "4Q"]
+
+longest.duplexes.dt[, loop_g := ifelse(loop < 100, "< 100", ">= 100")]
+
+p <- ggplot(longest.duplexes.dt, aes(x = rel_q, fill = metabolism_cluster)) +
+  geom_bar() +
+  scale_fill_manual(values = metabolism_colours) +
+  geom_vline(xintercept = c(4.5, 7.5, 9.5), linetype = "dotted") +
+  # facet_grid(loop_g ~ .) +
+  theme_minimal_grid() + theme(legend.position = "bottom") +
+  labs(x = "Duplex regions",
+       y = "Count",
+       fill = "")
+
+# if(interactive()) ggsave(p, filename = file.path(plot.path, "rel_q_bar.pdf"), width = 6, height = 4)
+p
+```
+
+```{r}
+p1 <- ggplot(longest.duplexes.dt, aes(x = rel_q)) +
+  geom_bar() +
+  geom_vline(xintercept = c(4.5, 7.5, 9.5), linetype = "dotted") +
+  # facet_grid(loop_g ~ .) +
+  theme_minimal_grid() + theme(legend.position = "bottom") +
+  labs(x = "",
+       y = "Count",
+       fill = "")
+
+p2 <- ggplot(longest.duplexes.dt, aes(x = rel_q, fill = metabolism_cluster)) +
+  geom_bar(position = "fill") +
+  # facet_grid(loop_g ~ .) +
+  # facet_grid(. ~ q_span, scales = "free_x") +
+  geom_vline(xintercept = c(4.5, 7.5, 9.5), linetype = "dotted") +
+  scale_fill_manual(values = metabolism_colours) +
+  theme_minimal_grid() + theme(legend.position = "bottom") +
+  labs(x = "Duplex regions",
+       y = "Fraction",
+       fill = "")
+
+# if(interactive()) ggsave(p, filename = file.path(plot.path, "rel_q_fill.pdf"), width = 6, height = 4)
+if(interactive()) ggsave(plot_grid(p1, p2, ncol = 1, rel_heights = c(1, 2)), filename = file.path(plot.path, "quarters.pdf"), width = 6, height = 4)
+
+p
+```
+
+```{r}
+p <- ggplot(longest.duplexes.dt, aes(x = q_span, fill = metabolism_cluster)) +
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = metabolism_colours) +
+  theme_minimal_grid() + theme(legend.position = "bottom") +
+  labs(x = "Duplex regions",
+       y = "Count",
+       fill = "")
+
+p
+```
+
+
+```{r}
+p <- ggplot(longest.duplexes.dt, aes(x = rel_q, y = Degradation)) +
+  # geom_violin() +
+  geom_boxplot(width = 0.5, outlier.shape = NA) +
+  scale_y_log10() +
+  annotation_logticks(sides = "l") +
+  coord_cartesian(y = c(0.0005, 0.05)) +
+  scale_fill_manual(values = metabolism_colours) +
+  theme_minimal_grid() + theme(legend.position = "bottom") +
+  labs(x = "Duplex regions",
+       y = "Count",
+       fill = "")
+
+p
+```
+
