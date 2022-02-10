@@ -1221,4 +1221,26 @@ s.gg <- ggplot(short_range.df, aes(x=total_paired)) +
 s.gg
 ```
 
+Number of hybrids supporting duplexes
+
+```{r}
+linker.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/linker/linker.clusters.mfe.tsv.gz")
+linker.clusters.dt <- collapse_clusters(linker.dt)
+nrow(linker.clusters.dt)
+```
+
+```{r}
+nrow(stau1.dt)
+```
+
+```{r}
+mean(stau1.dt$count)
+mean(linker.clusters.dt$count)
+```
+
+
+```{r}
+median(stau1.dt$count)
+median(linker.clusters.dt$count)
+```
 
