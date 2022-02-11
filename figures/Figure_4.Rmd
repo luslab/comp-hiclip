@@ -395,6 +395,39 @@ get_gc_pairs <- function(data.df) {
 }
 ```
 
+```{r}
+get_au_pairs <- function(data.df) {
+  
+  au.df <- data.df %>%
+    mutate_at("R_paired_residues", stri_reverse) %>%  # need to reverse seq of R arm
+    rowwise() %>%
+    mutate(A_pos_L = list(find_residue(L_paired_residues, residue = "A")),
+           U_pos_L = list(find_residue(L_paired_residues, residue = "T")),
+           A_pos_R = list(find_residue(R_paired_residues, residue = "A")),
+           U_pos_R = list(find_residue(R_paired_residues, residue = "T"))) %>%
+    ungroup()
+  
+  # Obtain the positions of Gs and Cs in L and see if the same but complement in R
+  au.df <- au.df %>%
+    rowwise() %>%
+    mutate(au_pairs = list(intersect(A_pos_L, U_pos_R)),
+           ua_pairs = list(intersect(U_pos_L, A_pos_R))) %>%
+    mutate(AU_pos = list(union(au_pairs, ua_pairs))) %>%
+    mutate(AU_pos_count = length(AU_pos)) %>%
+    mutate(AU_percentage = AU_pos_count*100/total_paired) %>%
+    ungroup() %>%
+    dplyr::select(id, AU_pos, AU_pos_count, AU_percentage) %>%
+    distinct()
+  
+  data.df <- left_join(data.df, au.df, by = "id") 
+  
+  return(data.df)
+}
+```
+
+
+
+
 
 ```{r}
 plot_nucleotide_frequency <- function(data.df) {
@@ -783,12 +816,12 @@ upset.input
 
 
 ```{r}
-pdf(file.path(plots.dir, "stau1_paris_utr3_upset.pdf"), width = 7, height = 5)
+#pdf(file.path(plots.dir, "stau1_paris_utr3_upset.pdf"), width = 7, height = 5)
 UpSetR::upset(fromExpression(upset.input), 
       order.by = "freq",
       mainbar.y.label = "Intersecting number of duplexes",
       sets.x.label = "Total number of duplexes")
-dev.off()
+#dev.off()
 ```
 
 # Fig 4 C: Hybrid spans
@@ -1168,8 +1201,8 @@ bulges.df <- utr3_forgi.df %>%
 ```{r}
 utr3_clusters.df <- left_join(utr3_clusters.df, bulges.df, by = c("Experiment", c("name" = "id")))
 
-utr3_clusters.df <- utr3_clusters.df %>%
-  dplyr::select(-L_db, -R_db)
+# utr3_clusters.df <- utr3_clusters.df %>%
+#   dplyr::select(-L_db, -R_db)
 
 utr3_clusters.df <- utr3_clusters.df %>%
     replace(is.na(.), 0)
@@ -1308,10 +1341,53 @@ bar
 ## Asymetric stems characterisation
 
 ```{r}
-symmetry.df
+asym.df <- symmetry.df %>%
+  dplyr::filter(symmetry_type == "Asymmetric")
 ```
 
+```{r}
+nrow(asym.df)
+```
 
+```{r}
+aym_forgi.df <- semi_join(utr3_forgi.df, asym.df, by = c("Experiment", c("id" = "name")))
+
+aym_max_stem.df <- aym_forgi.df %>%
+  group_by(Experiment, id) %>%
+  dplyr::filter(element_type == "s") %>%
+  mutate(max_paired = max(L_width)) %>%
+  dplyr::select(Experiment,id, max_paired) %>%
+  distinct()
+
+asym.df <- left_join(asym.df, aym_max_stem.df, by = c("Experiment", c("name" = "id")))
+  
+#  forgi.df <- left_join(forgi.df, duplex_max.df, by = "id")
+```
+
+```{r}
+asym.df
+```
+
+```{r}
+
+# Boxplot
+asym.df$Experiment <- factor(asym.df$Experiment, levels = c("STAU1", "PARIS"))
+
+max_stem.gg <- ggplot(asym.df,
+                         aes(x = Experiment, y=max_paired, fill=condition)) +
+  geom_boxplot(width = 0.5) +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_manual(values = condition_colours) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Longest bulge-free double-stranded\nsegment per duplex") +
+  ylim(-1.5, 16) +
+  facet_grid(cols = vars(factor(span_group, levels = c("long range", "medium range", "short range", "predicted short range"))))
+max_stem.gg
+# ggsave(paste0(plots.dir, "/maximal_stem_segment.pdf"), max_stem.gg, dpi = 300, width = 5, height = 6)
+
+```
 
 
 # Extras/ scraps
@@ -1365,9 +1441,16 @@ bar2
 ***
 > GC Pairs
 
+
 ```{r}
 utr3_clusters.df <- utr3_clusters.df %>%
   mutate(id = paste(Experiment, name, sep = "-"))
+```
+
+
+```{r}
+# utr3_clusters.df <- utr3_clusters.df %>%
+#     separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
 
 paired_res.df <- utr3_clusters.df %>%
   rowwise() %>%
@@ -1378,39 +1461,16 @@ paired_res.df <- utr3_clusters.df %>%
   dplyr::select(-paired_res)
 
 paired_res.df <- get_gc_pairs(paired_res.df)
-# fwrite(paired_res.df, "~/Desktop/stau1_paris_gc.tsv.gz", sep ="\t")
-```
 
-```{r}
-gc_median <- paired_res.df %>%
-    group_by(Experiment) %>%
-    dplyr::summarize(Median = median(GC_percentage, na.rm=TRUE))
-gc_median
-
-gc_pairs.gg <- ggplot(paired_res.df, aes(x = GC_percentage, color = Experiment)) + 
-  geom_density(alpha = 0.8, adjust = 1.5) +
-  #scale_x_log10() + annotation_logticks() +
-  scale_color_tableau() +
-  theme_minimal_grid() + 
-  theme(legend.position = "top") +
-  ylab("Density") +
-  xlab("G:C and C:G pairs (%) ") +
-  geom_vline(data=gc_median, aes(xintercept=Median, color=Experiment),
-             linetype="dashed") 
-gc_pairs.gg
-# ggsave(paste0(plots.dir, "/gc_percentage.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
-
-```
-```{r}
 gc_median <- paired_res.df %>%
     group_by(Experiment, span_group) %>%
     dplyr::summarize(Median = median(GC_percentage, na.rm=TRUE))
 gc_median
 
-gc_pairs.gg <- ggplot(paired_res.df, aes(x = GC_percentage, color = Experiment)) + 
+gc_pairs.gg <- ggplot(paired_res.df, aes(x = GC_percentage, color = condition)) + 
   geom_density(alpha = 0.8, adjust = 1.5) +
   #scale_x_log10() + annotation_logticks() +
-  scale_color_tableau() +
+  scale_color_manual(values = condition_colours) +
   theme_minimal_grid() + 
   theme(legend.position = "top") +
   ylab("Density") +
@@ -1423,69 +1483,53 @@ gc_pairs.gg
 ```
 
 ```{r}
-gc_median <- paired_res.df %>%
-    group_by(Experiment) %>%
-    dplyr::summarize(Median = median(GC_pos_count, na.rm=TRUE))
-gc_median
+# AU content
+paired_res.df <- get_au_pairs(paired_res.df)
 
-gc_pairs.gg <- ggplot(paired_res.df, aes(x = GC_pos_count, color = Experiment)) + 
-  geom_density(alpha = 0.8, adjust = 1.7) +
+au_median <- paired_res.df %>%
+    group_by(Experiment, span_group) %>%
+    dplyr::summarize(Median = median(AU_percentage, na.rm=TRUE))
+au_median
+```
+
+
+```{r}
+au_pairs.gg <- ggplot(paired_res.df, aes(x = AU_percentage, color = condition)) + 
+  geom_density(alpha = 0.8, adjust = 1.5) +
   #scale_x_log10() + annotation_logticks() +
-  scale_color_tableau() +
+  scale_color_manual(values = condition_colours) +
   theme_minimal_grid() + 
   theme(legend.position = "top") +
   ylab("Density") +
-  xlab("Number of G:C/C:G pairs") +
-  geom_vline(data=gc_median, aes(xintercept=Median, color=Experiment),
-             linetype="dashed")
+  xlab("A:U and U:A pairs (%) ") +
+  geom_vline(data=au_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed") +
+  facet_grid(rows = vars(span_group))
 
-gc_pairs.gg
-# ggsave(paste0(plots.dir, "/gc_percentage.pdf"), duplex_span.gg, dpi = 300, width = 4, height = 4)
+au_pairs.gg
 
-
+# ggsave(paste0(plots.dir, "/AU_bp_content.pdf"), au_pairs.gg, dpi = 300, width = 5, height = 6)
 ```
 
-***
-> Bulge spacing
-
-The spacing between bulges is the width of stems between bulges
 
 ```{r}
-bulge_spacing.df <- utr3_forgi.df %>%
-  ungroup() %>%
-  group_by(Experiment, id) %>%
-  dplyr::filter(any(element_type =="i")) %>%
-  dplyr::filter(element_type == "s") %>%
-  dplyr::filter(!element == "s0") %>%
-  dplyr::filter(!element_number == max(element_number))
-```
 
-Calculate median spacing per structure
-
-```{r}
-median_bulge_spacing.df <- bulge_spacing.df %>% 
-  summarise(bulge_spacing_median=median(L_width), .groups = "keep")
-```
-
-
-```{r message=FALSE}
-# Boxplot
-bulge_s.gg <- ggplot(median_bulge_spacing.df,
-                         aes(x = Experiment, y=bulge_spacing_median, fill=Experiment)) +
-  geom_boxplot() +
-  scale_fill_brewer(palette="Blues") +
-  theme(legend.position="right", legend.direction="vertical") +
-  scale_fill_tableau() +
+paired_res.df$Experiment <- factor(paired_res.df$Experiment, levels = c("STAU1", "PARIS"))
+au_pairs.gg <- ggplot(paired_res.df, aes(x = Experiment, y = AU_percentage, fill = condition)) + 
+  geom_violin() +
+  #scale_x_log10() + annotation_logticks() +
+  scale_fill_manual(values = condition_colours) +
+  geom_boxplot(width=0.1, color="black", fill = "white", alpha=0.5) +
   theme_minimal_grid() + 
   theme(legend.position = "top") +
-  #ggtitle("Bulges per duplex") +
-  ylab("Median spacing between bulges (nt)") 
-  # geom_label(data = utr3_counts.df, aes(label=paste0("n = ",counts), y = -1.5), label.padding = unit(0.25, "lines"),
-  #           position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 6)
-bulge_s.gg
-# ggsave(paste0(plots.dir, "/bulge_spacing.pdf"), bulge_s.gg, dpi = 300, width = 4, height = 6)
-```
+  ylab("A:U and U:A pairs (%) ") +
+  # geom_vline(data=au_median, aes(xintercept=Median, color=Experiment),
+  #            linetype="dashed") +
+  facet_grid(cols = vars(span_group))
 
+au_pairs.gg
+# ggsave(paste0(plots.dir, "/AU_bp_content_violin.pdf"), au_pairs.gg, dpi = 300, width = 7, height = 6)
+```
 
 ***
 > Sequence content
