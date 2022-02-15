@@ -1096,6 +1096,14 @@ nrow(dplyr::filter(stau1.hybrids.dt, str_detect(cluster, "C")))
 ```
 
 ```{r}
+# Rename clusters for derived duplexes
+stau1.cluster.hybrids.df <- stau1.hybrids.dt %>%
+  mutate(cluster = case_when(sample == "stau1_nonhybrid" & !str_detect(cluster, "C") ~ name,
+                             TRUE ~ cluster))
+```
+
+
+```{r}
 # Create an id column to be consistent with the name column of the collapsed clusters table
 stau1.cluster.hybrids.df <- stau1.cluster.hybrids.df %>%
   rowwise() %>%
