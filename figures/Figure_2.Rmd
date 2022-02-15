@@ -263,14 +263,25 @@ linker.dt[, median(minwidth), by = recovered]
 wilcox.test(x = linker.dt[recovered == "Recovered"]$minwidth, y = linker.dt[recovered == "Not recovered"]$minwidth)
 ```
 
-# C - inter-intra
+# D - inter-intra
 
 ```{r}
-p <- ggplot(linker.dt[, .N, by = .(sample, recovered, type)], aes(x = recovered, y = N, fill = type)) +
+library(tidyverse)
+linker.dt[, type := ifelse(type == "intramolecular", "intra-transcript", "inter-transcript")]
+
+p <- linker.dt %>%
+  group_by(recovered, type) %>%
+  summarise(reads = n()) %>%
+  mutate(percentage = reads/sum(reads)) %>%
+  ggplot(aes(x = recovered, y = percentage, fill = type)) +
   geom_col(width = 0.5, position = "fill") +
+  geom_text(aes(label = ifelse(percentage > 0.05, paste0(round(percentage * 100, 1), "%"), "")), 
+            position = position_stack(vjust=0.5),
+            colour = "white",
+            size = 5) +
   coord_flip() + 
   scale_y_continuous(label = percent) +
-  scale_fill_tableau(palette = "Seattle Grays") +
+  scale_fill_tableau(palette = "Seattle Grays", guide = guide_legend(reverse = TRUE)) +
   theme_minimal_grid() + theme(legend.position = "top") +
   labs(x = "",
        y = "Percentage of hybrids",
@@ -281,7 +292,7 @@ ggsave(p, filename = file.path(plot.path, "silico_recovery_interintra.pdf"), wid
 p
 ```
 
-# D - Regions
+# E - Regions
 
 ```{r}
 genes.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz")
@@ -294,17 +305,39 @@ linker.dt <- annotate_hybrids(hybrids.dt = linker.dt, regions.gr = regions.gr)
 
 arms.dt <- rbindlist(list(linker.dt[, .(sample, recovered, L_region)], linker.dt[, .(sample, recovered, R_region)]), use.names = FALSE)
 arms.dt$L_region <- factor(arms.dt$L_region, levels = rev(c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA")))
-arms.dt <- arms.dt[, .N, by = .(sample, recovered, L_region)]
+# arms.dt <- arms.dt[, .N, by = .(sample, recovered, L_region)]
 
-p <- ggplot(arms.dt, aes(x = recovered, y = N, fill = L_region)) +
+p <- arms.dt %>%
+  group_by(L_region, recovered) %>%
+  summarise(arms = n()) %>%
+  group_by(recovered) %>%
+  mutate(percentage = arms/sum(arms)) %>%
+  ggplot(aes(x = recovered, y = percentage, fill = L_region)) +
   geom_col(width = 0.5, position = "fill") +
-  coord_flip() + 
+  geom_text(aes(label = ifelse(percentage > 0.05, paste0(round(percentage * 100, 1), "%"), "")), 
+            position = position_stack(vjust=0.5),
+            colour = "white",
+            size = 5) +
+  coord_flip() +
   scale_y_continuous(label = percent) +
-  scale_fill_tableau(palette = "Miller Stone", direction = -1) +
-  theme_minimal_grid() + theme(legend.position = "top") +
+  scale_fill_tableau(palette = "Miller Stone", 
+                     direction = -1, 
+                     guide = guide_legend(reverse = TRUE)) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
   labs(x = "",
        y = "Percentage of hybrids",
        fill = "")
+
+# p <- ggplot(arms.dt, aes(x = recovered, y = N, fill = L_region)) +
+#   geom_col(width = 0.5, position = "fill") +
+#   coord_flip() + 
+#   scale_y_continuous(label = percent) +
+#   scale_fill_tableau(palette = "Miller Stone", direction = -1) +
+#   theme_minimal_grid() + theme(legend.position = "top") +
+#   labs(x = "",
+#        y = "Percentage of hybrids",
+#        fill = "")
 
 ggsave(p, filename = file.path(plot.path, "silico_recovery_regions.pdf"), width = 7, height = 4)
 

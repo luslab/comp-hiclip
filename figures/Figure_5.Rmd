@@ -35,12 +35,13 @@ set.seed(42)
 ```
 
 ```{r}
-plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5_redo"
-# plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5"
+# plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5_with_none/"
+# plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5_redo"
+plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_5"
 if(!dir.exists(plot.path)) dir.create(plot.path)
 
 ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3") # Nuriel Stone
-gt_colours <- c("None" = "#4f6980", "PARIS" = "#849db1", "STAU1" = "#a2ceaa", "STAU1 & PARIS" = "#638b66") # Miller Stone
+gt_colours <- c("None" = "#4f6980", "None\n(Expression\nMatched)" = "#4f6980", "PARIS" = "#849db1", "STAU1" = "#a2ceaa", "STAU1 & PARIS" = "#638b66") # Miller Stone
 metabolism_colours = c(A = "#414451", B = "#60636a", C = "#a5acaf")
 ```
 
@@ -271,7 +272,7 @@ p <- ggplot(gene.counts.dt[mean_count > 0], aes(x = stau, y = mean_count)) +
   geom_boxplot(width = 0.1, outlier.shape = NA) +
   scale_y_log10() +
   annotation_logticks(sides = "l") +
-  scale_fill_manual(values = gt_colours) +
+  # scale_fill_manual(values = gt_colours) +
   geom_label(data = gene.counts.dt[mean_count > 0, .N, by = .(stau)], aes(label = N, y = 0), vjust = -0.1) +
   labs(x = "",
        y = "Mean gene copy number",
@@ -279,6 +280,8 @@ p <- ggplot(gene.counts.dt[mean_count > 0], aes(x = stau, y = mean_count)) +
   theme_minimal_grid() + theme(legend.position = "none")
 
 if(!interactive()) ggsave(p, filename = file.path(plot.path, "rna_abundance.pdf"), width = 5, height = 4)
+# if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_abundance_expression_matched.pdf"), width = 5, height = 4)
+# if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_abundance_paris_expression_matched.pdf"), width = 5, height = 4)
 p
 ```
 
@@ -354,6 +357,12 @@ ratesInfo <- data.frame(
 ```
 
 ```{r}
+q <- quantile(gene.counts.dt[stau %in% c("STAU1", "PARIS")]$mean_count, probs = seq(0, 1, 0.05))
+gene.counts.dt[stau %in% "None" & mean_count > q[2], stau := "None\n(Expression\nMatched)"]
+
+# q <- quantile(gene.counts.dt[stau %in% "STAU1"]$mean_count, probs = seq(0, 1, 0.05))
+# gene.counts.dt[stau %in% "PARIS" & mean_count > q[2], stau := "PARIS Expresssion Matched"]
+
 rates.dt <- as.data.table(ratesInfo)
 setnames(rates.dt, c("Syn", "Proc", "Deg"), c("Synthesis", "Processing", "Degradation"))
 setkey(rates.dt, "Gene")
@@ -364,7 +373,7 @@ rates.dt <- rates.dt[gene.counts.dt]
 rates.dt <- rates.dt[stau != "None"]
 
 rates.melted.dt <- melt.data.table(rates.dt[, .(stau, Synthesis, Processing, Degradation)], id.vars = "stau")
-rates.melted.dt$stau <- factor(rates.melted.dt$stau, levels = c("None", "PARIS", "STAU1", "STAU1 & PARIS"))
+rates.melted.dt$stau <- factor(rates.melted.dt$stau, levels = c("None", "None\n(Expression\nMatched)", "PARIS", "STAU1"))
 
 # p <- ggplot(rates.melted.dt, aes(x = stau, y = value)) +
 #   geom_violin(aes(fill = stau)) +
@@ -405,7 +414,9 @@ p <- ggplot(rates.melted.dt, aes(x = stau, y = value)) +
   theme_minimal_grid() + theme(legend.position = "none")
   # theme_minimal_grid() + theme(legend.position = "none", axis.text.x = element_text(angle = 45, hjust = 1))
 
-if(!interactive()) ggsave(p, filename = file.path(plot.path, "rna_metabolism.pdf"), width = 9, height = 6)
+# if(!interactive()) ggsave(p, filename = file.path(plot.path, "rna_metabolism.pdf"), width = 9, height = 6)
+if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_metabolism_expression_matched.pdf"), width = 9, height = 6)
+# if(interactive()) ggsave(p, filename = file.path(plot.path, "rna_metabolism_paris_expression_matched.pdf"), width = 9, height = 6)
 p
 ```
 

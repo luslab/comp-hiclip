@@ -12,8 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(pheatmap)
 library(viridis)
 library(RColorBrewer)
- library(tictoc)
-
+library(tictoc)
 library(primavera)
 library(rtracklayer)
 library(data.table)
@@ -22,10 +21,14 @@ library(scales)
 library(ggthemes)
 library(cowplot)
 library(UpSetR)
+
+library(tidyverse)
+library(ggrepel)
 ```
 
 ```{r}
 plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_1"
+if(!dir.exists(plot.path)) dir.create(plot.path)
 
 ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3")
 ```
@@ -63,7 +66,7 @@ hybrids.dt[, exp := ifelse(orientation == "linker", "Linker", "Direct")]
 hybrids.dt[sample == "stau1_high", sample := "High RNase"]
 hybrids.dt[sample == "stau1_low", sample := "Low RNase"]
 
-hybrids.dt[, type := ifelse(type == "intragenic", "intramolecular", "intermolecular")]
+hybrids.dt[, type := ifelse(type == "intragenic", "intra-transcript", "inter-transcript")]
 
 ```
 
@@ -89,11 +92,20 @@ There are `r nrow(nolinker.dt)/nrow(linker.dt)` times as many hybrids recovered 
 ## 1C - Intra-inter
 
 ```{r}
-p <- ggplot(hybrids.dt[, .N, by = .(exp, type)], aes(x = exp, y = N, fill = type)) +
+
+p <- hybrids.dt %>% 
+  group_by(exp, type) %>% 
+  summarise(reads = n()) %>%
+  mutate(percentage = reads/sum(reads)) %>%
+  ggplot(aes(x = exp, y = percentage, fill = type)) +
   geom_col(width = 0.5, position = "fill") +
+  geom_text(aes(label = paste0(round(percentage * 100,1),"%")), 
+            position = position_stack(vjust=0.5),
+            colour = "white",
+            size = 5) +
   coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
   scale_y_continuous(label = percent) +
-  scale_fill_tableau(palette = "Seattle Grays") +
+  scale_fill_tableau(palette = "Seattle Grays", guide = guide_legend(reverse = TRUE)) +
   theme_minimal_grid() + theme(legend.position = "top") +
   labs(x = "",
        y = "Percentage of hybrids",
@@ -105,26 +117,67 @@ p
 ```
 
 
-```{r}
-round(prop.table(table(hybrids.dt[exp == "Direct"]$type)) * 100, 1)
-round(prop.table(table(hybrids.dt[exp == "Linker"]$type)) * 100, 1)
-```
-
 ## 1D - Regions
 
 ```{r}
 arms.dt <- rbindlist(list(hybrids.dt[, .(exp, L_region)], hybrids.dt[, .(exp, R_region)]), use.names = FALSE)
 arms.dt$L_region <- factor(arms.dt$L_region, levels = rev(c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA")))
 
-p <- ggplot(arms.dt[, .N, by = .(L_region, exp)], aes(x = exp, y = N, fill = L_region)) +
+# p <- arms.dt %>%
+#   group_by(L_region, exp) %>%
+#   summarise(arms = n()) %>%
+#   group_by(exp) %>%
+#   mutate(percentage = arms/sum(arms)) %>%
+#   arrange(desc(L_region)) %>%
+#   mutate(pos = cumsum(percentage) - percentage/2) %>%
+#   ggplot(aes(x = exp, y = percentage, fill = L_region)) +
+#   geom_col(width = 0.5, position = "fill") +
+#   geom_text_repel(aes(y = pos, label = paste0(round(percentage * 100,1),"%")),
+#           size = 5,
+#           nudge_x = 0.4,
+#           segment.size = 0.5, 
+#           segment.color = '#515A5A') +
+#   coord_flip() +
+#   scale_x_discrete(limits = c("Direct", "Linker")) +
+#   scale_y_continuous(label = percent) +
+#   scale_fill_tableau(palette = "Miller Stone", direction = -1) +
+#   theme_minimal_grid() + theme(legend.position = "top") +
+#   labs(x = "",
+#        y = "Percentage of hybrids",
+#        fill = "")
+
+p <- arms.dt %>%
+  group_by(L_region, exp) %>%
+  summarise(arms = n()) %>%
+  group_by(exp) %>%
+  mutate(percentage = arms/sum(arms)) %>%
+  ggplot(aes(x = exp, y = percentage, fill = L_region)) +
   geom_col(width = 0.5, position = "fill") +
-  coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
+  geom_text(aes(label = ifelse(percentage > 0.05, paste0(round(percentage * 100, 1), "%"), "")), 
+            position = position_stack(vjust=0.5),
+            colour = "white",
+            size = 5) +
+  coord_flip() +
+  scale_x_discrete(limits = c("Direct", "Linker")) +
   scale_y_continuous(label = percent) +
-  scale_fill_tableau(palette = "Miller Stone", direction = -1) +
-  theme_minimal_grid() + theme(legend.position = "top") +
+  scale_fill_tableau(palette = "Miller Stone", 
+                     direction = -1, 
+                     guide = guide_legend(reverse = TRUE)) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
   labs(x = "",
        y = "Percentage of hybrids",
        fill = "")
+
+# p <- ggplot(arms.dt[, .N, by = .(L_region, exp)], aes(x = exp, y = N, fill = L_region)) +
+#   geom_col(width = 0.5, position = "fill") +
+#   coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
+#   scale_y_continuous(label = percent) +
+#   scale_fill_tableau(palette = "Miller Stone", direction = -1) +
+#   theme_minimal_grid() + theme(legend.position = "top") +
+#   labs(x = "",
+#        y = "Percentage of hybrids",
+#        fill = "")
 
 ggsave(p, filename = file.path(plot.path, "linker_nolinker_regions.pdf"), width = 7, height = 4)
 
