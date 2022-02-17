@@ -458,8 +458,6 @@ get_gu_pairs <- function(data.df) {
 
 
 
-
-
 ```{r}
 plot_nucleotide_frequency <- function(data.df) {
 
@@ -499,7 +497,41 @@ plot_nucleotide_frequency <- function(data.df) {
 }
 ```
 
+```{r}
+# count_identical_characters in 2 vectors of same length
 
+check_identical_characters <- function(x, y) {
+  
+  check = FALSE
+  
+  if (x == y) {
+    check = TRUE
+  } else {
+    check = FALSE
+  }
+
+  return(check)
+}
+
+count_identical_characters <- function(a, b, sep = NA) {
+  
+  stopifnot(length(a) == length(b))
+  
+  a <- unlist(str_split(a, sep))
+  b <- unlist(str_split(b, sep))
+  
+  stopifnot(length(a) == length(b))
+  
+  iterations = length(a)
+  
+  z <- lapply(1:iterations, function(x) check_identical_characters(a[x], b[x]))
+
+  #return(unlist(z))
+  return(sum(unlist(z))) # count booleans
+  
+}
+
+```
 #### Data
 
 ```{r}
@@ -552,22 +584,12 @@ stau1.dt <- distinct(stau1.dt)
 stau1_forgi.dt <- rbind(stau1_forgi.dt, short_range.forgi.dt)
 stau1_forgi.dt <- distinct(stau1_forgi.dt)
 #fwrite(stau1_forgi.dt, paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.forgi.tsv.gz"), sep = "\t")
-```
 
-
-
-```{r}
 # Verify forgi matches collpased clusters
 stopifnot(length(unique((stau1_forgi.dt$id))) == nrow(stau1.dt))
 
 # Total number of clusters
 nrow(stau1.dt)
-```
-
-
-```{r}
-# stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz"))
-# stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
 ```
 
 Assign the sample information to the clusters
@@ -751,10 +773,7 @@ utr3_stau1_forgi.df <- semi_join(stau1_forgi.dt, stau1.utr3.df, by = c("id" = "n
 utr3_paris_forgi.df <- semi_join(paris_forgi.dt, paris.utr3.df, by = c("id" = "name"))
 utr3_stau1_forgi.df$Experiment <- "STAU1"
 utr3_paris_forgi.df$Experiment <- "PARIS"
-```
 
-
-```{r}
 # Append datasets
 utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df)
 ```
@@ -884,13 +903,7 @@ span_mean
 ```
 ```{r}
 utr3_clusters.df$Experiment <- factor(utr3_clusters.df$Experiment, levels = c("STAU1", "PARIS"))
-```
 
-```{r}
-unique(utr3_clusters.df$detection_type)
-```
-
-```{r}
 duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = Experiment)) + 
   geom_density(adjust = 1.5) +
   scale_linetype_manual(values=c("dotted", "solid")) +
@@ -972,10 +985,7 @@ span_median <- rbind(span_median, span_median2)
 utr3_clusters.df <- utr3_clusters.df %>%
   dplyr::mutate(condition = case_when(detection_type == "Predicted" ~ "Predicted",
                                       TRUE ~ as.character(Experiment)))
-```
 
-
-```{r}
 condition_colours <- c("Predicted" = "#2fa1b2", "PARIS" = "#f28e2d", "STAU1" = "#507aa8")
 utr3_clusters.df$condition <- factor(utr3_clusters.df$condition, levels = c("STAU1", "PARIS", "Predicted"))
 
@@ -1102,12 +1112,8 @@ Wilxox test p value for the MFE/bp difference is: `r wilcox.test(stau1.norm_mfe.
 wilcox.test(stau1.norm_mfe.ls, paris.norm_mfe.ls)$p.val
 ```
 
-```{r}
-length(stau1.norm_mfe.ls)
-```
 
 The MFE/bp median is: 
-
 
 ```{r}
 mfe_median <- utr3_clusters.df %>%
@@ -1230,10 +1236,7 @@ bulges.df <- utr3_forgi.df %>%
   ungroup() %>%
   distinct() %>%
   dplyr::rename(bulge_count = n)
-```
 
-
-```{r}
 utr3_clusters.df <- left_join(utr3_clusters.df, bulges.df, by = c("Experiment", c("name" = "id")))
 utr3_clusters.df <- utr3_clusters.df %>%
   dplyr::select(-L_db, -R_db)
@@ -1391,11 +1394,6 @@ aym_max_stem.df <- aym_forgi.df %>%
 asym.df <- left_join(asym.df, aym_max_stem.df, by = c("Experiment", c("name" = "id")))
   
 #  forgi.df <- left_join(forgi.df, duplex_max.df, by = "id")
-```
-
-
-
-```{r}
 
 # Boxplot
 asym.df$Experiment <- factor(asym.df$Experiment, levels = c("STAU1", "PARIS"))
@@ -1416,6 +1414,109 @@ max_stem.gg
 
 ```
 
+## AU content
+
+```{r}
+symmetry.df <- symmetry.df %>%
+  mutate(id = paste(Experiment, name, sep = "-"))
+
+symmetry.df <- symmetry.df %>%
+    separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
+
+paired_res.df <- symmetry.df %>%
+  rowwise() %>%
+  mutate(paired_res = list(get_paired_residues(id, L_db, L_sequence, R_db, R_sequence))) %>%
+  mutate(L_paired_residues = paired_res$l_paired_residues,
+         R_paired_residues = paired_res$r_paired_residues) %>%
+  ungroup() %>%
+  dplyr::select(-paired_res)
+
+paired_res.df <- get_au_pairs(paired_res.df)
+
+au_median <- paired_res.df %>%
+    group_by(Experiment, span_group) %>%
+    dplyr::summarize(Median = median(AU_percentage, na.rm=TRUE))
+au_median
+
+au_pairs.gg <- ggplot(paired_res.df, aes(x = AU_percentage, color = condition)) + 
+  geom_density(alpha = 0.8, adjust = 1.5) +
+  #scale_x_log10() + annotation_logticks() +
+  scale_color_manual(values = condition_colours) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Density") +
+  xlab("A:U and U:A pairs (%) ") +
+  geom_vline(data=au_median, aes(xintercept=Median, color=Experiment),
+             linetype="dashed") +
+  facet_grid(rows = vars(span_group))
+
+au_pairs.gg
+```
+
+
+
+```{r}
+asym_2.df <- paired_res.df %>%
+  dplyr::filter(symmetry_type == "Asymmetric") %>%
+  rowwise() %>%
+  mutate(symmetric_bulge_count = count_identical_characters(L_i_widths, R_i_widths, sep = ",")) %>%
+  mutate(symmetric_bulge_percentage = symmetric_bulge_count*100/bulge_count) %>%
+  ungroup()
+
+asym_median <- asym_2.df %>%
+    group_by(Experiment, span_group) %>%
+    dplyr::summarize(Median = median(symmetric_bulge_percentage, na.rm=TRUE))
+asym_median
+
+asym_median
+```
+
+
+```{r}
+asym.df$Experiment <- factor(asym_2.df$Experiment, levels = c("STAU1", "PARIS"))
+
+sym_stem.gg <- ggplot(asym_2.df,
+                         aes(x = Experiment, y=symmetric_bulge_percentage, fill=condition)) +
+  geom_boxplot(width = 0.5) +
+  scale_fill_brewer(palette="Blues") +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_fill_manual(values = condition_colours) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Symmetric bulge percentage\nin asymetric duplexes") +
+  facet_grid(cols = vars(factor(span_group, levels = c("long range", "medium range", "short range", "predicted short range"))))
+sym_stem.gg
+```
+
+```{r}
+# ggsave(paste0(plots.dir, "/percentage_symmetrical_bulges.pdf"), sym_stem.gg, dpi = 300, width = 5, height = 6)
+```
+
+
+## Duplex examples
+
+```{r}
+nice.df <- dplyr::filter(paired_res.df, Experiment == "STAU1" & symmetry_type == "Symmetric" & AU_percentage > 60 & span_group == "long range") 
+dplyr::filter(nice.df, L_gene_name == "SRSF1")
+```
+STAU1 hiCLIP example
+SRSF1
+C003-AC015813.1_AC015813.2_SRSF1:ENSG00000136450.13_ENSG00000264112.1_ENSG00000266086.3-AC015813.1_AC015813.2_SRSF1:ENSG00000136450.13_ENSG00000264112.1_ENSG00000266086.3	
+ATTGGCAGTATTGACCTTATACTAA&ATAGAGTATAATATCAATACTGCTA
+..((((((((((((..(((((((...&....)))))))..))))))))))))
+
+
+```{r}
+nice_paris.df <- dplyr::filter(paired_res.df, Experiment == "PARIS" & AU_percentage < 60) 
+dplyr::filter(nice_paris.df, L_gene_name == "SRSF1")
+```
+
+PARIS hiCLIP example
+SRSF1
+C019-AC015813.1_AC015813.2_SRSF1:ENSG00000136450.13_ENSG00000264112.1_ENSG00000266086.3-AC015813.1_AC015813.2_SRSF1:ENSG00000136450.13_ENSG00000264112.1_ENSG00000266086.3	
+
+GAGTCTCGCTCTGTTCTCCAGACTGGAGG&TCACTGCAACCTCCACCCCTGGATTTGAGTGATTCT
+.((..((((((.....(((((..((((((&.........))))))...)))))...))))))..))
 
 # Extras/ scraps
 
@@ -1472,10 +1573,7 @@ bar2
 ```{r}
 utr3_clusters.df <- utr3_clusters.df %>%
   mutate(id = paste(Experiment, name, sep = "-"))
-```
 
-
-```{r}
 utr3_clusters.df <- utr3_clusters.df %>%
     separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
 
