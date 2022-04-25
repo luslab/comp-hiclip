@@ -1223,3 +1223,7 @@ median(stau1.dt$count)
 median(linker.clusters.dt$count)
 ```
 
+```{r}
+installed.packages()[names(sessionInfo()$otherPkgs), "Version"]
+```
+
