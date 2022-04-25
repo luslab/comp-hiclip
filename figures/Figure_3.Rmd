@@ -27,8 +27,8 @@ suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(pheatmap))
 suppressPackageStartupMessages(library(reshape2))
 suppressPackageStartupMessages(library(broom))
-suppressPackageStartupMessages(library(ggpubr))
-suppressPackageStartupMessages(library(ggthemes))
+# suppressPackageStartupMessages(library(ggpubr))
+# suppressPackageStartupMessages(library(ggthemes))
 suppressPackageStartupMessages(library(cowplot))
 suppressPackageStartupMessages(library(grid))
 suppressPackageStartupMessages(library(RColorBrewer))
@@ -349,18 +349,6 @@ get_paired_regions <- function(id, L_db, R_db) {
   
 }
 
-get_stem_loop_sequence <- function(hybrids.dt, genome.dt) {
-  
-  hybrids.dt[, gene_id := L_seqnames]
-  setkey(genome.dt, gene_id)
-  setkey(hybrids.dt, gene_id)
-  
-  seq.dt <- genome.dt[hybrids.dt]
-  seq.dt[, `:=`(stem_loop_sequence, stringr::str_sub(sequence, start = L_start, end = R_end))]
-  seq.dt[, `:=`(c("gene_id", "sequence"), NULL)]
-
-  return(seq.dt)
-}
 
 trim_duplex_overhangs <- function(clusters.df) {
   
@@ -406,7 +394,6 @@ trim_duplex_overhangs <- function(clusters.df) {
 data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021"
 plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3"
 ref.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/ref"
-ref.dir2 <- "/Users/iosubi/Documents/projects/computational_hiCLIP/newest_datasets"
 ```
 
 ***
@@ -418,7 +405,6 @@ gencode.txdb <- AnnotationDbi::loadDb(txdb)
 human.gtf <- paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_id used by Tosca
 regions.gr <- import.gff2(paste0(ref.dir,"/regions.gtf.gz"))
 genes.gr <- import.gff2(paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz"))
-fa.dss <- readDNAStringSet((paste0(ref.dir2, "/GRCh38.gencode_v33.fa")))
 ```
 
 ***
@@ -440,7 +426,6 @@ shuff.files
 ```{r}
 bed.files <- list.files(path = paste0(data.dir,""), pattern = "annot.bed.gz", full.names = TRUE)
 stau1.bedfile <- bed.files[str_detect(bed.files, "stau1")]
-print(stau1.bedfile)
 ```
 
 
@@ -485,7 +470,6 @@ peak_regions.gg
 # ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
 
-
 # Fig 3 B: STAU1 unpaired probability metaprofile
 
 STAU1:
@@ -495,7 +479,6 @@ stau1.prob.file <- prob.files[str_detect(prob.files, "stau1")]
 stau1.shuff.file <- shuff.files[str_detect(prob.files, "stau1")]
 prefix <- basename(stau1.prob.file)
 prefix <- str_split(prefix, ".tsv")[[1]][1]
-print(prefix)
 stau1.data.df <- get_metaprofile_dataframe(stau1.prob.file, stau1.shuff.file, shuffled = TRUE)
 ```
 
@@ -532,6 +515,7 @@ merged.data.df <- rbind(stau1.data.df, hur.data.df, tardp.data.df)
 data.df <- merged.data.df %>%
   dplyr::filter(!((Sample == "Shuffled" & Experiment == "HuR") | (Sample == "Shuffled" & Experiment == "TDP-43")))
 data.df$Sample <- plyr::mapvalues(data.df$Sample, from=c("ELAVL1", "TARDP"), to=c("HuR", "TDP-43"))
+data.df$Sample <- factor(data.df$Sample, levels = c("Shuffled", "HuR", "STAU1", "TDP-43"))
 
 merged.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
   scale_fill_manual(values=c('#ce5d5d','#575756', '#ce5d5d', '#878787')) +
@@ -583,7 +567,7 @@ stau1.prob.df <- stau1.prob.df %>%
 prob_downstream.df <- stau1.prob.df %>% dplyr::select("10":"75")
 ```
 
-Find the optimal number of clusters
+Find the optimal number of clusters:
 
 ```{r}
 set.seed(123)
@@ -613,9 +597,11 @@ stau1.prob.df$cluster <- factor(stau1.prob.df$cluster, levels = c(0, 1))
 
 # Visualise the two clusters'means
 col_pal <- brewer.pal(n_clusters, "Dark2")
-clusters.gg <- plot_cluster_mean(stau1.prob.df, 51)
+clusters.gg <- plot_cluster_mean(stau1.prob.df, 51) +
+  theme_minimal_grid()
 clusters.gg
 ```
+
 Cluster 1 contains STAU1 peaks with higher paired probability. To further subset peaks based on the paired probability profiles, we will sub-cluster cluster 1.
 
 ```{r}
@@ -633,9 +619,7 @@ set.seed(123)
 silhouette_cl1.gg <- fviz_nbclust(cluster1.df_downstream.df, run_kmeans, method="silhouette")
 silhouette_cl1.gg
 # ggsave(paste0(plots.dir,"/silhouette_cluster1.pdf"), silhouette_cl1.gg, dpi = 300, width = 4, height = 4)
-```
 
-```{r}
 # K-means clustering - "euclidean" dist, 3 clusters
 kmeans.df <- run_kmeans(cluster1.df_downstream.df, 3)
 # join cluster information to the data containing the -50: +75 nt positions 
@@ -736,7 +720,7 @@ cluster.duplexes.l <- lapply(1:3, function(i) get_duplex(region.dt = peaks.dt,
                                                          cluster_number = i))
 cluster.duplexes.dt <- rbindlist(cluster.duplexes.l)
 # fwrite(cluster.duplexes.dt, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz", sep = "\t")
-# cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz")
+# cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz") # The above chunk takes long to run, so you can load the data directly
 ```
 
 ```{r}
@@ -825,7 +809,7 @@ arms.df <- cluster.duplexes.dt %>%
 arms.df <- as.data.frame(left_join(arms.df, peaks.df, by = c("name" = "id", "seqnames", "strand")))
 
 
-# From the annotated peaks coordinates calculate tx coordinates of the  predicted stem
+# From the annotated peaks coordinates calculate tx coordinates of the predicted stem
 # ==========
 # Obtain coordinates for each arm of the stem loop
 # ==========
@@ -847,10 +831,7 @@ arms.df <- dplyr::filter(arms.df, !is.na(fasta_id))
 # Check L and R arm coordinate widths are correct
 stopifnot((arms.df$L_genomic_end - arms.df$L_genomic_start) == abs(arms.df$L_tx_end - arms.df$L_tx_start))
 stopifnot((arms.df$R_genomic_end - arms.df$R_genomic_start) == abs(arms.df$R_tx_end - arms.df$R_tx_start))
-```
 
-
-```{r}
 # Genomic (similar to tosca clusters table):
 short_range.df <- data.frame(name = arms.df$name, count = arms.df$score, L_seqnames=arms.df$fasta_id,	
                                      L_start=arms.df$L_tx_start, L_end=arms.df$L_tx_end, L_strand="+", L_genomic_seqnames=arms.df$seqnames,
@@ -865,6 +846,7 @@ stopifnot(abs(short_range.df$L_genomic_end - short_range.df$L_genomic_start) ==
 stopifnot(abs(short_range.df$R_genomic_end - short_range.df$R_genomic_start) ==
             abs(short_range.df$R_end - short_range.df$R_start))
 
+# Save short range derived interactions
 #fwrite(short_range.df, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_duplexes.tsv.gz", sep = "\t")
 ```
 
@@ -978,9 +960,7 @@ mfe <- fread(paste0(data.dir, "/short_range_duplexes.mfe.tsv.gz")) # analyse_clu
 mfe <- dplyr::filter(mfe, !(str_detect(L_sequence, "N") | str_detect(R_sequence, "N")))
 
 short_range.df <- left_join(short_range.df, dplyr::select(mfe, L_sequence, R_sequence, name, mean_shuffled_mfe), by = "name")
-```
 
-```{r}
 short_range.df$mean_shuffled_mfe <- as.numeric(short_range.df$mean_shuffled_mfe)
 short_range.df$mfe <- as.numeric(short_range.df$mfe)
 mfe.df <- pivot_longer(short_range.df, cols = c(mfe, mean_shuffled_mfe), names_to = "Sample", values_to = "MFE")
@@ -1064,7 +1044,6 @@ hairpin.gg
 
 quantile(short_range.df$hairpin_loop, c(.25, .50, .75, 1))
 ```
-
 Export data (this table will be used for creating the complete atlas)
 
 ```{r}
@@ -1186,11 +1165,6 @@ dev.off()
 
 # Fig 3 H: Examples of short-range structures
 
-```{r}
-fa.dt <- data.table(gene_id = names(fa.dss), sequence = as.character(fa.dss))
-x <- get_stem_loop_sequence(as.data.table(short_range.df), fa.dt)
-```
-
 ***
 > Duplexes in ARF1 3'UTR
 
@@ -1198,17 +1172,23 @@ x <- get_stem_loop_sequence(as.data.table(short_range.df), fa.dt)
 arf1_stau1.dt <- stau1.dt %>%
   dplyr::filter(L_gene_name == "ARF1")
 
-# arf1_stau1.dt$q <- 0
-# arf1_stau1.bp.dt <- arf1_stau1.dt[, .(L_genomic_seqnames, L_genomic_start, L_genomic_end, R_genomic_start, R_genomic_end, q)]
-
-# fwrite(arf1_stau1.bp.dt, sep = "\t", col.names = FALSE, file ="~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/arf1_structures.bp")
-# dplyr::filter(arf1_stau1.dt, name %in% "ID2361")
 arf1_stau1.dt
 ```
 
 # Extras
 
-Number of paired residues
+Are the loops of overlapped derived duplexes larger than the loops of non-overlapped derived duplexes?
+
+```{r}
+derived_only.dt <- stau1.cluster.hybrids.df %>% dplyr::filter(str_detect(cluster, "ID"))
+derived_only.df <- semi_join(short_range.df, derived_only.dt, by = "name")
+derived_overlapped.df <- anti_join(short_range.df, derived_only.dt, by = "name")
+quantile(derived_only.df$hairpin_loop, c(.25, .50, .75, 1))
+quantile(derived_overlapped.df$hairpin_loop, c(.25, .50, .75, 1))
+```
+
+
+Number of paired residues for derived structures
 
 ```{r}
 total_paired_median <- short_range.df %>%
@@ -1235,19 +1215,10 @@ Number of hybrids supporting duplexes
 linker.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/linker/linker.clusters.mfe.tsv.gz")
 linker.clusters.dt <- collapse_clusters(linker.dt)
 nrow(linker.clusters.dt)
-```
-
-```{r}
 nrow(stau1.dt)
-```
-
-```{r}
 mean(stau1.dt$count)
 mean(linker.clusters.dt$count)
-```
 
-
-```{r}
 median(stau1.dt$count)
 median(linker.clusters.dt$count)
 ```

@@ -1473,7 +1473,7 @@ asym_median
 
 
 ```{r}
-asym.df$Experiment <- factor(asym_2.df$Experiment, levels = c("STAU1", "PARIS"))
+asym_2.df$Experiment <- factor(asym_2.df$Experiment, levels = c("STAU1", "PARIS"))
 
 sym_stem.gg <- ggplot(asym_2.df,
                          aes(x = Experiment, y=symmetric_bulge_percentage, fill=condition)) +
@@ -1489,7 +1489,24 @@ sym_stem.gg
 ```
 
 ```{r}
-# ggsave(paste0(plots.dir, "/percentage_symmetrical_bulges.pdf"), sym_stem.gg, dpi = 300, width = 5, height = 6)
+#ggsave(paste0(plots.dir, "/percentage_symmetrical_bulges.pdf"), sym_stem.gg, dpi = 300, width = 5, height = 6)
+```
+```{r}
+paired_res.df
+```
+```{r}
+fwrite(paired_res.df, "stau1_paris_duplex_info.tsv.gz", sep = "\t")
+```
+
+```{r}
+fwrite(dplyr::filter(paired_res.df, Experiment == "STAU1"), "stau1_duplex_info.tsv.gz", sep = "\t")
+```
+
+```{r}
+dplyr::filter(paired_res.df, Experiment == "STAU1")
+```
+```{r}
+unique(paired_res.df$detection_type)
 ```
 
 
