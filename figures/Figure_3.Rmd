@@ -1,5 +1,5 @@
 ---
-title: "Figure 3 & Suppl. Fig. S3"
+title: "Figure 3 & Suppl. Fig. 3"
 author: "Ira Iosub"
 date: "`r format(Sys.time(), '%d %B %Y')`"
 output:

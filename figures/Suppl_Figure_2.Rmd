@@ -1,0 +1,343 @@
+---
+title: "Suppl. Fig 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(pheatmap)
+library(viridis)
+library(RColorBrewer)
+library(primavera)
+library(rtracklayer)
+library(data.table)
+library(ggplot2)
+library(scales)
+library(ggthemes)
+library(cowplot)
+library(UpSetR)
+library(tidyverse)
+```
+
+```{r}
+plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_2"
+ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3")
+```
+
+
+```{r}
+convert_linkerbam_to_hybrids <- function(bam, threads = 4, export_fasta = FALSE) {
+
+  ga <- GenomicAlignments::readGAlignments(bam,
+                                           use.names = TRUE,
+                                           param = Rsamtools::ScanBamParam(what = c("seq", "qual")))
+
+  ga <- ga[GenomicAlignments::njunc(ga) == 0]
+
+  cig <- GenomicAlignments::cigarRangesAlongQuerySpace(GenomicAlignments::cigar(ga),
+                                                       after.soft.clipping = TRUE,
+                                                       drop.empty.ranges = TRUE,
+                                                       reduce.ranges = TRUE)
+  stopifnot(all(S4Vectors::elementNROWS(cig) == 1))
+  cig <- unlist(IRanges::IRangesList(cig))
+
+  # Probably a vectorised way of doing this but seq[cig] doesn't work?
+  S4Vectors::mcols(ga)$seq <- Biostrings::DNAStringSet(parallel::mclapply(seq_along(cig), function(i) { S4Vectors::mcols(ga)$seq[[i]][cig[i]] }, mc.cores = threads))
+  S4Vectors::mcols(ga)$qual <- Biostrings::BStringSet(parallel::mclapply(seq_along(cig), function(i) { S4Vectors::mcols(ga)$qual[[i]][cig[i]] }, mc.cores = threads))
+
+  dt <- as.data.table(ga, keep.rownames = TRUE)
+  dt[, `:=` (name = gsub("^L\\.|^R\\.", "", rn),
+             arm = tstrsplit(rn, "\\.")[[1]])][, rn := NULL]
+
+  hybrids.dt <- merge(dt[arm == "L"], dt[arm == "R"], by = "name")
+  hybrids.dt[, seq := paste0(seq.x, seq.y)]
+  hybrids.dt[, seq_width := nchar(seq)]
+
+  if(export_fasta) {
+
+    hybrids.fa <- Biostrings::DNAStringSet(paste0(hybrids.dt$seq.x, hybrids.dt$seq.y))
+    names(hybrids.fa) <- hybrids.dt$name
+
+    hybrids.qual <- Biostrings::BStringSet(paste0(hybrids.dt$qual.x, hybrids.dt$qual.y))
+
+
+    Biostrings::writeXStringSet(hybrids.fa, export_fasta,
+                                format = "fastq",
+                                qualities = hybrids.qual,
+                                compress = TRUE)
+
+  }
+
+  return(hybrids.dt)
+
+}
+```
+
+## Load data
+
+```{r}
+linker.dt <- rbindlist(list(
+  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lph.hybrids.dedup.tsv.gz")[, sample := "stau1_high"],
+  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lpl.hybrids.dedup.tsv.gz")[, sample := "stau1_low"]),
+                       use.names = TRUE)
+```
+
+
+```{r}
+# High RNase
+lph <- convert_linkerbam_to_hybrids(bam = "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/linker/LigPlusHighAligned.sortedByCoord.out.bam",
+                                    threads = 4)
+lph <- lph[name %in% linker.dt[sample == "stau1_high"]$name] # keep dedup reads
+lph.fa <- Biostrings::DNAStringSet(paste0(lph$seq.x, lph$seq.y))
+names(lph.fa) <- lph$name
+lph.qual <- Biostrings::BStringSet(paste0(lph$qual.x, lph$qual.y))
+Biostrings::writeXStringSet(lph.fa, "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/silico/LigPlusHigh.silico.fastq.gz",
+                            format = "fastq",
+                            qualities = lph.qual,
+                            compress = TRUE)
+
+# Low RNase
+lpl <- convert_linkerbam_to_hybrids(bam = "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/linker/LigPlusLowAligned.sortedByCoord.out.bam",
+                                    threads = 4)
+lpl <- lpl[name %in% linker.dt[sample == "stau1_low"]$name] # keep dedup reads
+lpl.fa <- Biostrings::DNAStringSet(paste0(lpl$seq.x, lpl$seq.y))
+names(lpl.fa) <- lpl$name
+lpl.qual <- Biostrings::BStringSet(paste0(lpl$qual.x, lpl$qual.y))
+Biostrings::writeXStringSet(lpl.fa, "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/silico/LigPlusLow.silico.fastq.gz",
+                            format = "fastq",
+                            qualities = lpl.qual,
+                            compress = TRUE)
+```
+
+```{bash, eval = FALSE}
+ml purge
+ml Nextflow/20.10.0
+ml Singularity/3.6.4
+ml Graphviz/2.38.0-foss-2016b
+
+nextflow pull amchakra/tosca -r main
+
+nextflow run amchakra/tosca -r main \
+-resume \
+-profile conda \
+--org comp_hiclip \
+--input silico.csv \
+--umi_separator _ \
+--dedup_method 'none' \
+--percent_overlap 0.5 \
+--atlas false \
+--transcript_fa /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/ref/GRCh38.gencode_v33.fa \
+--transcript_fai /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/ref/GRCh38.gencode_v33.fa.fai \
+--transcript_gtf /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz
+```
+
+
+```{r}
+linker.dt <- rbindlist(list(
+  fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/linker/lph.hybrids.dedup.tsv.gz")[, sample := "stau1_high"],
+  fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/linker/lpl.hybrids.dedup.tsv.gz")[, sample := "stau1_low"]),
+                       use.names = TRUE)
+
+silico.dt <- rbindlist(list(
+  fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/silico/hybrids/LigPlusHighSilico.hybrids.gc.annotated.tsv.gz")[, sample := "stau1_high"],
+  fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/silico/hybrids/LigPlusLowSilico.hybrids.gc.annotated.tsv.gz")[, sample := "stau1_low"]),
+                       use.names = TRUE)
+
+linker.dt[, recovered := ifelse(name %in% silico.dt$name, "Recovered", "Not recovered")]
+linker.dt[, readlength := L_width + R_width]
+linker.dt[, minwidth := min(L_width, R_width), by = name]
+linker.dt[, type := ifelse(L_seqnames == R_seqnames, "intramolecular", "intermolecular")]
+```
+
+# Suppl. Fig 2 A - Pie
+
+```{r}
+pie.dt <- linker.dt[, .N, by = .(recovered)]
+pie.dt[, percent := paste0(round(N/sum(pie.dt$N) * 100, 1), "%")]
+pie.dt[, lab.ypos := cumsum(N) - 0.5 * N]
+
+p <- ggplot(pie.dt, aes(x = "", y = N, fill = recovered)) + 
+  geom_bar(stat = "identity") + 
+  coord_polar("y", start = 1.571) +
+  scale_fill_tableau(palette = "Classic Blue-Red 6", direction = -1) +
+  theme_minimal_grid() + theme(legend.position = "top",
+                               axis.text = element_blank(),
+                               axis.ticks = element_blank(),
+                               axis.line = element_blank(),
+                               panel.grid.major = element_blank()) +
+  labs(x = "",
+       y = "",
+       fill = "") +
+  geom_text(aes(y = lab.ypos, label = percent), color = "white", size = 5)
+
+p
+
+ggsave(p, filename = file.path(plot.path, "silico_recovery.pdf"), width = 7, height = 4)
+```
+
+# Suppl. Fig 2 A - Matches
+
+```{r}
+comp.dt <- merge(linker.dt, silico.dt, by = "name")
+comp.dt[, L_match := ifelse(L_seqnames.x != L_seqnames.y, FALSE, TRUE)]
+comp.dt[, R_match := ifelse(R_seqnames.x != R_seqnames.y, FALSE, TRUE)]
+comp.dt[, L_start_match := ifelse(L_start.x >= L_start.y - 10 & L_start.x <= L_start.y + 10, TRUE, FALSE)]
+comp.dt[, R_start_match := ifelse(R_start.x >= R_start.y - 10 & R_start.x <= R_start.y + 10, TRUE, FALSE)]
+
+match.dt <- comp.dt[, .(L_match, R_match, L_start_match, R_start_match)]
+match.dt[L_match == TRUE & L_start_match == TRUE | R_match == TRUE & R_start_match == TRUE, match := "One arm matches"]
+match.dt[L_match == TRUE & R_match == TRUE & L_start_match == TRUE & R_start_match == TRUE, match := "Both arms match"]
+match.dt[is.na(match), match := "No match"]
+
+match.dt$match <- factor(match.dt$match, levels = rev(c("No match", "One arm matches", "Both arms match")))
+match.dt <- match.dt[, .N, by = match]
+match.dt[match == "Both arms match", percent := paste0(round(N/sum(match.dt$N) * 100, 1), "%")]
+
+p <- ggplot(match.dt, aes(x = "", y = N, fill = match)) +
+  geom_col(position = "fill") + coord_flip() +
+  scale_y_continuous(label = percent) +
+  scale_fill_manual(values = c("No match" = "#ea6b73",
+                               "One arm matches" = "#6ba3d6",
+                               "Both arms match" = "#2c69b0"),
+                    guide = guide_legend(reverse = TRUE)) +
+  theme_minimal_grid() + theme(legend.position = "bottom") +
+  labs(x = "",
+       y = "Percentage",
+       fill = "") +
+  geom_text(aes(label = percent), y = 0.5, color = "white", size = 5)
+
+ggsave(p, filename = file.path(plot.path, "silico_recovery_match.pdf"), width = 7, height = 2)
+
+p
+```
+
+# Suppl. Fig 2 B - Read length
+
+```{r}
+p <- ggplot(linker.dt, aes(x = readlength, colour = recovered)) +
+  geom_density() +
+  facet_grid(sample ~ ., 
+             labeller = labeller(sample = c(stau1_high = "High RNase", stau1_low = "Low RNase"))) +
+  scale_colour_tableau(palette = "Classic Blue-Red 6", direction = -1) +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "Read length",
+       y = "Density",
+       colour = "")
+
+ggsave(p, filename = file.path(plot.path, "silico_recovery_readlength.pdf"), width = 7, height = 4)
+p
+```
+
+```{r}
+linker.dt[, median(readlength), by = recovered]
+wilcox.test(x = linker.dt[recovered == "Recovered"]$readlength, y = linker.dt[recovered == "Not recovered"]$readlength)
+```
+
+# Suppl. Fig 2 C - shortest arm
+
+```{r}
+p <- ggplot(linker.dt, aes(y = minwidth, x = recovered, colour = recovered)) +
+  geom_violin() +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  coord_flip() +
+  facet_grid(sample ~ ., 
+           labeller = labeller(sample = c(stau1_high = "High RNase", stau1_low = "Low RNase"))) +
+  scale_colour_tableau(palette = "Classic Blue-Red 6", direction = -1) +
+  theme_minimal_grid() + theme(legend.position = "none") +
+  labs(x = "",
+       y = "Shorter arm length",
+       colour = "Recovered")
+
+ggsave(p, filename = file.path(plot.path, "silico_recovery_minarmlength.pdf"), width = 7, height = 4)
+p
+```
+
+```{r}
+linker.dt[, median(minwidth), by = recovered]
+wilcox.test(x = linker.dt[recovered == "Recovered"]$minwidth, y = linker.dt[recovered == "Not recovered"]$minwidth)
+```
+
+# Suppl. Fig 2 D - inter-intra
+
+```{r}
+linker.dt[, type := ifelse(type == "intramolecular", "intra-transcript", "inter-transcript")]
+
+p <- linker.dt %>%
+  group_by(recovered, type) %>%
+  summarise(reads = n()) %>%
+  mutate(percentage = reads/sum(reads)) %>%
+  ggplot(aes(x = recovered, y = percentage, fill = type)) +
+  geom_col(width = 0.5, position = "fill") +
+  geom_text(aes(label = ifelse(percentage > 0.05, paste0(round(percentage * 100, 1), "%"), "")), 
+            position = position_stack(vjust=0.5),
+            colour = "white",
+            size = 5) +
+  coord_flip() + 
+  scale_y_continuous(label = percent) +
+  scale_fill_tableau(palette = "Seattle Grays", guide = guide_legend(reverse = TRUE)) +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "",
+       y = "Percentage of hybrids",
+       fill = "")
+
+ggsave(p, filename = file.path(plot.path, "silico_recovery_interintra.pdf"), width = 7, height = 4)
+
+p
+```
+
+# Suppl. Fig 2 E - Regions
+
+```{r}
+genes.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz")
+regions.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/regions.gtf.gz")
+linker.dt[, `:=` (L_end = L_start + L_width - 1,
+                  R_end = R_start + R_width - 1)]
+
+linker.dt <- convert_coordinates(hybrids.dt = linker.dt, genes.gr = genes.gr)
+linker.dt <- annotate_hybrids(hybrids.dt = linker.dt, regions.gr = regions.gr)
+
+arms.dt <- rbindlist(list(linker.dt[, .(sample, recovered, L_region)], linker.dt[, .(sample, recovered, R_region)]), use.names = FALSE)
+arms.dt$L_region <- factor(arms.dt$L_region, levels = rev(c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA")))
+# arms.dt <- arms.dt[, .N, by = .(sample, recovered, L_region)]
+
+p <- arms.dt %>%
+  group_by(L_region, recovered) %>%
+  summarise(arms = n()) %>%
+  group_by(recovered) %>%
+  mutate(percentage = arms/sum(arms)) %>%
+  ggplot(aes(x = recovered, y = percentage, fill = L_region)) +
+  geom_col(width = 0.5, position = "fill") +
+  geom_text(aes(label = ifelse(percentage > 0.05, paste0(round(percentage * 100, 1), "%"), "")), 
+            position = position_stack(vjust=0.5),
+            colour = "white",
+            size = 5) +
+  coord_flip() +
+  scale_y_continuous(label = percent) +
+  scale_fill_tableau(palette = "Miller Stone", 
+                     direction = -1, 
+                     guide = guide_legend(reverse = TRUE)) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  labs(x = "",
+       y = "Percentage of hybrids",
+       fill = "")
+
+# p <- ggplot(arms.dt, aes(x = recovered, y = N, fill = L_region)) +
+#   geom_col(width = 0.5, position = "fill") +
+#   coord_flip() + 
+#   scale_y_continuous(label = percent) +
+#   scale_fill_tableau(palette = "Miller Stone", direction = -1) +
+#   theme_minimal_grid() + theme(legend.position = "top") +
+#   labs(x = "",
+#        y = "Percentage of hybrids",
+#        fill = "")
+
+ggsave(p, filename = file.path(plot.path, "silico_recovery_regions.pdf"), width = 7, height = 4)
+
+p
+```
+
+
