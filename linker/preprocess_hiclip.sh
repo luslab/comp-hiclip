@@ -3,18 +3,25 @@
 # Preprocess data from Sugimoto et al., 2015
 # A. M. Chakrabarti
 # 12th June 2020, updated 16th September 2020, updated 28th January 2021
+# Updated 2nd December 2022
 
 conda activate comp-hiclip-dev
 
-cd /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/preprocessed
+# Paths
+DATADIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/data
+GITHUBDIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/comp-hiclip
 
-DATADIR=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/data/hiclip_stau1
-GITHUBDIR=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/comp-hiclip
+# Make preprocessing directory
+mkdir -p /camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/preprocessed
+cd /camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/preprocessed
+
+# Download raw data from EBI
+curl -L ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR605/ERR605257/ERR605257.fastq.gz -o $DATADIR/ERR605257.fastq.gz
 
 # Move UMI to header and demultiplex
 umi_tools extract -p NNNXXXXNN -I $DATADIR/ERR605257.fastq.gz -S ERR605257.umi.fastq.gz
 reformat.sh trimreaddescription=t in=ERR605257.umi.fastq.gz out=ERR605257.umi.trd.fastq.gz # Need to remove everything after first whitespace in read name
-cutadapt -j 8 -e 0 --no-indels -g LigPlusLow="^AATA" -g LigPlusHigh="^GGTT" -g LigMinus="^GGCG" -o {name}.fastq.gz ERR605257.umi.trd.fastq.gz > cutadapt.log 2>&1
+cutadapt -j 8 -e 0 --no-indels -g LigPlusLow="^AATA" -g LigPlusHigh="^GGTT" -g LigMinus="^GGCG" -o {name}.fastq.gz ERR605257.umi.trd.fastq.gz > demux.cutadapt.log 2>&1
 
 rm ERR605257.umi.fastq.gz
 rm ERR605257.umi.trd.fastq.gz
