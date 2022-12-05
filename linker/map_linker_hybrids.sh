@@ -3,11 +3,14 @@
 # Map linker data from Sugimoto et al., 2015
 # 01 February 2021
 
+ml Singularity/3.6.4
+
 conda activate comp-hiclip-dev
 
 DATADIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/preprocessed
 REFDIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref
 GITHUBDIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/comp-hiclip
+TOSCADIR=~/.nextflow/assets/amchakra/tosca
 
 # ==========
 # Generate STAR index
@@ -53,7 +56,30 @@ for i in LigPlusHigh.linker.fastq.gz LigPlusLow.linker.fastq.gz; do
 	--outFilterMultimapScoreRange 1 \
 	--outFilterScoreMin 10
 
+	rm ${i%%.*}.Log.progress.out 
+	rm ${i%%.*}._STARgenome/*
+	rm ${i%%.*}._STARpass1/*
+	rmdir ${i%%.*}._STARgenome
+	rmdir ${i%%.*}._STARpass1
+
 	# Get hybrid table
-	Rscript --vanilla $GITHUBDIR/linker/bam_to_dataframe.R ${i%%.*}.Aligned.sortedByCoord.out.bam ${i%%.*}
+	Rscript --vanilla $GITHUBDIR/linker/bam_to_toscatable.R \
+	${i%%.*}.Aligned.sortedByCoord.out.bam \
+	${i%%.*}
+
+	# Deduplicate using UMIs
+	$TOSCADIR/bin/deduplicate_hybrids.py \
+	${i%%.*}.hybrids.tsv.gz \
+	${i%%.*}.hybrids.dedup.tsv.gz \
+	_ \
+	directional \
+	> ${i%%.*}.dedup.log
+
+	# Process hybrids.dt
+	Rscript --vanilla $GITHUBDIR/linker/process_toscatable.R \
+	${i%%.*}.hybrids.dedup.tsv.gz \
+	$REFDIR/GRCh38.gencode_v33.tx.gtf.gz \
+	$REFDIR/icount_mini_utr3/regions.gtf.gz \
+	${i%%.*}
 
 done
