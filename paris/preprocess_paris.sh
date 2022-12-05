@@ -6,9 +6,11 @@
 
 conda activate comp-hiclip-dev
 
-cd /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris
+mkdir -p /camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/paris/preprocessed
+cd /camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/paris/preprocessed
+# cd /camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris
 
-DATADIR=/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/data/paris
+DATADIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/paris/data
 
 #        543210987654321
 #        123456789012345

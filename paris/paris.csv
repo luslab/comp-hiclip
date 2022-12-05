@@ -1,4 +1,4 @@
-sample_id,fastq
-paris_3,/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris/SRR2814763.dedup.fastq.gz
-paris_4,/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris/SRR2814764.dedup.fastq.gz
-paris_5,/camp/lab/luscomben/home/users/chakraa2/projects/comp_hiclip/paris/SRR2814765.dedup.fastq.gz
+sample,fastq
+paris_3,/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/paris/preprocessed/SRR2814763.dedup.fastq.gz
+paris_4,/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/paris/preprocessed/SRR2814764.dedup.fastq.gz
+paris_5,/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/paris/preprocessed/SRR2814765.dedup.fastq.gz
