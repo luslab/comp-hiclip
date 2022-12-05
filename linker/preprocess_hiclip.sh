@@ -21,18 +21,18 @@ curl -L ftp://ftp.sra.ebi.ac.uk/vol1/fastq/ERR605/ERR605257/ERR605257.fastq.gz -
 # Move UMI to header and demultiplex
 umi_tools extract -p NNNXXXXNN -I $DATADIR/ERR605257.fastq.gz -S ERR605257.umi.fastq.gz
 reformat.sh trimreaddescription=t in=ERR605257.umi.fastq.gz out=ERR605257.umi.trd.fastq.gz # Need to remove everything after first whitespace in read name
-cutadapt -j 8 -e 0 --no-indels -g LigPlusLow="^AATA" -g LigPlusHigh="^GGTT" -g LigMinus="^GGCG" -o {name}.fastq.gz ERR605257.umi.trd.fastq.gz > demux.cutadapt.log 2>&1
+cutadapt -j 8 -e 0 --no-indels -g stau1_low="^AATA" -g stau1_high="^GGTT" -g stau1_minus="^GGCG" -o {name}.fastq.gz ERR605257.umi.trd.fastq.gz > demux.cutadapt.log 2>&1
 
 rm ERR605257.umi.fastq.gz
 rm ERR605257.umi.trd.fastq.gz
-rm LigMinus.fastq.gz
+rm stau1_minus.fastq.gz
 rm unknown.fastq.gz
 
 # Trim adapters and identify linker reads
 A=AGATCGGAAGAGCGGTTCAG
 B=CTGTAGGCACCATACAATG
 
-for i in LigPlusHigh.fastq.gz LigPlusLow.fastq.gz; do
+for i in stau1_high.fastq.gz stau1_low.fastq.gz; do
 
     echo ${i%%.*}
 

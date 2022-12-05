@@ -3,8 +3,6 @@
 # Map linker data from Sugimoto et al., 2015
 # 01 February 2021
 
-ml Singularity/3.6.4
-
 conda activate comp-hiclip-dev
 
 DATADIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/preprocessed
@@ -16,20 +14,20 @@ TOSCADIR=~/.nextflow/assets/amchakra/tosca
 # Generate STAR index
 # ==========
 
-cd $REFDIR
+# cd $REFDIR
 
-STAR \
---runThreadN 8 \
---runMode genomeGenerate \
---genomeDir STAR_GRCh38_GencodeV33_masked \
---genomeFastaFiles GRCh38.gencode_v33.fa
+# STAR \
+# --runThreadN 8 \
+# --runMode genomeGenerate \
+# --genomeDir STAR_GRCh38_GencodeV33_masked \
+# --genomeFastaFiles GRCh38.gencode_v33.fa
 
 # ==========
 
 mkdir -p /camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/results_linker
 cd /camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/results_linker
 
-for i in LigPlusHigh.linker.fastq.gz LigPlusLow.linker.fastq.gz; do
+for i in stau1_high.linker.fastq.gz stau1_low.linker.fastq.gz; do
 
     echo ${i%%.*}
 
