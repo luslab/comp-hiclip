@@ -14,7 +14,7 @@ library(optparse)
 
 option_list <- list(make_option(c("", "--gtf"), action = "store", type = "character", default=NA, help = "GTF annotation file"),
                     make_option(c("", "--tpm"), action = "store", type = "character", default=NA, help = "Transcript quantification table"),
-                    make_option(c("", "--out"), action = "store", type = "character", default=NA, help = "Output name"))
+                    make_option(c("", "--out"), action = "store", type = "character", default=NA, help = "Output name for bed file with tranascript coordinates"))
 opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
@@ -23,28 +23,23 @@ opt <- parse_args(opt_parser)
 # Load annotations and RNAseq data
 # ==========
 
-#ref.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref"
-data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/"
+ref.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref"
+# data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/results_nornase"
 
-if (file.exists(paste0(data.dir, "/gencode.v33.txdb.sqlite"))) {
-  TxDb <- loadDb(paste0(data.dir, "/gencode.v33.txdb.sqlite"))
+
+# Generate TxDb object
+if (file.exists(paste0(ref.dir, "/gencode.v33.txdb.sqlite"))) {
+  TxDb <- loadDb(paste0(ref.dir, "/gencode.v33.txdb.sqlite"))
   TxDb <- keepStandardChromosomes(TxDb , pruning.mode="coarse")
 } else {
   TxDb <- makeTxDbFromGFF(opt$gtf, format="gtf",
                           organism = "Homo sapiens", chrominfo = seqinfo(TxDb.Hsapiens.UCSC.hg38.knownGene) )
-  saveDb(TxDb, file=paste0(data.dir, "/gencode.v33.txdb.sqlite"))
-  TxDb <- loadDb(paste0(data.dir, "/gencode.v33.txdb.sqlite"))
+  saveDb(TxDb, file=paste0(ref.dir, "/gencode.v33.txdb.sqlite"))
+  TxDb <- loadDb(paste0(ref.dir, "/gencode.v33.txdb.sqlite"))
 }
 
-# TPM data 
+# TPM data from nf-core rnaseq pipeline run
 rnaseq.dt <- fread(opt$tpm)
-
-
-# ==========
-# Get all transcripts
-# ==========
-
-transcripts.df <- as.data.frame(transcriptsBy(TxDb))
 
 # ==========
 # Expression profile
@@ -63,11 +58,14 @@ rnaseq.dt$tpm_mean <- rowMeans(subset(rnaseq.dt, select = samples.ls), na.rm = T
 # For each gene, get the transcript with max TPM
 # ==========
 
+#  Get all transcripts from TxDb 
+transcripts.df <- as.data.frame(transcriptsBy(TxDb))
+
 max_tpm.df <- rnaseq.dt %>%
   group_by(gene_id) %>%
-  dplyr::slice(which.max(tpm_mean)) #in case of ties, first transcript is taken; with this data there were no ties
+  dplyr::slice(which.max(tpm_mean)) # in case of ties, first transcript is taken; with this dataset there were no ties
 
-
+# Get coordinates of max TPM transcripts
 max_tpm_transcripts.df <- semi_join(transcripts.df, max_tpm.df, by = c("tx_name" = "tx"))
 max_tpm_transcripts.df <- max_tpm_transcripts.df %>%
   dplyr::select(seqnames, start, end, width, strand, tx_name, group_name) %>%
