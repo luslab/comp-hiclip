@@ -34,7 +34,7 @@ suppressPackageStartupMessages(library(cluster))
 suppressPackageStartupMessages(library(gridExtra))
 suppressPackageStartupMessages(library(tidyverse, warn.conflicts = FALSE))
 suppressPackageStartupMessages(library(data.table))
-suppressPackageStartupMessages(library(primavera))
+suppressPackageStartupMessages(library(toscatools))
 suppressPackageStartupMessages(library(GenomicFeatures))
 suppressPackageStartupMessages(library(rtracklayer))
 suppressPackageStartupMessages(library(UpSetR))
@@ -385,9 +385,12 @@ trim_duplex_overhangs <- function(clusters.df) {
 > Data directories
 
 ```{r}
-data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021"
-plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3"
-ref.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/ref"
+# data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021"
+ref.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref"
+
+data.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/results_nornase"
+plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_3"
+
 
 Hsapiens <- BSgenome.Hsapiens.UCSC.hg38
 ```
@@ -399,7 +402,7 @@ Hsapiens <- BSgenome.Hsapiens.UCSC.hg38
 txdb <- paste0(ref.dir,"/gencode.v33.txdb.sqlite")
 gencode.txdb <- AnnotationDbi::loadDb(txdb)
 human.gtf <- paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz") # contains fasta_id used by Tosca
-regions.gr <- import.gff2(paste0(ref.dir,"/regions.gtf.gz"))
+regions.gr <- import.gff2(paste0(ref.dir,"/icount_mini_utr3/regions.gtf.gz"))
 genes.gr <- import.gff2(paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz"))
 ```
 
@@ -481,8 +484,8 @@ stau1.data.df <- get_metaprofile_dataframe(stau1.prob.file, stau1.shuff.file, sh
 TDP-43:
 
 ```{r}
-tardp.prob.file <- prob.files[str_detect(prob.files, "TARDP")]
-tardp.shuff.file <- shuff.files[str_detect(prob.files, "TARDP")]
+tardp.prob.file <- prob.files[str_detect(prob.files, "tdp43")]
+tardp.shuff.file <- shuff.files[str_detect(prob.files, "tdp43")]
 
 tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, tardp.shuff.file, shuffled = TRUE)
 ```
@@ -490,8 +493,8 @@ tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, tardp.shuff.file, sh
 HuR:
 
 ```{r}
-hur.prob.file <- prob.files[str_detect(prob.files, "ELAVL1")]
-hur.shuff.file <- shuff.files[str_detect(prob.files, "ELAVL1")]
+hur.prob.file <- prob.files[str_detect(prob.files, "hur")]
+hur.shuff.file <- shuff.files[str_detect(prob.files, "hur")]
 hur.data.df <- get_metaprofile_dataframe(hur.prob.file, hur.shuff.file, shuffled = TRUE)
 ```
 
@@ -711,7 +714,16 @@ p.list <- lapply(1:3, function(i) {
 # Identify duplexes within arms
 # ==========
 
-peaks.dt <- as.data.table(import.bed("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/stau1.10nt_10nt.peaks.annot_id.bed.gz"))
+# Load peaks data, resize exactly as for rnaplfold used to predict structures
+peaks.gc.gr <- resize_peaks(stau1.bedfile, left = 100, right = 100)
+
+# Save a record of the bed fie containing the peak ID
+peaks.id.gr <- peaks.gc.gr
+peaks.id.gr$name <- peaks.id.gr$id
+peaks.id.gr$id <- NULL
+export.bed(peaks.id.gr, paste0(data.dir, "/stau1.10nt_10nt.peaks.annot_id.bed.gz"))
+
+peaks.dt <- as.data.table(peaks.id.gr)
 peaks.dt <- merge(peaks.dt, dt[, .(id, cluster)], by.x = "name", by.y = "id")
 # setnames(peaks.dt, ".cluster", "cluster")
 peaks.dt[, xlink := start + 101]
@@ -719,8 +731,8 @@ peaks.dt[, xlink := start + 101]
 cluster.duplexes.l <- lapply(1:3, function(i) get_duplex(region.dt = peaks.dt,
                                                          cluster_number = i))
 cluster.duplexes.dt <- rbindlist(cluster.duplexes.l)
-# fwrite(cluster.duplexes.dt, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz", sep = "\t")
-# cluster.duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_lmin_rnaduplex_structures.tsv.gz") # The above chunk takes long to run, so you can load the data directly
+fwrite(cluster.duplexes.dt, paste0(data.dir,"/short_range_lmin_rnaduplex_structures.tsv.gz"), sep = "\t")
+# cluster.duplexes.dt <- fread(paste0(data.dir,"/short_range_lmin_rnaduplex_structures.tsv.gz") # The above chunk takes long to run, so you can load the data directly
 
 # Match IDs to transcripts for which RNAplfold was ran
 peaks.tx_annotated.df <- data.frame(peaks.gr)
@@ -744,15 +756,6 @@ Get genomic and tx coordinates for the resized peaks that have been used for RNA
 # ==========
 # Prepare gene IDs and coordinates
 # ==========
-
-# Load peaks data, resize exactly as for rnaplfold used to predict structures
-peaks.gc.gr <- resize_peaks(stau1.bedfile, left = 100, right = 100)
-
-# Save a record of the bed fie
-peaks.id.gr <- peaks.gc.gr
-peaks.id.gr$name <- peaks.id.gr$id
-peaks.id.gr$id <- NULL
-export.bed(peaks.id.gr, paste0(data.dir, "/stau1.10nt_10nt.peaks.annot_id.bed.gz"))
 
 # Add a new column containing gene ids by directly mapping the transcript ids
 keys = peaks.gc.gr$name
@@ -836,7 +839,7 @@ stopifnot(abs(short_range.df$R_genomic_end - short_range.df$R_genomic_start) ==
             abs(short_range.df$R_end - short_range.df$R_start))
 
 # Save short range derived interactions
-fwrite(short_range.df, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_duplexes.tsv.gz", sep = "\t")
+fwrite(short_range.df, paste0(data.dir,"/short_range_duplexes.tsv.gz"), sep = "\t")
 ```
 
 # Fig 3 D: Types of derived duplexes at STAU1 binding sites 
@@ -1013,13 +1016,13 @@ Export data (this table will be used for creating the complete atlas)
 
 ```{r}
 nrow(short_range.df)
-fwrite(short_range.df, "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/short_range_duplexes_min8bp.tsv.gz", sep = "\t")
+fwrite(short_range.df, paste0(data.dir,"/short_range_duplexes_min8bp.tsv.gz"), sep = "\t")
 ```
 
 
 # Fig 3 G:  Breakdown of the atlas & overlap with duplexes from STAU1 hybrid reads
 
-Load experimental (linker and direct) duplexes
+Load experimental (linker and direct) duplexes - this needs to be generated from the linker and nolinker hybrids 
 
 ```{r}
 data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip"
@@ -1138,7 +1141,7 @@ total_paired.gg <- ggplot(short_range.df, aes(x=total_paired)) +
 total_paired.gg
 ```
 
-Number of hybrids supporting duplexes: linker vs hole atlas
+Number of hybrids supporting duplexes: linker vs whole atlas
 
 ```{r}
 linker.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/linker/linker.clusters.mfe.tsv.gz")

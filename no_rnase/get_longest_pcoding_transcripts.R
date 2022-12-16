@@ -7,8 +7,6 @@ library(data.table)
 library(TxDb.Hsapiens.UCSC.hg38.knownGene)
 library(optparse)
 
-
-
 # =========
 # Options and paths
 # =========
@@ -18,8 +16,7 @@ option_list <- list(make_option(c("", "--gtf"), action = "store", type = "charac
 opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
-data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid/"
-
+ref.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref"
 
 # ==========
 # Load annotations
@@ -28,21 +25,19 @@ data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/resu
 gtf <- import.gff2(opt$gtf)
 
 
-if (file.exists(paste0(data.dir, "/gencode.v33.txdb.sqlite"))) {
-  TxDb <- loadDb(paste0(data.dir, "/gencode.v33.txdb.sqlite"))
+if (file.exists(paste0(ref.dir, "/gencode.v33.txdb.sqlite"))) {
+  TxDb <- loadDb(paste0(ref.dir, "/gencode.v33.txdb.sqlite"))
   TxDb <- keepStandardChromosomes(TxDb , pruning.mode="coarse")
 } else {
   TxDb <- makeTxDbFromGFF(opt$gtf, format="gtf",
                           organism = "Homo sapiens", chrominfo = seqinfo(TxDb.Hsapiens.UCSC.hg38.knownGene) )
-  saveDb(TxDb, file=paste0(data.dir, "/gencode.v33.txdb.sqlite"))
-  TxDb <- loadDb(paste0(data.dir, "/gencode.v33.txdb.sqlite"))
+  saveDb(TxDb, file=paste0(ref.dir, "/gencode.v33.txdb.sqlite"))
+  TxDb <- loadDb(paste0(ref.dir, "/gencode.v33.txdb.sqlite"))
 }
-
 
 # ==========
 # Obtain longest protein coding transcripts
 # ==========
-
 
 txlengths <- transcriptLengths(TxDb, with.cds_len = TRUE,
                                   with.utr5_len = TRUE,

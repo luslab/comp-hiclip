@@ -48,3 +48,6 @@ work/
 # Rmd
 *.html
 .Rhistory
+
+# slurm.put
+slurm-*

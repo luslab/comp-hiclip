@@ -8,7 +8,6 @@ library(stringr)
 library(rslurm)
 library(tictoc)
 library(tidyverse)
-#library(primavera)
 library(optparse)
 
 
@@ -115,9 +114,7 @@ option_list <- list(make_option(c("-b", "--bed"), action = "store", type = "char
 opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
-# genome and annotations
-# genomes.dir <- "/camp/lab/luscomben/home/users/iosubi/genomes/"
-# txdb <- paste0(genomes.dir,"gencode_V33_txdb.sqlite")
+# Genome and annotations
 txdb <- opt$txdb
 Hsapiens <- BSgenome.Hsapiens.UCSC.hg38 # load hg38 genome
 
@@ -130,12 +127,12 @@ files.list <- opt$bed
 prefix <- opt$prefix # RBP name of interest, will be added as prefix to output filenames
 
 # ==========
-# Obtain/load 3UTR coordinates
+# Obtain/load 3'UTR coordinates
 # ==========
 
 if (!file.exists(opt$threeutrs)) {
   
-  message("Getting 3UTR coordinates...")
+  message("Getting 3'UTR coordinates...")
   
   if(!file.exists(txdb)) {
     stop("Error: cannot extract coordinates, please provide a TxDb file")
@@ -153,7 +150,7 @@ if (!file.exists(opt$threeutrs)) {
 }
 
 # ==========
-# Extract 3UTR fasta sequences
+# Extract 3'UTR fasta sequences
 # ==========
 
 # Load annotated bed files, join them, get transcript names
@@ -164,9 +161,7 @@ bed.gr <- unique(bed.gr)
 bed.gr <- keepStandardChromosomes(bed.gr, pruning.mode = "coarse")
 transcript.ls <- unique(bed.gr$name)
 
-
-
-# select only the transcripts from the peaks annotation, and get fasta
+# Select only the transcripts from the peaks annotation, and get fasta
 transcript.ls <- intersect(names(threeutr.grl), transcript.ls)
 grl <- threeutr.grl[transcript.ls]
 
@@ -179,7 +174,7 @@ fasta.df <- data.frame(id = names(fasta), sequence = as.character(fasta))
 # ==========
 
 # only run rnaplfold if a 3UTR transcriptome-wide rnaplfold probability database isn't already available
-# if unavailable, run rnaplfold only for the 3UTRs bound by the RBP of interest
+# if unavailable, run rnaplfold only for the 3'UTRs bound by the RBP of interest
 
 tic()
 

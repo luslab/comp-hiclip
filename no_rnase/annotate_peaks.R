@@ -5,8 +5,6 @@ library(GenomicFeatures)
 library(stringr)
 library(optparse)
 
-
-
 # ==========
 # Define functions
 # ==========
@@ -50,37 +48,29 @@ annotate_intervals <- function(bed.filename, max.tpm.transcripts.gr, longest.pc.
 # =========
 
 option_list <- list(make_option(c("", "--bed"), action = "store", type = "character", default=NA, help = "Peaks bed file"),
-                    make_option(c("", "--txdb"), action = "store", type = "character", default=NA, help = "TxDb object"))
+                    make_option(c("", "--txdb"), action = "store", type = "character", default=NA, help = "TxDb object"),
+                    make_option(c("", "--max_tpm_bed"), action = "store", type = "character", default=NA, help = "bed file with coordinates of max TPM transcripts"),
+                    make_option(c("", "--longest_tx"), action = "store", type = "character", default=NA, help = "TSV with transcript info for longest pcoding transcripts"))
 opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
-
-data.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nonhybrid"
-
-
 
 # ==========
 # Files and parameters
 # ==========
 
-
-#files.list <- list.files(path = opt$bed, pattern = "peaks.bed.gz", full.names = TRUE)
-files.list <- opt$bed
-
-longest_pcoding.df <- read.csv(paste0(data.dir, "/gencode.v33.longest_pcoding_transcripts.tsv.gz"), sep = "\t")
-max_tpm_transcripts.gr <- import.bed(paste0(data.dir, "/gencode.v33_max_tpm_transcripts.bed.gz"))
+# Load transcripts with highest TPM or longest pcoding region
+longest_pcoding.df <- read.csv(opt$longest_tx, sep = "\t")
+max_tpm_transcripts.gr <- import.bed(opt$max_tpm_bed)
 
 # Load TxDb object
 TxDb  <- loadDb(opt$txdb)
 TxDb <- keepStandardChromosomes(TxDb, pruning.mode="coarse")
 
-# ==========
-# Annotate peaks
-# ==========
-
 transcripts.gr <- transcripts(TxDb)
 transcripts.gr <- transcripts.gr[transcripts.gr$tx_name %in% unique(longest_pcoding.df$transcript_id)]
 
+# ==========
+# Load and Annotate peaks
+# ==========
 
-lapply(files.list, annotate_intervals, max.tpm.transcripts.gr = max_tpm_transcripts.gr, longest.pc.transcripts.gr = transcripts.gr)
-
-
+annotate_intervals(opt$bed, max.tpm.transcripts.gr = max_tpm_transcripts.gr, longest.pc.transcripts.gr = transcripts.gr)
