@@ -9,6 +9,7 @@ DATADIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions
 REFDIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref
 GITHUBDIR=/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/comp-hiclip
 TOSCADIR=~/.nextflow/assets/amchakra/tosca
+SINGULARITYDIR=/camp/lab/luscomben/home/shared/singularity
 
 # ==========
 # Generate STAR index
@@ -81,3 +82,7 @@ for i in stau1_high.linker.fastq.gz stau1_low.linker.fastq.gz; do
 	${i%%.*}
 
 done
+
+conda deactivate
+conda activate tosca-1.0.0
+Rscript --vanilla $GITHUBDIR/linker/cluster_linker_atlas.R
