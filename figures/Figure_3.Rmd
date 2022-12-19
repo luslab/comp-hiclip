@@ -214,16 +214,16 @@ calculate_percentage <- function(data.df, column, group = NULL) {
 ```{r}
 get_duplex <- function(region.dt, cluster_number, cores = 4) {
 
-  # Cluster 1 = 1-30 & 30-50
+  # Cluster 1 = 1-30 & 30-51
   # Cluster 2 = 8-36 & 36-63
-  # Cluster 3 = 16-44 & 44-68
+  # Cluster 3 = 16-43 & 43-67
   
   if(cluster_number == 1) {
     
     c.L_start <- 1
     c.L_end <- 30
     c.R_start <- 31
-    c.R_end <- 50
+    c.R_end <- 51
     
   } else if(cluster_number == 2) {
     
@@ -235,9 +235,9 @@ get_duplex <- function(region.dt, cluster_number, cores = 4) {
   } else if(cluster_number == 3) {
     
     c.L_start <- 16
-    c.L_end <- 44
-    c.R_start <- 45
-    c.R_end <- 68     
+    c.L_end <- 43
+    c.R_start <- 44
+    c.R_end <- 67     
     
   } else {
     
@@ -385,12 +385,10 @@ trim_duplex_overhangs <- function(clusters.df) {
 > Data directories
 
 ```{r}
-# data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021"
 ref.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref"
 
 data.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/results_nornase"
 plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_3"
-
 
 Hsapiens <- BSgenome.Hsapiens.UCSC.hg38
 ```
@@ -466,7 +464,7 @@ peak_regions.gg <- ggplot(regions_percentage.df, aes(x = "", y = percentage, fil
        fill = "") +
   scale_y_reverse()
 peak_regions.gg
-# ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
+ggsave(paste0(plots.dir, "/stau1_peak_regions.pdf"), peak_regions.gg, width = 8, height = 3)
 ```
 
 # Fig 3 B: STAU1 unpaired probability metaprofile
@@ -572,8 +570,9 @@ prob_downstream.df <- stau1.prob.df %>% dplyr::select("10":"75")
 set.seed(123)
 silhouette.gg <- fviz_nbclust(prob_downstream.df, run_kmeans, method="silhouette")
 silhouette.gg
-# ggsave(paste0(plots.dir,"/silhouette_2k.pdf"), silhouette.gg, dpi = 300, width = 4, height = 4)
+ggsave(paste0(plots.dir,"/silhouette_plot.pdf"), silhouette.gg, dpi = 300, width = 4, height = 4)
 ```
+Based on the silhouette plot clustering the peaks paired probability profiles in 2 clusters is optimal.
 
 ```{r}
 n_clusters <- 2
@@ -618,17 +617,21 @@ set.seed(123)
 silhouette_cl1.gg <- fviz_nbclust(cluster1.df_downstream.df, run_kmeans, method="silhouette")
 silhouette_cl1.gg
 # ggsave(paste0(plots.dir,"/silhouette_cluster1.pdf"), silhouette_cl1.gg, dpi = 300, width = 4, height = 4)
+```
+We will subluster cluster 1 into 3 clusters
 
+```{r}
 # K-means clustering - "euclidean" dist, 3 clusters
 kmeans.df <- run_kmeans(cluster1.df_downstream.df, 3)
 # join cluster information to the data containing the -50: +75 nt positions 
 stopifnot(rownames(kmeans.df) == rownames(cluster1.df))
 cluster1.df$cluster <- kmeans.df$.cluster # match cluster assignment to the prob.df
 cluster1.df$cluster_size <- kmeans.df$cluster_size
+```
 
-cluster1.df$cluster <- plyr::mapvalues(cluster1.df$cluster, from = c(3, 2, 1), to = c(3, 1, 2))
+
+```{r}
 cluster1.df$cluster <- factor(cluster1.df$cluster, levels = c(1, 2, 3))
-
 cluster1.df <- cluster1.df %>%
   dplyr::rename(.cluster = cluster)
 
@@ -649,11 +652,11 @@ stopifnot(nrow(stau1.prob.df) == nrow(clusters.df)) # Check same size as origina
 
 ```{r}
 col_pal <- brewer.pal(4, "Dark2")
-plot_cluster_heatmap(clusters.df, plot.title = "STAU1", plot.name = paste0(plots.dir,"/",prefix,"_kmeans_minus50_paired_4clusters.png"))
+plot_cluster_heatmap(clusters.df, plot.title = "STAU1", plot.name = paste0(plots.dir,"/",prefix,"_kmeans_paired_probability_clusters.png"))
 
 # Export clusters data
 clusters.df <- rownames_to_column(clusters.df, var = "id")
-#fwrite(clusters.df, paste0(data.dir, "/", prefix,"_clusters.tsv.gz"), sep = "\t")
+fwrite(clusters.df, paste0(data.dir, "/", prefix,"_clusters.tsv.gz"), sep = "\t")
 ```
 
 Metaprofiles for each cluster: 
@@ -670,13 +673,13 @@ clusters.gg <- append_layers(clusters.gg, annotate("rect", xmin = 10, xmax = 75,
            alpha = 0.5, fill = "#b2b2b2"), position = "bottom") +
   theme_minimal_grid()
 clusters.gg
-# ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3.5, height = 10)
+ggsave(paste0(plots.dir,"/",prefix,"_cluster_profiles.pdf"), clusters.gg, width = 3.5, height = 10)
 ```
 
 Clusters 1,2,3 contain structures with higher paired probability downstream the xlink site, suggesting the presence of putative stems.
 
 
-## Suppl. Fig 3 B: Find the optimal number of clusters:
+## Suppl. Fig 3 B: Define duplex arms for each cluster:
 
 Define duplex arms:
 
@@ -705,7 +708,7 @@ p.list <- lapply(1:3, function(i) {
   
 })
 
-# ggsave(plot_grid(plotlist = p.list, ncol = 1), filename = file.path(plots.dir, "sr_clusters_lmin.pdf"), width = 7, height = 10)
+ggsave(plot_grid(plotlist = p.list, ncol = 1), filename = file.path(plots.dir, "sr_clusters_lmin.pdf"), width = 7, height = 10)
 ```
 
 
@@ -727,7 +730,10 @@ peaks.dt <- as.data.table(peaks.id.gr)
 peaks.dt <- merge(peaks.dt, dt[, .(id, cluster)], by.x = "name", by.y = "id")
 # setnames(peaks.dt, ".cluster", "cluster")
 peaks.dt[, xlink := start + 101]
+```
 
+
+```{r}
 cluster.duplexes.l <- lapply(1:3, function(i) get_duplex(region.dt = peaks.dt,
                                                          cluster_number = i))
 cluster.duplexes.dt <- rbindlist(cluster.duplexes.l)
@@ -859,7 +865,7 @@ short_range.df <- short_range.df %>%
                                   TRUE ~ L_genomic_start - R_genomic_end + 1 - 2)) %>%
   ungroup()
 
-short_range.df <- dplyr::filter(short_range.df, hairpin_loop != 0)
+short_range.df <- dplyr::filter(short_range.df, hairpin_loop != 0) # remove loops = 0 as they suggest homo-heterodimers rather than stem loops
 
 # Also adjust tx coordinates
 short_range.df <- short_range.df %>%
@@ -871,7 +877,7 @@ short_range.df <- short_range.df %>%
   dplyr::select(.,-contains("_tx_duplex_"))
 
 cluster.duplexes.dt <- cluster.duplexes.dt %>%
-  dplyr::filter(name %in% short_range.df$name) # remove loops = 0 as they suggest homo-heterodimers rather than stem loops
+  dplyr::filter(name %in% short_range.df$name) 
 ```
 
 Obtain duplex length:
@@ -919,11 +925,11 @@ pie.gg <- ggplot(derived_type_counts.df, aes(x="", y=count, fill=reorder(structu
     theme_void() # remove background, grid, numeric labels
 
 pie.gg
-# ggsave(paste0(plots.dir,"/",prefix,"_structure_types.pdf"), pie.gg, width = 5, height = 4, dpi = 300)
+ggsave(paste0(plots.dir,"/",prefix,"_structure_types.pdf"), pie.gg, width = 5, height = 4, dpi = 300)
 ```
 
 ```{r}
-# Work with the annotated structures
+# Work with the annotated structures from here onwards:
 short_range.df <- short_range.df %>%
   rowwise() %>%
   mutate(total_paired = str_count(L_db, "\\(")) %>%
@@ -968,7 +974,7 @@ mfe.dens.gg <- ggplot(mfe.df, aes(x = MFE, linetype = Sample, color = structure_
   # geom_vline(data=mfe_median, aes(xintercept=Median), linetype="dashed", color = "#31a1b3" )
 
 mfe.dens.gg
-# ggsave(paste0(plots.dir,"/","stau1_short_range_hybridisation_energy.pdf"), mfe.dens.gg, width = 7, height = 4)
+ggsave(paste0(plots.dir,"/","stau1_short_range_hybridisation_energy.pdf"), mfe.dens.gg, width = 7, height = 4)
 ```
 
 
@@ -1008,15 +1014,19 @@ hairpin.gg <- ggplot(short_range.df, aes(x = hairpin_loop)) +
   ylab("Density")
 
 hairpin.gg
-# ggsave(paste0(plots.dir,"/", prefix,"_hairpin_lengths.pdf"), hairpin.gg, width = 4, height = 4)
+ggsave(paste0(plots.dir,"/", prefix,"_hairpin_lengths.pdf"), hairpin.gg, width = 4, height = 4)
 
 quantile(short_range.df$hairpin_loop, c(.25, .50, .75, 1))
 ```
-Export data (this table will be used for creating the complete atlas)
+Export data (this table will be used for creating the complete atlas)!ß
+
+```{r}
+fwrite(short_range.df, paste0(data.dir,"/short_range_duplexes_min8bp.tsv.gz"), sep = "\t")
+```
+
 
 ```{r}
 nrow(short_range.df)
-fwrite(short_range.df, paste0(data.dir,"/short_range_duplexes_min8bp.tsv.gz"), sep = "\t")
 ```
 
 
