@@ -1,7 +1,7 @@
 #!/usr/bin/env Rscript
 
 suppressPackageStartupMessages(library(data.table))
-suppressPackageStartupMessages(library(primavera))
+suppressPackageStartupMessages(library(toscatools))
 suppressPackageStartupMessages(library(rslurm))
 suppressPackageStartupMessages(library(tictoc))
 suppressPackageStartupMessages(library(parallel))
@@ -86,7 +86,7 @@ get_forgi <- function(id, db, script_path = ".") {
 # Files and parameters
 # ==========
 
-option_list <- list(make_option(c("", "--clusters"), action = "store", type = "character", help = "Clusters file"),
+option_list <- list(make_option(c("", "--input"), action = "store", type = "character", help = "Hybrids or clusters file"),
                     make_option(c("", "--fasta"), action = "store", type = "character", help = "Transcript fasta"),
                     make_option(c("", "--output"), action = "store", type = "character", help = "Output file"),
                     make_option(c("", "--nodes"), action = "store", type = "integer", default = 100, help = "Number of nodes to allocate [default: %default]"),
@@ -98,13 +98,13 @@ opt_parser = OptionParser(option_list = option_list)
 opt <- parse_args(opt_parser)
 
 
-get_elementstring.py_path <- getwd()
+get_elementstring.py_path <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/comp-hiclip/no_rnase"
 
 fa.dss <- readDNAStringSet(opt$fasta)
-clusters.dt <- fread(opt$clusters)
+clusters.dt <- fread(opt$input)
 
 # ==========
-# Get genomic sequence corresponding to clusters
+# Get genomic sequence
 # ==========
 
 # Filter intragenic clusters if option
@@ -151,7 +151,7 @@ stopifnot(!any(is.na(c(clusters.dt$L_sequence, clusters.dt$L_sequence))))
 # Cluster jobs
 tic()
 sjob <- slurm_apply(analyse_structure, clusters.dt[, .(name, L_sequence, R_sequence)],
-                    jobname = sapply(strsplit(basename(opt$clusters), "\\."), "[[", 1),
+                    jobname = sapply(strsplit(basename(opt$input), "\\."), "[[", 1),
                     nodes = opt$nodes,
                     cpus_per_node = 1,
                     slurm_options = list(time = "24:00:00"),
@@ -189,7 +189,7 @@ clusters.dt <- data.table(distinct(clusters.dt))
 
 if(opt$shuffled_mfe) {
   sjob <- slurm_apply(get_shuffled_mfe, clusters.dt[, .(name, L_sequence, R_sequence)], 
-                      jobname = sapply(strsplit(basename(opt$clusters), "\\."), "[[", 1), 
+                      jobname = sapply(strsplit(basename(opt$input), "\\."), "[[", 1), 
                       nodes = opt$nodes, 
                       add_objects = c("shuffle_sequence", "get_mfe"),
                       cpus_per_node = 1, 
