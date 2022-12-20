@@ -6,6 +6,7 @@
 
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(library(stringr))
 suppressPackageStartupMessages(library(toscatools))
 suppressPackageStartupMessages(library(parallel))
 suppressPackageStartupMessages(library(rslurm))
@@ -45,7 +46,7 @@ nonhybrid.dt$sample <- "stau1_derived"
 # ==========
 
 genes.gr <- rtracklayer::import.gff2(paste0(ref.dir, "/GRCh38.gencode_v33.tx.gtf.gz"))
-regions.gr <- rtracklayer::import.gff2("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/icount_mini_utr3/refions.gtf.gz")
+regions.gr <- rtracklayer::import.gff2("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/icount_mini_utr3/regions.gtf.gz")
 
 # ==========
 # Check data
@@ -86,8 +87,8 @@ stopifnot(nrow(unclustered.hybrids.dt) + nrow(atlas.hybrids.dt) == nrow(all.hybr
 atlas.hybrids.list <- split(atlas.hybrids.dt, by = c("L_seqnames", "R_seqnames"))
 
 # Cluster
-atlas.clusters.list <- parallel::mclapply(atlas.hybrids.list, cluster_hybrids, percent_overlap = 0.5, fraction = FALSE, mc.cores = 8)
-# atlas.clusters.list <- lapply(atlas.hybrids.list, cluster_hybrids, percent_overlap = 0.5)
+# atlas.clusters.list <- parallel::mclapply(atlas.hybrids.list, cluster_hybrids, percent_overlap = 0.5, fraction = FALSE, mc.cores = 8)
+atlas.clusters.list <- lapply(atlas.hybrids.list, cluster_hybrids, percent_overlap = 0.5)
 clusters.dt <- rbindlist(atlas.clusters.list, use.names = TRUE, fill = TRUE)
 
 # Merge back and sanity check
@@ -98,11 +99,15 @@ stopifnot(nrow(clusters.dt) == nrow(all.hybrids.dt))
 stopifnot(all(clusters.dt$name %in% all.hybrids.dt$name))
 
 collapsed.dt <- collapse_clusters(clusters.dt, mode = "median")
-collapsed.dt <- convert_coordinates(clusters.dt, genes.gr)
+collapsed.dt <- convert_coordinates(collapsed.dt, genes.gr)
 
 # ==========
 # Add the rest of the non-hybrid reads
 # ==========
+
+# Non-hybrids, file produced in Figure_3.Rmd
+nonhybrid.dt <- fread(paste0(nornase.dir, "/short_range_duplexes_min8bp.tsv.gz"))
+nonhybrid.dt$sample <- "stau1_derived"
 
 nonhybrid.dt$cluster <- nonhybrid.dt$name
 
@@ -118,6 +123,7 @@ short_range_clustered.df <- clusters.dt %>%
 # Get non-clustered derived 
 nonhybrid.dt <- nonhybrid.dt %>%
   dplyr::filter(!(name %in% short_range_clustered.df$name)) %>%
+  # mutate(total_count = as.integer(NA)) %>% # add in these columns so can merge later with the clustered
   dplyr::select(colnames(collapsed.dt))
 nonhybrid.dt <- as.data.table(nonhybrid.dt)
 
@@ -135,7 +141,7 @@ collapsed.dt <- annotate_hybrids(collapsed.dt, regions.gr)
 # Analyse structure of collapsed clusters
 # ==========
 
-genome.fa <- Biostrings::readDNAStringSet("/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/GRCh38.gencode_v33.fa")
+genome.fa <- Biostrings::readDNAStringSet(paste0(ref.dir,"/GRCh38.gencode_v33.fa"))
 genome.dt <- data.table(gene_id = names(genome.fa),
                         sequence = as.character(genome.fa))
 
@@ -192,6 +198,6 @@ cleanup_files(sjob)
 structures.collapsed.dt <- merge(collapsed.dt, structure.dt, by = "name", all.x = TRUE)
 shuffled.collapsed.dt <- merge(structures.collapsed.dt, shuffled.dt, by = "name", all.x = TRUE)
 
-fwrite(shuffled.collapsed.dt, paste0(results.dir,"merged", ".", "atlas", ".clusters.tsv.gz"), sep = "\t")
+fwrite(shuffled.collapsed.dt, paste0(results.dir,"/merged", ".", "atlas", ".clusters.tsv.gz"), sep = "\t")
 
 fwrite(clusters.dt, paste0(results.dir,"/merged.atlas.clustered.tsv.gz"), sep = "\t")
