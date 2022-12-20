@@ -485,7 +485,7 @@ TDP-43:
 tardp.prob.file <- prob.files[str_detect(prob.files, "tdp43")]
 tardp.shuff.file <- shuff.files[str_detect(prob.files, "tdp43")]
 
-tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, tardp.shuff.file, shuffled = TRUE)
+tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, tardp.shuff.file, shuffled = FALSE)
 ```
 
 HuR:
@@ -493,7 +493,7 @@ HuR:
 ```{r}
 hur.prob.file <- prob.files[str_detect(prob.files, "hur")]
 hur.shuff.file <- shuff.files[str_detect(prob.files, "hur")]
-hur.data.df <- get_metaprofile_dataframe(hur.prob.file, hur.shuff.file, shuffled = TRUE)
+hur.data.df <- get_metaprofile_dataframe(hur.prob.file, hur.shuff.file, shuffled = FALSE)
 ```
 
 
@@ -511,7 +511,7 @@ stau1.data.df$Experiment <- as.factor("STAU1")
 merged.data.df <- rbind(stau1.data.df, hur.data.df, tardp.data.df)
 data.df <- merged.data.df %>%
   dplyr::filter(!((Sample == "Shuffled" & Experiment == "HuR") | (Sample == "Shuffled" & Experiment == "TDP-43")))
-data.df$Sample <- plyr::mapvalues(data.df$Sample, from=c("ELAVL1", "TARDP"), to=c("HuR", "TDP-43"))
+data.df$Sample <- plyr::mapvalues(data.df$Sample, from=c("HUR", "TDP43"), to=c("HuR", "TDP-43"))
 data.df$Sample <- factor(data.df$Sample, levels = c("Shuffled", "HuR", "STAU1", "TDP-43"))
 
 merged.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
@@ -538,7 +538,7 @@ merged.gg <-
 merged.gg <- merged.gg + theme(strip.background = element_blank())
 merged.gg
 
-# ggsave(paste0(plots.dir,"/RBPs_paired_metaprofile.pdf"), merged.gg, width = 6.5, height = 4, dpi = 300)
+ggsave(paste0(plots.dir,"/RBPs_paired_metaprofile.pdf"), merged.gg, width = 6.5, height = 4, dpi = 300)
 ```
 
 # Fig 3 C: STAU1 unpaired probability clusters
@@ -1030,25 +1030,31 @@ nrow(short_range.df)
 ```
 
 
+
+```{r}
+colnames(short_range.df)
+```
+
+
 # Fig 3 G:  Breakdown of the atlas & overlap with duplexes from STAU1 hybrid reads
 
 Load experimental (linker and direct) duplexes - this needs to be generated from the linker and nolinker hybrids 
 
 ```{r}
-data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip"
-stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz"))
-stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
+data.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/atlas"
+stau1.collapsed.dt <- fread(paste0(data.dir, "merged.atlas.clusters.tsv.gz"))
+stau1.clustered.dt <- fread(paste0(data.dir, "merged.atlas.clustered.tsv.gz"))
 
 # Total number of clusters
-nrow(stau1.dt)
+nrow(stau1.collapsed.dt)
 
-# Total number of clustered hybrids (without the unclustered M motif structures)
-nrow(dplyr::filter(stau1.hybrids.dt, str_detect(cluster, "C")))
+# Total number of clustered hybrids
+nrow(dplyr::filter(stau1.clustered.dt, str_detect(cluster, "C")))
 ```
 
 ```{r}
 stau1.cluster.hybrids.df <- stau1.hybrids.dt %>%
-  mutate(cluster = case_when(sample == "stau1_nonhybrid" & !str_detect(cluster, "C") ~ name, # rename clusters for derived duplexes which havent been clustered
+  mutate(cluster = case_when(sample == "stau1_derived" & !str_detect(cluster, "C") ~ name, # rename clusters for derived duplexes which havent been clustered
                              TRUE ~ cluster)) %>%
   rowwise() %>% # create an id column to be consistent with the name column of the collapsed clusters table
   mutate(id = case_when(cluster == name ~ cluster, # these are the ID ones
