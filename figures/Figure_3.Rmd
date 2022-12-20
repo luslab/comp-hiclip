@@ -485,7 +485,7 @@ TDP-43:
 tardp.prob.file <- prob.files[str_detect(prob.files, "tdp43")]
 tardp.shuff.file <- shuff.files[str_detect(prob.files, "tdp43")]
 
-tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, tardp.shuff.file, shuffled = TRUE)
+tardp.data.df <- get_metaprofile_dataframe(tardp.prob.file, tardp.shuff.file, shuffled = FALSE)
 ```
 
 HuR:
@@ -493,7 +493,7 @@ HuR:
 ```{r}
 hur.prob.file <- prob.files[str_detect(prob.files, "hur")]
 hur.shuff.file <- shuff.files[str_detect(prob.files, "hur")]
-hur.data.df <- get_metaprofile_dataframe(hur.prob.file, hur.shuff.file, shuffled = TRUE)
+hur.data.df <- get_metaprofile_dataframe(hur.prob.file, hur.shuff.file, shuffled = FALSE)
 ```
 
 
@@ -511,7 +511,7 @@ stau1.data.df$Experiment <- as.factor("STAU1")
 merged.data.df <- rbind(stau1.data.df, hur.data.df, tardp.data.df)
 data.df <- merged.data.df %>%
   dplyr::filter(!((Sample == "Shuffled" & Experiment == "HuR") | (Sample == "Shuffled" & Experiment == "TDP-43")))
-data.df$Sample <- plyr::mapvalues(data.df$Sample, from=c("ELAVL1", "TARDP"), to=c("HuR", "TDP-43"))
+data.df$Sample <- plyr::mapvalues(data.df$Sample, from=c("HUR", "TDP43"), to=c("HuR", "TDP-43"))
 data.df$Sample <- factor(data.df$Sample, levels = c("Shuffled", "HuR", "STAU1", "TDP-43"))
 
 merged.gg <- ggplot(data.df, aes(x=as.numeric(pos), y=mean_prob, group = Sample, color = Sample)) +
@@ -538,7 +538,7 @@ merged.gg <-
 merged.gg <- merged.gg + theme(strip.background = element_blank())
 merged.gg
 
-# ggsave(paste0(plots.dir,"/RBPs_paired_metaprofile.pdf"), merged.gg, width = 6.5, height = 4, dpi = 300)
+ggsave(paste0(plots.dir,"/RBPs_paired_metaprofile.pdf"), merged.gg, width = 6.5, height = 4, dpi = 300)
 ```
 
 # Fig 3 C: STAU1 unpaired probability clusters
@@ -1024,31 +1024,26 @@ Export data (this table will be used for creating the complete atlas)!ß
 fwrite(short_range.df, paste0(data.dir,"/short_range_duplexes_min8bp.tsv.gz"), sep = "\t")
 ```
 
-
-```{r}
-nrow(short_range.df)
-```
-
-
 # Fig 3 G:  Breakdown of the atlas & overlap with duplexes from STAU1 hybrid reads
 
 Load experimental (linker and direct) duplexes - this needs to be generated from the linker and nolinker hybrids 
 
 ```{r}
-data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip"
-stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz"))
-stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
+data.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/atlas/"
+stau1.collapsed.dt <- fread(paste0(data.dir, "merged.atlas.clusters.tsv.gz"))
+stau1.clustered.dt <- fread(paste0(data.dir, "merged.atlas.clustered.tsv.gz"))
 
 # Total number of clusters
-nrow(stau1.dt)
+nrow(stau1.collapsed.dt)
 
-# Total number of clustered hybrids (without the unclustered M motif structures)
-nrow(dplyr::filter(stau1.hybrids.dt, str_detect(cluster, "C")))
+# Total number of clustered hybrids
+nrow(dplyr::filter(stau1.clustered.dt, str_detect(cluster, "C")))
 ```
 
+
 ```{r}
-stau1.cluster.hybrids.df <- stau1.hybrids.dt %>%
-  mutate(cluster = case_when(sample == "stau1_nonhybrid" & !str_detect(cluster, "C") ~ name, # rename clusters for derived duplexes which havent been clustered
+stau1.cluster.hybrids.df <- stau1.clustered.dt %>%
+  mutate(cluster = case_when(sample == "stau1_derived" & !str_detect(cluster, "C") ~ name, # rename clusters for derived duplexes which havent been clustered
                              TRUE ~ cluster)) %>%
   rowwise() %>% # create an id column to be consistent with the name column of the collapsed clusters table
   mutate(id = case_when(cluster == name ~ cluster, # these are the ID ones
@@ -1068,28 +1063,37 @@ stau1.cluster.hybrids_summary.df <- stau1.cluster.hybrids.df %>%
 stau1.samples.df <- stau1.cluster.hybrids_summary.df %>%
   dplyr::select(id, sample_set) %>%
   distinct()
-stau1.dt <- left_join(stau1.dt, dplyr::select(stau1.samples.df, id, sample_set), by = c("name" = "id"))
+```
+
+
+```{r}
+source_counts.df
+```
+
+
+```{r}
+stau1.collapsed.dt <- left_join(stau1.collapsed.dt, dplyr::select(stau1.samples.df, id, sample_set), by = c("name" = "id"))
 
 # Get counts for each duplex dataset and combinations
-source_counts.df <- stau1.dt %>%
+source_counts.df <- stau1.collapsed.dt %>%
   dplyr::select(name, sample_set) %>%
   distinct() %>%
   group_by(sample_set) %>%
   summarise(counts = n()) 
 
 source_counts.df # input for upset plot below
-stopifnot(nrow(stau1.dt) == sum(source_counts.df$counts))
+stopifnot(nrow(stau1.collapsed.dt) == sum(source_counts.df$counts))
 
 theme_set(theme_minimal_grid())
-ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3")
+ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Derived" = "#31a1b3")
 
 source.upset.input <- c("Linker" = source_counts.df[source_counts.df$sample_set == "stau1_linker",]$counts[1],
                         "Direct" = source_counts.df[source_counts.df$sample_set == "stau1_nolinker",]$counts[1],
-                        "Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_nonhybrid",]$counts[1],
+                        "Derived" = source_counts.df[source_counts.df$sample_set == "stau1_derived",]$counts[1],
                         "Linker&Direct" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nolinker",]$counts[1],
-                        "Linker&Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nonhybrid",]$counts[1],
-                        "Direct&Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_nolinker,stau1_nonhybrid",]$counts[1],
-                        "Linker&Direct&Short-range" = source_counts.df[source_counts.df$sample_set == "stau1_linker,stau1_nolinker,stau1_nonhybrid",]$counts[1])
+                        "Linker&Derived" = source_counts.df[source_counts.df$sample_set == "stau1_derived,stau1_linker",]$counts[1],
+                        "Direct&Derived" = source_counts.df[source_counts.df$sample_set == "stau1_derived,stau1_nolinker",]$counts[1],
+                        "Linker&Direct&Derived" = source_counts.df[source_counts.df$sample_set == "stau1_derived,stau1_linker,stau1_nolinker",]$counts[1])
 
 pdf(file.path(plots.dir, "stau1_duplex_source_upset.pdf"), width = 7, height = 5)
 upset(fromExpression(source.upset.input), order.by = "freq",
@@ -1103,21 +1107,21 @@ Some numbers:
 
 ```{r}
 # Breakdown of M motif structures
-dplyr::filter(stau1.dt, sample_set == "stau1_nonhybrid") # M motif unclustered
-dplyr::filter(stau1.dt, sample_set == "stau1_nonhybrid" & str_detect(cluster, "C")) # M motif structures clustering together
+dplyr::filter(stau1.dt, sample_set == "stau1_derived") # M motif unclustered
+dplyr::filter(stau1.dt, sample_set == "stau1_derived" & str_detect(cluster, "C")) # M motif structures clustering together
 
 # Number of M motif duplexes not forming clusters:
 nrow(stau1.dt %>% dplyr::filter(str_detect(cluster, "ID")))
 
 # Number of M motif hybrids not forming clusters:
-nrow(dplyr::filter(stau1.hybrids.dt, sample == "stau1_nonhybrid" & !str_detect(cluster, "C")))
+nrow(dplyr::filter(stau1.hybrids.dt, sample == "stau1_derived" & !str_detect(cluster, "C")))
 
 
 # Number of hybrids from M motif structures (sum of clustered + unclustered)
-nrow(dplyr::filter(stau1.hybrids.dt, sample == "stau1_nonhybrid"))
+nrow(dplyr::filter(stau1.hybrids.dt, sample == "stau1_derived"))
 
 # all M motif hybrids that have been clustered
-nrow(dplyr::filter(stau1.hybrids.dt, sample == "stau1_nonhybrid" & str_detect(cluster, "C")))
+nrow(dplyr::filter(stau1.hybrids.dt, sample == "stau1_derived" & str_detect(cluster, "C")))
 ```
 
 # Extras
