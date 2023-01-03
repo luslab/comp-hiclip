@@ -30,4 +30,4 @@ cd $GITHUBDIR/merged_clustered
 # ==========
 
 # ./analyse_structure.R --input=$RICSEQDIR/all.atlas_clusters.gc.annotated.tsv.gz --output=$RICSEQDIR/ricseq.atlas.clusters.mfe.tsv.gz --fasta=$REFDIR/GRCh38.gencode_v33.fa --shuffled_mfe
-# ./analyse_structure.R --input=$RICSEQDIR/all.atlas_clusters.gc.annotated.tsv.gz --output=$RICSEQDIR/ricseq.atlas.clusters.utr3.mfe.tsv.gz --fasta=$REFDIR/GRCh38.gencode_v33.fa --shuffled_mfe --threeutr
+./analyse_structure.R --input=$RICSEQDIR/all.atlas_clusters.gc.annotated.tsv.gz --output=$RICSEQDIR/ricseq.atlas.clusters.utr3.mfe.tsv.gz --fasta=$REFDIR/GRCh38.gencode_v33.fa --shuffled_mfe --threeutr
