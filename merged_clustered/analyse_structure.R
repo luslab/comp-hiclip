@@ -68,12 +68,7 @@ opt <- parse_args(opt_parser)
 
 get_elementstring.py_path <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/comp-hiclip/no_rnase"
 
-fa.dss <- readDNAStringSet(opt$fasta)
 clusters.dt <- fread(opt$input)
-
-# ==========
-# Get genomic sequence
-# ==========
 
 # Filter intragenic clusters if option
 if(opt$intragenic) {
@@ -95,17 +90,15 @@ if(opt$threeutr) {
 
 # Focus on reads that have been clustered
 if (opt$clusters_only) {
-    
   clusters.dt <- data.table(dplyr::filter(clusters.dt, str_detect(cluster, "C")))
     
 } else {
-    
     clusters.dt <- clusters.dt
 }
 
 
 
-if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures if MFE had been pre-calculated
+if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures if MFE has been pre-calculated
 
   if (c("mfe", "structure") %in% colnames(clusters.dt)) {
     
@@ -116,6 +109,7 @@ if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures 
 
   message(paste0("Analysing ", nrow(clusters.dt), " clusters"))
 
+  fa.dss <- readDNAStringSet(opt$fasta)
   genome.dt <- data.table(gene_id = names(fa.dss),
                           sequence = as.character(fa.dss))
 
@@ -181,7 +175,7 @@ if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures 
   # Separate db structure into L_db and R_db
   forgi_db.df <- structures_shuffled.dt %>%
     separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE) %>%
-    unite("forgi_db", c(L_db, R_db), sep="...", remove = FALSE) %>%  # replace & with "..."
+    unite("forgi_db", c(L_db, R_db), sep="...", remove = FALSE) %>%  # replace & with "...", a in silico hairpin
     dplyr::select(name, forgi_db)
 
   forgi_input.df <- data.frame(id = forgi_db.df$name, db = forgi_db.df$forgi_db, script_path = get_elementstring.py_path)
@@ -206,7 +200,7 @@ if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures 
   cleanup_files(sjob)
   toc()
 
-  # remove the hairpins
+  # Remove the hairpins
   forgi.dt <- forgi.dt %>%
     dplyr::filter(element_type != "h")
 
@@ -216,10 +210,17 @@ if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures 
 
 } else {
 
-# Separate db structure into L_db and R_db
-  forgi_db.df <- structures_shuffled.dt %>%
+  # ==========
+  # Annotate structures
+  # ==========
+
+  # Check MFE and structure columns exist
+  stopifnot((c("mfe", "structure") %in% colnames(clusters.dt)))  
+
+  # Separate db structure into L_db and R_db
+  forgi_db.df <- clusters.dt %>%
     separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE) %>%
-    unite("forgi_db", c(L_db, R_db), sep="...", remove = FALSE) %>%  # replace & with "..."
+    unite("forgi_db", c(L_db, R_db), sep="...", remove = FALSE) %>%  # replace & with "...", a in silico hairpin
     dplyr::select(name, forgi_db)
 
   forgi_input.df <- data.frame(id = forgi_db.df$name, db = forgi_db.df$forgi_db, script_path = get_elementstring.py_path)
@@ -244,14 +245,12 @@ if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures 
   cleanup_files(sjob)
   toc()
 
-  # remove the hairpins
+  # Remove the hairpins
   forgi.dt <- forgi.dt %>%
     dplyr::filter(element_type != "h")
 
   forgi.output.filename <- str_replace(opt$output, "mfe", "forgi")
   fwrite(forgi.dt, file = forgi.output.filename, sep = "\t")
-
-
 
 }
 
