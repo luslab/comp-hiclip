@@ -10,39 +10,6 @@ suppressPackageStartupMessages(library(Biostrings))
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(stringr))
 
-
-shuffle_sequence <- function(sequence, number = 1, klet = 2, seed = 42) {
-  system(paste0("ushuffle -seed ", seed, " -k ", klet, " -n ", number, " -s ", sequence), intern = TRUE)
-}
-
-get_mfe <- function(name, L_sequence, R_sequence) {
-  input <- paste0(L_sequence, "\n", R_sequence)
-  rnaduplex <- system("RNAduplex --noLP", input = input, intern = TRUE)
-  
-  # Get MFE
-  rnaduplex <- gsub("\\s+", "_", rnaduplex)
-  mfe <- sapply(strsplit(rnaduplex, "_"), "[", 5)
-  if (mfe == "(") mfe <- sapply(strsplit(rnaduplex, "_"), "[", 6) # Positives < 10 have an extra space
-  mfe <- as.numeric(gsub("\\(|\\)", "", mfe))
-  
-  return(data.table(name = name, mfe = mfe))
-}
-
-get_shuffled_mfe <- function(name, L_sequence, R_sequence) {
-  L <- shuffle_sequence(L_sequence, number = 100, klet = 2)
-  R <- shuffle_sequence(R_sequence, number = 100, klet = 2)
-  
-  shuffled_mfe.dt <- rbindlist(lapply(seq_along(L), function(i) get_mfe(name, L[i], R[i])))
-  shuffled_mfe.dt[, `:=`(
-    mean_shuffled_mfe = mean(mfe, na.rm = TRUE),
-    sd_shuffled_mfe = sd(mfe, na.rm = TRUE)
-  ),
-  by = name
-  ]
-  
-  return(unique(shuffled_mfe.dt[, .(name, mean_shuffled_mfe, sd_shuffled_mfe)]))
-}
-
 # ==========
 # Define functions
 # ==========
@@ -92,6 +59,7 @@ option_list <- list(make_option(c("", "--input"), action = "store", type = "char
                     make_option(c("", "--nodes"), action = "store", type = "integer", default = 100, help = "Number of nodes to allocate [default: %default]"),
                     make_option(c("", "--shuffled_mfe"), action = "store_true", type = "logical", help = "Calculate shuffled binding energy (100 iterations)", default = FALSE),
                     make_option(c("", "--clusters_only"), action = "store_true", type = "logical", help = "Calculate only for duplexes in clusters", default = FALSE),
+                    make_option(c("", "--structure_annotation"), action = "store_true", type = "logical", help = "Skip MFE calculation and annotate existing structures with forgi", default = FALSE),
                     make_option(c("", "--intragenic"), action = "store_true", type = "logical", help = "Consider only intragenic clusters", default = FALSE),
                     make_option(c("", "--threeutr"), action = "store_true", type = "logical", help = "Consider only 3'UTR-3'UTR clusters (for forgi annotation only)", default = FALSE))
 opt_parser = OptionParser(option_list = option_list)
@@ -108,7 +76,6 @@ clusters.dt <- fread(opt$input)
 # ==========
 
 # Filter intragenic clusters if option
-
 if(opt$intragenic) {
   clusters.dt <- clusters.dt %>%
     dplyr::filter(L_gene_id == R_gene_id)
@@ -116,156 +83,179 @@ if(opt$intragenic) {
   clusters.dt <- clusters.dt
 }
 
-# Extract genomic sequence
 
-fa.dt <- data.table(gene_id = names(fa.dss), sequence = as.character(fa.dss))
+# Filter intragenic 3"UTR hybrids
+if(opt$threeutr) {
+  clusters.dt <- clusters.dt %>%
+     dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3")
+} else {
+    clusters.dt <- clusters.dt
+}
 
-# focus on reads that have been clustered, if analysing the collapsed clusters
 
+# Focus on reads that have been clustered
 if (opt$clusters_only) {
-  
+    
   clusters.dt <- data.table(dplyr::filter(clusters.dt, str_detect(cluster, "C")))
-  
+    
 } else {
-  
-  clusters.dt <- clusters.dt
+    
+    clusters.dt <- clusters.dt
 }
 
 
-if (c("mfe", "structure") %in% colnames(clusters.dt)) {
-  
-  clusters.dt <- dplyr::select(clusters.dt, -mfe, -structure)
-} else {
-  clusters.dt <- clusters.dt
-}
 
-message(paste0("Analysing ", nrow(clusters.dt), " clusters"))
+if (!opt$structure_annotation) { # Skip MFE calculation and annotate structures if MFE had been pre-calculated
 
-clusters.dt <- primavera::get_sequence(clusters.dt, fa.dt)
-stopifnot(!any(is.na(c(clusters.dt$L_sequence, clusters.dt$L_sequence))))
+  if (c("mfe", "structure") %in% colnames(clusters.dt)) {
+    
+    clusters.dt <- dplyr::select(clusters.dt, -mfe, -structure)
+  } else {
+    clusters.dt <- clusters.dt
+  }
 
-# ==========
-# Get MFE
-# ==========
+  message(paste0("Analysing ", nrow(clusters.dt), " clusters"))
 
-# Cluster jobs
-tic()
-sjob <- slurm_apply(analyse_structure, clusters.dt[, .(name, L_sequence, R_sequence)],
-                    jobname = sapply(strsplit(basename(opt$input), "\\."), "[[", 1),
-                    nodes = opt$nodes,
-                    cpus_per_node = 1,
-                    slurm_options = list(time = "24:00:00"),
+  genome.dt <- data.table(gene_id = names(fa.dss),
+                          sequence = as.character(fa.dss))
+
+
+  clusters.dt  <- get_sequence(hybrids.dt = clusters.dt , genome.dt = genome.dt)
+  stopifnot(!any(is.na(c(clusters.dt$L_sequence, clusters.dt$R_sequence))))
+
+  sjob <- slurm_apply(analyse_structure, clusters.dt[, .(name, L_sequence, R_sequence)], 
+                    jobname = "structure", 
+                    nodes = 100, 
+                    cpus_per_node = 1, 
+                    slurm_options = list(time = "24:00:00"), 
                     submit = TRUE)
-
-Sys.sleep(60)
-
-message("RNAduplex is running..")
-
-status <- FALSE
-while(status == FALSE) {
-  
-  squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
-  if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left
-  Sys.sleep(60)
-  
-}
-
-structure.list <- get_slurm_out(sjob)
-# saveRDS(structure.list, file = "mfe.rds")
-toc()
-
-cleanup_files(sjob) # Remove temporary files
-
-
-# structure.list <- readRDS("mfe.rds")
-structure.dt <- rbindlist(structure.list)
-clusters.dt <- merge(clusters.dt, structure.dt, by = "name")
-clusters.dt <- data.table(distinct(clusters.dt))
-
-
-# ==========
-# Shuffled 
-# ==========
-
-if(opt$shuffled_mfe) {
-  sjob <- slurm_apply(get_shuffled_mfe, clusters.dt[, .(name, L_sequence, R_sequence)], 
-                      jobname = sapply(strsplit(basename(opt$input), "\\."), "[[", 1), 
-                      nodes = opt$nodes, 
-                      add_objects = c("shuffle_sequence", "get_mfe"),
-                      cpus_per_node = 1, 
-                      slurm_options = list(time = "24:00:00"), 
-                      submit = TRUE)
-  
   Sys.sleep(60) # To give it enough time to submit before the first check
   status <- FALSE
   while(status == FALSE) {
-    
+
+        squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
+        if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left
+        Sys.sleep(60)
+
+  }
+  structure.list <- get_slurm_out(sjob)
+  structure.dt <- rbindlist(structure.list, use.names = TRUE)
+  cleanup_files(sjob)
+
+  # ==========
+  # Shuffled
+  # ==========
+  sjob <- slurm_apply(get_shuffled_mfe, clusters.dt[, .(name, L_sequence, R_sequence)], 
+                    jobname = "shuffled_mfe", 
+                    nodes = 100, 
+                    cpus_per_node = 1, 
+                    slurm_options = list(time = "24:00:00"), 
+                    submit = TRUE)
+
+  Sys.sleep(60) # To give it enough time to submit before the first check
+  status <- FALSE
+  while(status == FALSE) {
+
+        squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
+        if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left
+        Sys.sleep(60)
+
+  }
+  shuffled.list <- get_slurm_out(sjob)
+  shuffled.dt <- rbindlist(shuffled.list, use.names = TRUE)
+  cleanup_files(sjob)
+
+  # ==========
+  # Export tables
+  # ==========
+
+  structures.dt <- merge(clusters.dt, structure.dt, by = "name", all.x = TRUE)
+  structures_shuffled.dt <- merge(structures.dt, shuffled.dt, by = "name", all.x = TRUE)
+
+  fwrite(structures_shuffled.dt, opt$output, sep = "\t")
+
+  # ==========
+  # Annotate structures
+  # ==========
+
+  # Separate db structure into L_db and R_db
+  forgi_db.df <- structures_shuffled.dt %>%
+    separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE) %>%
+    unite("forgi_db", c(L_db, R_db), sep="...", remove = FALSE) %>%  # replace & with "..."
+    dplyr::select(name, forgi_db)
+
+  forgi_input.df <- data.frame(id = forgi_db.df$name, db = forgi_db.df$forgi_db, script_path = get_elementstring.py_path)
+  forgi_input.df <- mutate(forgi_input.df, db = as.character(forgi_input.df$db))
+
+  tic()
+  sjob <- slurm_apply(get_forgi, forgi_input.df, jobname = paste0("forgi_", paste0(sample(c(LETTERS, letters, 0:9), 10), collapse = "")),
+                      nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"), submit = TRUE)
+
+  message("forgi is running..")
+
+  status <- FALSE
+  while(status == FALSE) {
     squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
     if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left
     Sys.sleep(60)
-    
   }
-  
-  mfe.list <- get_slurm_out(sjob)
-  #saveRDS(mfe.list, file = "shuffled_mfe.rds")
-  cleanup_files(sjob) # Remove temporary files
-  
-  mfe.dt <- rbindlist(mfe.list)
-  clusters.dt <- merge(clusters.dt, mfe.dt, by = "name")
-  
-}
+
+  forgi <- get_slurm_out(sjob, outtype = 'raw')
+  # saveRDS(forgi, file = "forgi.rds")
+  forgi.dt <- rbindlist(forgi)
+  cleanup_files(sjob)
+  toc()
+
+  # remove the hairpins
+  forgi.dt <- forgi.dt %>%
+    dplyr::filter(element_type != "h")
+
+  forgi.output.filename <- str_replace(opt$output, "mfe", "forgi")
+  fwrite(forgi.dt, file = forgi.output.filename, sep = "\t")
 
 
-clusters.dt <- data.table(distinct(clusters.dt))
-fwrite(clusters.dt, opt$output, sep = "\t")
-
-
-# Filter intragenic 3"UTR hybrids
-
-if(opt$threeutr) {
-  clusters.dt <- clusters.dt %>%
-    dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3")
 } else {
-  clusters.dt <- clusters.dt
-}
-
-# ==========
-# Annotate structures
-# ==========
 
 # Separate db structure into L_db and R_db
-clusters.dt <- clusters.dt %>%
-  separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE)
+  forgi_db.df <- structures_shuffled.dt %>%
+    separate(structure, into = c("L_db", "R_db"), sep = "&", remove = FALSE) %>%
+    unite("forgi_db", c(L_db, R_db), sep="...", remove = FALSE) %>%  # replace & with "..."
+    dplyr::select(name, forgi_db)
 
-forgi_db.df <- clusters.dt %>%
-  unite("forgi_db", c(L_db, R_db), sep="...", remove = FALSE) %>%  # replace & with "..."
-  dplyr::select(name, forgi_db)
+  forgi_input.df <- data.frame(id = forgi_db.df$name, db = forgi_db.df$forgi_db, script_path = get_elementstring.py_path)
+  forgi_input.df <- mutate(forgi_input.df, db = as.character(forgi_input.df$db))
 
-forgi_input.df <- data.frame(id = forgi_db.df$name, db = forgi_db.df$forgi_db, script_path = get_elementstring.py_path)
-forgi_input.df <- mutate(forgi_input.df, db = as.character(forgi_input.df$db))
+  tic()
+  sjob <- slurm_apply(get_forgi, forgi_input.df, jobname = paste0("forgi_", paste0(sample(c(LETTERS, letters, 0:9), 10), collapse = "")),
+                      nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"), submit = TRUE)
 
-tic()
-sjob <- slurm_apply(get_forgi, forgi_input.df, jobname = paste0("forgi_", paste0(sample(c(LETTERS, letters, 0:9), 10), collapse = "")),
-                    nodes = opt$nodes, cpus_per_node = 1, slurm_options = list(time = "24:00:00"), submit = TRUE)
+  message("forgi is running..")
 
-message("forgi is running..")
+  status <- FALSE
+  while(status == FALSE) {
+    squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
+    if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left
+    Sys.sleep(60)
+  }
 
-status <- FALSE
-while(status == FALSE) {
-  squeue.out <- system(paste("squeue -n", sjob$jobname), intern = TRUE) # Get contents of squeue for this job
-  if(length(squeue.out) == 1) status <- TRUE # i.e. only the header left
-  Sys.sleep(60)
+  forgi <- get_slurm_out(sjob, outtype = 'raw')
+  # saveRDS(forgi, file = "forgi.rds")
+  forgi.dt <- rbindlist(forgi)
+  cleanup_files(sjob)
+  toc()
+
+  # remove the hairpins
+  forgi.dt <- forgi.dt %>%
+    dplyr::filter(element_type != "h")
+
+  forgi.output.filename <- str_replace(opt$output, "mfe", "forgi")
+  fwrite(forgi.dt, file = forgi.output.filename, sep = "\t")
+
+
+
 }
 
-forgi <- get_slurm_out(sjob, outtype = 'raw')
-# saveRDS(forgi, file = "forgi.rds")
-forgi.dt <- rbindlist(forgi)
-cleanup_files(sjob)
-toc()
 
-# remove the hairpins
-forgi.dt <- forgi.dt %>%
-  dplyr::filter(element_type != "h")
 
-forgi.output.filename <- str_replace(opt$output, "mfe", "forgi")
-fwrite(forgi.dt, file = forgi.output.filename, sep = "\t")
+
+
