@@ -15,7 +15,6 @@ cd $GITHUBDIR/merged_clustered
 # ==========
 
 # Structures were-precomputed, so annotate them using forgi
-
 ./analyse_structure.R --input=$STAU1DIR/merged.atlas.clusters.tsv.gz --output=$STAU1DIR/merged.atlas.clusters.mfe.tsv.gz --fasta=$REFDIR/GRCh38.gencode_v33.fa --structure_annotation
 
 # ==========
