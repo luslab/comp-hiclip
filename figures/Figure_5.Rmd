@@ -21,10 +21,10 @@ output:
 
 ```{r include=FALSE}
 suppressPackageStartupMessages(library(rtracklayer))
-suppressPackageStartupMessages(library(primavera))
+suppressPackageStartupMessages(library(toscatools))
 suppressPackageStartupMessages(library(data.table))
-suppressPackageStartupMessages(library(paletteer))
-suppressPackageStartupMessages(library(ggthemes))
+# suppressPackageStartupMessages(library(paletteer))
+# suppressPackageStartupMessages(library(ggthemes))
 suppressPackageStartupMessages(library(cowplot))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(scales))
@@ -330,27 +330,42 @@ count_identical_characters <- function(a, b, sep = NA) {
 #### Data
 
 ```{r}
-data.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip"
-plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_4"
+ref.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref"
+work.dir <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions"
+
+stau1.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/atlas"
+derived.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/results_nornase"
+paris.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/paris/results_paris/atlas_clusters"
+ricseq.dir <- "/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/ricseq/results_ricseq/atlas_clusters"
+
+plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_5"
 ```
 
 ```{r message=FALSE}
-# Clusters (collapsed)
-stau1.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz"))
-stau1.mfe.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.collapsed.mfe.tsv.gz"))
-paris.dt <- fread(paste0(data.dir,"/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
-paris.mfe.dt <- fread(paste0(data.dir, "/paris_atlas/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz"))
+# Clusters (collapsed) and structure annotations
 
-short_range.mfe.dt <- fread(paste0(data.dir, "/short_range/sept_2021/short_range_duplexes.mfe.tsv.gz"))
-short_range.forgi.dt <- fread(paste0(data.dir, "/short_range/sept_2021/short_range_duplexes.forgi.tsv.gz"))
+# STAU1
+stau1.dt <- fread(paste0(stau1.dir, "/merged.atlas.clusters.tsv.gz"))
+stau1.mfe.dt <- fread(paste0(stau1.dir, "/merged.atlas.clusters.tsv.gz"))
+stau1_forgi.dt <- fread(paste0(stau1.dir, "/merged.atlas.clusters.forgi.tsv.gz"))
 
-# Structure annotation
-stau1_forgi.dt <- fread(paste0(data.dir,"/stau1_atlas/merged_atlas.clusters.collapsed.forgi.tsv.gz"))
-paris_forgi.dt <- fread(paste0(data.dir,"/paris_atlas/paris.3utr.all.atlas_clusters.gc.annotated.forgi.tsv.gz")) # PARIS: only intragenic 3'UTR
+short_range.mfe.dt <- fread(paste0(derived.dir, "/short_range_duplexes.mfe.tsv.gz"))
+short_range.forgi.dt <- fread(paste0(derived.dir, "/short_range_duplexes.forgi.tsv.gz"))
+
+ 
+# PARIS
+paris.dt <- fread(paste0(paris.dir,"all.atlas_clusters.gc.annotated.tsv.gz"))
+paris.mfe.dt <- fread(paste0(paris.dir,"paris.atlas.clusters.utr3.mfe.tsv.gz")) # only intragenic 3'UTR
+paris_forgi.dt <- fread(paste0(paris.dir,"paris.atlas.clusters.utr3.forgi.tsv.gz"))
+
+# RIC-seq
+ricseq.dt <- fread(paste0(ricseq.dir,"all.atlas_clusters.gc.annotated.tsv.gz"))
+ricseq.mfe.dt <- fread(paste0(ricseq.dir,"ricseq.atlas.clusters.utr3.mfe.tsv.gz")) # only intragenic 3'UTR
+ricseq_forgi.dt <- fread(paste0(ricseq.dir,"ricseq.atlas.clusters.utr3.forgi.tsv.gz"))
 
 # Clustered hybrids
-stau1.hybrids.dt <- fread(paste0(data.dir, "/stau1_atlas/merged_atlas.clusters.tsv.gz"))
-paris.hybrids.dt <- fread(paste0(data.dir, "/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
+stau1.hybrids.dt <- fread(paste0(stau1.dir, "/merged.atlas.clusters.tsv.gz"))
+# paris.hybrids.dt <- fread(paste0(data.dir, "/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 ```
 
 ```{r}
