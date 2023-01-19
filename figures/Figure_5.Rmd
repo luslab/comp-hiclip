@@ -23,8 +23,6 @@ output:
 suppressPackageStartupMessages(library(rtracklayer))
 suppressPackageStartupMessages(library(toscatools))
 suppressPackageStartupMessages(library(data.table))
-# suppressPackageStartupMessages(library(paletteer))
-# suppressPackageStartupMessages(library(ggthemes))
 suppressPackageStartupMessages(library(cowplot))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(scales))
@@ -354,12 +352,55 @@ plots.dir <- "~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_5
 ```
 
 
-# Compare hybrid read lengths between the different prox-ligation protocols
+# Compare hybrid arm lengths between the different prox-ligation protocols
 
 ```{r}
 
+stau1.hybrids.df <- fread(paste0(stau1.dir, "/merged.atlas.clustered.tsv.gz"))
+paris_hyrids.df <- fread(paste0(paris.dir, "/../atlas/all.hybrids.tsv.gz"))
+ric_seq_hyrids.df <- fread(paste0(ricseq.dir, "/../atlas/all.hybrids.tsv.gz"))
+
+stau1.hybrids.df$Experiment <- "STAU1"
+ric_seq_hyrids.df$Experiment <- "RIC-seq"
+paris_hyrids.df$Experiment <- "PARIS"
+
+all.hybrids.df <- rbind(stau1.hybrids.df, ric_seq_hyrids.df, paris_hyrids.df, fill=TRUE) %>%
+  mutate(L_arm_len = L_end - L_start + 1,
+         R_arm_lem = R_end - R_start + 1)
+
+# Reformat df
+arm.lengths.df <- all.hybrids.df %>%
+  dplyr::select(Experiment, L_arm_len, R_arm_lem) %>%
+  pivot_longer(c(L_arm_len, R_arm_lem), names_to = "arm", values_to = "arm_length")
+
 ```
 
+
+```{r}
+# Plot
+arm_colours <- c("PARIS" = "#f28e2d", "STAU1" = "#507aa8", "RIC-seq" = "#7851a9")
+arm.lengths.df$Experiment <- factor(arm.lengths.df$Experiment, levels = c("STAU1", "PARIS", "RIC-seq"))
+
+arm_lengths.gg <- ggplot(arm.lengths.df,
+                         aes(x = Experiment, y=arm_length, colour=Experiment)) +
+  # geom_boxplot(width = 0.5) +
+  geom_violin(adjust = 3) +
+  geom_boxplot(width=0.07, alpha=0.2) +
+  theme(legend.position="right", legend.direction="vertical") +
+  scale_y_log10() + annotation_logticks(sides = "l") +
+  scale_colour_manual(values = arm_colours) +
+  theme_minimal_grid() + 
+  theme(legend.position = "top") +
+  ylab("Hybrid arm length")
+  # ylim(-1.5, 16) +
+arm_lengths.gg
+# ggsave(paste0(plots.dir, "/arm_lengths.pdf"), bulges.gg, dpi = 300, width = 5, height = 6)
+```
+
+
+```{r}
+ggsave(paste0(plots.dir, "/arm_lengths.pdf"), arm_lengths.gg, dpi = 300, width = 5, height = 7)
+```
 
 
 ```{r message=FALSE}
@@ -384,7 +425,6 @@ ricseq.mfe.dt <- fread(paste0(ricseq.dir,"/ricseq.atlas.clusters.utr3.mfe.tsv.gz
 ricseq_forgi.dt <- fread(paste0(ricseq.dir,"/ricseq.atlas.clusters.utr3.forgi.tsv.gz"))
 
 # Clustered hybrids
-stau1.hybrids.dt <- fread(paste0(stau1.dir, "/merged.atlas.clustered.tsv.gz"))
 # paris.hybrids.dt <- fread(paste0(data.dir, "/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 ```
 
