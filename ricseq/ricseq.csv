@@ -1,3 +1,3 @@
 sample,fastq
-ricseq_rRNA_depleted_rep1,/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/ricseq/preprocessed/SRR8632820.trimmed.rmDup.merged.fastq.gz
-ricseq_rRNA_depleted_rep2,/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/ricseq/preprocessed/SRR8632821.trimmed.rmDup.merged.fastq.gz
+ricseq_rRNA_depleted_rep1,/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/ricseq/preprocessed/SRR8632820.trimmed.rmDup.poly_trimmed.merged.strand_corrected.fq.gz
+ricseq_rRNA_depleted_rep2,/camp/lab/luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions/ricseq/preprocessed/SRR8632821.trimmed.rmDup.poly_trimmed.merged.strand_corrected.fq.gz
