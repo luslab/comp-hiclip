@@ -107,8 +107,11 @@ B_minus2.hybrid <- split_read(fq = B_minus1.hybrid$nolinker, adapter = substr(li
 message(length(B.hybrid$hybrid)/2, " reads with full length linker adapters")
 message((length(B_minus1.hybrid$hybrid) + length(B_minus2.hybrid$hybrid))/2, " reads with truncated linker adapters")
 
-hybrid.fq <- append(B.hybrid$hybrid, 
-                    B_minus1.hybrid$hybrid,
+hybrid.fq <- append(B.hybrid$hybrid,
+                    B_minus1.hybrid$hybrid)
+
+hybrid.fq <- append(hybrid.fq,
                     B_minus2.hybrid$hybrid)
 
+stopifnot(length(hybrid.fq) == length(B.hybrid$hybrid) + length(B_minus1.hybrid$hybrid) + length(B_minus2.hybrid$hybrid))
 writeFastq(hybrid.fq, compress = TRUE, file = args[2])
