@@ -1,87 +1,89 @@
 ---
 title: "Figure 2"
-output: html_document
+author: "A. M. Chakrabarti"
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output: 
+  html_notebook: 
+    code_folding: hide
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    number_sections: yes
+    theme: flatly
+    highlight: haddock
+    fig_align: center
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+# Setup
+
+```{r}
+suppressPackageStartupMessages(library(pheatmap))
+suppressPackageStartupMessages(library(viridis))
+suppressPackageStartupMessages(library(RColorBrewer))
+suppressPackageStartupMessages(library(tictoc))
+suppressPackageStartupMessages(library(toscatools))
+suppressPackageStartupMessages(library(rtracklayer))
+suppressPackageStartupMessages(library(data.table))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(scales))
+suppressPackageStartupMessages(library(ggthemes))
+suppressPackageStartupMessages(library(cowplot))
+suppressPackageStartupMessages(library(UpSetR))
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggrepel))
+suppressPackageStartupMessages(library(patchwork))
 ```
 
 ```{r}
-library(pheatmap)
-library(viridis)
-library(RColorBrewer)
-library(tictoc)
-library(primavera)
-library(rtracklayer)
-library(data.table)
-library(ggplot2)
-library(scales)
-library(ggthemes)
-library(cowplot)
-library(UpSetR)
-library(tidyverse)
-library(ggrepel)
-```
-
-```{r}
-plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_1"
-if(!dir.exists(plot.path)) dir.create(plot.path)
+results.path <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions"
+plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_2"
+if(!dir.exists(plot.path)) dir.create(plot.path, recursive = TRUE)
 
 ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3")
 ```
 
-## Load data
+# Load data
 
 ```{r}
-# Linker
-# linker.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/linker.clusters.mfe.tsv.gz")
-linker.dt <- rbindlist(list(
-  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lph.hybrids.dedup.tsv.gz")[, sample := "stau1_high"],
-  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lpl.hybrids.dedup.tsv.gz")[, sample := "stau1_low"]),
-                       use.names = TRUE)
-# Add calculations
-linker.dt[, `:=` (L_end = L_start + L_width - 1,
-                  R_end = R_start + R_width - 1)]
-linker.dt[, type := ifelse(L_seqnames == R_seqnames, "intragenic", "intergenic")]
-linker.dt[, orientation := "linker"]
+# linker.dt <- rbindlist(list(fread(file.path(results.path, "results_linker/stau1_high.hybrids.gc.annotated.tsv.gz"))[, sample := "stau1_high"],
+#                             fread(file.path(results.path, "results_linker/stau1_low.hybrids.gc.annotated.tsv.gz"))[, sample := "stau1_low"]),
+#                        use.names = TRUE)
 
-genes.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz")
-regions.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/regions.gtf.gz")
+linker.dt <- fread(file.path(results.path, "results_linker/all.atlas.clustered.tsv.gz"))
+nolinker.dt <- fread(file.path(results.path, "results_nolinker/atlas/all.atlas.clustered.tsv.gz"))
+nolinker.dt[, `:=` (cluster_hybrid_count = NULL,
+                    cluster_hybrid_count.x = NULL,
+                    sample = tstrsplit(sample, "\\.")[[1]])]
+setnames(nolinker.dt, "cluster_hybrid_count.y", "cluster_hybrid_count")
 
-linker.dt <- convert_coordinates(hybrids.dt = linker.dt, genes.gr = genes.gr)
-linker.dt <- annotate_hybrids(hybrids.dt = linker.dt, regions.gr = regions.gr)
-
-# No linker
-nolinker.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nolinker/atlas/all.hybrids.tsv.gz")
-nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
-
-hybrids.dt <- rbindlist(list(nolinker.dt, linker.dt),
-                        use.names = TRUE,
+hybrids.dt <- rbindlist(list(linker.dt, nolinker.dt),
+                        use.names = TRUE, 
                         fill = TRUE)
+
+# Adjust parameter names for plots
 hybrids.dt[, exp := ifelse(orientation == "linker", "Linker", "Direct")]
+hybrids.dt[, type := ifelse(type == "intragenic", "intra-transcript", "inter-transcript")]
 hybrids.dt[sample == "stau1_high", sample := "High RNase"]
 hybrids.dt[sample == "stau1_low", sample := "Low RNase"]
-
-hybrids.dt[, type := ifelse(type == "intragenic", "intra-transcript", "inter-transcript")]
-
 ```
 
 # Figure 2 A - Counts
 
 ```{r}
-p <- ggplot(hybrids.dt[, .N, by = .(exp, sample)], aes(x = exp, y = N, fill = sample)) +
+p.A <- ggplot(hybrids.dt[, .N, by = .(exp, sample)], aes(x = exp, y = N, fill = sample)) +
   geom_col(width = 0.5) +
-  coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
+  coord_flip() + 
+  scale_x_discrete(limits = c("Direct", "Linker")) +
+  scale_y_continuous(breaks = seq(0, 5e4, 1e4)) +
   scale_fill_tableau() +
   theme_minimal_grid() + theme(legend.position = "top") +
   labs(x = "",
        y = "Number of hybrids",
        fill = "")
 
-ggsave(p, filename = file.path(plot.path, "linker_nolinker_counts.pdf"), width = 7, height = 4)
+ggsave(p.A, filename = file.path(plot.path, "linker_nolinker_counts.pdf"), width = 7, height = 4)
 
-p
+p.A
 ```
 
 There are `r nrow(nolinker.dt)/nrow(linker.dt)` times as many hybrids recovered without a linker
@@ -89,8 +91,7 @@ There are `r nrow(nolinker.dt)/nrow(linker.dt)` times as many hybrids recovered 
 # Figure 2 B - Intra-inter
 
 ```{r}
-
-p <- hybrids.dt %>% 
+p.B <- hybrids.dt %>% 
   group_by(exp, type) %>% 
   summarise(reads = n()) %>%
   mutate(percentage = reads/sum(reads)) %>%
@@ -108,11 +109,80 @@ p <- hybrids.dt %>%
        y = "Percentage of hybrids",
        fill = "")
 
-ggsave(p, filename = file.path(plot.path, "linker_nolinker_interintra.pdf"), width = 7, height = 4)
+ggsave(p.B, filename = file.path(plot.path, "linker_nolinker_interintra.pdf"), width = 7, height = 4)
 
-p
+p.B
 ```
 
+### Inter-transcript
+
+```{r}
+inter.dt <- hybrids.dt[type == "inter-transcript"]
+# inter.dt <- inter.dt[, .N, by = .(L_biotype, R_biotype)]
+inter.dt[, `:=` (biotype.x = ifelse(L_biotype <= R_biotype, L_biotype, R_biotype),
+                 biotype.y = ifelse(L_biotype <= R_biotype, R_biotype, L_biotype))]
+inter.dt[, link := paste0(biotype.y, "-", biotype.x)]
+
+inter.dt[grepl("rRNA", biotype.y), simple.biotype.y := "rRNA"]
+inter.dt[grepl("rRNA", biotype.x), simple.biotype.x := "rRNA"]
+inter.dt[grepl("mRNA", biotype.y), simple.biotype.y := "mRNA"]
+inter.dt[grepl("mRNA", biotype.x), simple.biotype.x := "mRNA"]
+inter.dt[grepl("lncRNA", biotype.y), simple.biotype.y := "lncRNA"]
+inter.dt[grepl("lncRNA", biotype.x), simple.biotype.x := "lncRNA"]
+inter.dt[is.na(simple.biotype.y), simple.biotype.y := biotype.y]
+inter.dt[is.na(simple.biotype.x), simple.biotype.x := biotype.x]
+inter.dt[, simple.link := paste0(simple.biotype.y, "-", simple.biotype.x)]
+
+inter.summarised.count.dt <- inter.dt[, .N, by = .(simple.link)]
+setorder(inter.summarised.count.dt, -N)
+
+inter.count.dt <- inter.dt[, .N, by = .(simple.link, exp)]
+p.inter <- ggplot(inter.count.dt[simple.link %in% inter.summarised.count.dt[1:5]$simple.link], aes(x = reorder(simple.link, N), y = N, fill = exp)) +
+  geom_col(position = "dodge") +
+  coord_flip() +
+  # facet_grid(. ~ exp) +
+  scale_fill_manual(values = ht_colours) +
+  theme_minimal_grid() + theme(legend.position = "bottom") +
+  labs(y = "Number of hybrids",
+       x = "",
+       fill = "")
+
+ggsave(p.inter, filename = file.path(plot.path, "linker_nolinker_inter_top5.pdf"), width = 7, height = 4)
+
+p.inter
+```
+
+### mRNA-mRNA clusters
+
+```{r}
+# inter.nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames != R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][!R_biotype %in% c("rRNA", "tRNA")][cluster_hybrid_count >= 2], mode = "median")
+inter.nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames != R_seqnames][grepl("mRNA", L_biotype)][grepl("mRNA", R_biotype)][cluster_hybrid_count >= 2], mode = "median")
+inter.nolinker.clusters <- convert_coordinates(inter.nolinker.clusters, 
+                                               genes.gr = import.gff2("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz"))
+
+inter.nolinker.clusters <- annotate_hybrids(inter.nolinker.clusters, 
+                                            regions.gr = import.gff2("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/icount_mini_utr3/regions.gtf.gz"))
+
+inter.nolinker.clusters[, L_region := factor(L_region, levels = c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA"))]
+inter.nolinker.clusters[, R_region := factor(R_region, levels = c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA"))]
+
+inter.nolinker.clusters[, `:=` (region.x = ifelse(as.integer(L_region) <= as.integer(R_region), as.character(L_region), as.character(R_region)),
+                      region.y = ifelse(as.integer(L_region) <= as.integer(R_region), as.character(R_region), as.character(L_region)))]
+inter.nolinker.clusters[, mrna.link := paste0(region.x, "-", region.y)]
+inter.nolinker.clusters.count.dt <- inter.nolinker.clusters[, .N, by = mrna.link]
+setorder(inter.nolinker.clusters.count.dt, -N)
+
+p.intermrna <- ggplot(inter.nolinker.clusters.count.dt, aes(x = reorder(mrna.link, N), y = N)) +
+  geom_col() +
+  coord_flip() +
+  theme_minimal_grid() + 
+  labs(y = "Number of duplexes",
+       x = "")
+
+ggsave(p.intermrna, filename = file.path(plot.path, "linker_nolinker_inter_mrna_clusters.pdf"), width = 4, height = 4)
+
+p.intermrna
+```
 
 # Figure 2 C - Regions
 
@@ -120,30 +190,7 @@ p
 arms.dt <- rbindlist(list(hybrids.dt[, .(exp, L_region)], hybrids.dt[, .(exp, R_region)]), use.names = FALSE)
 arms.dt$L_region <- factor(arms.dt$L_region, levels = rev(c("rRNA", "tRNA", "UTR5", "CDS", "intron", "UTR3", "ncRNA")))
 
-# p <- arms.dt %>%
-#   group_by(L_region, exp) %>%
-#   summarise(arms = n()) %>%
-#   group_by(exp) %>%
-#   mutate(percentage = arms/sum(arms)) %>%
-#   arrange(desc(L_region)) %>%
-#   mutate(pos = cumsum(percentage) - percentage/2) %>%
-#   ggplot(aes(x = exp, y = percentage, fill = L_region)) +
-#   geom_col(width = 0.5, position = "fill") +
-#   geom_text_repel(aes(y = pos, label = paste0(round(percentage * 100,1),"%")),
-#           size = 5,
-#           nudge_x = 0.4,
-#           segment.size = 0.5, 
-#           segment.color = '#515A5A') +
-#   coord_flip() +
-#   scale_x_discrete(limits = c("Direct", "Linker")) +
-#   scale_y_continuous(label = percent) +
-#   scale_fill_tableau(palette = "Miller Stone", direction = -1) +
-#   theme_minimal_grid() + theme(legend.position = "top") +
-#   labs(x = "",
-#        y = "Percentage of hybrids",
-#        fill = "")
-
-p <- arms.dt %>%
+p.C <- arms.dt %>%
   group_by(L_region, exp) %>%
   summarise(arms = n()) %>%
   group_by(exp) %>%
@@ -166,99 +213,27 @@ p <- arms.dt %>%
        y = "Percentage of hybrids",
        fill = "")
 
-# p <- ggplot(arms.dt[, .N, by = .(L_region, exp)], aes(x = exp, y = N, fill = L_region)) +
-#   geom_col(width = 0.5, position = "fill") +
-#   coord_flip() + scale_x_discrete(limits = c("Direct", "Linker")) +
-#   scale_y_continuous(label = percent) +
-#   scale_fill_tableau(palette = "Miller Stone", direction = -1) +
-#   theme_minimal_grid() + theme(legend.position = "top") +
-#   labs(x = "",
-#        y = "Percentage of hybrids",
-#        fill = "")
+ggsave(p.C, filename = file.path(plot.path, "linker_nolinker_regions.pdf"), width = 7, height = 4)
 
-ggsave(p, filename = file.path(plot.path, "linker_nolinker_regions.pdf"), width = 7, height = 4)
-
-p
+p.C
 ```
 
 ```{r}
-round(prop.table(table(arms.dt[exp == "Direct"]$L_region)) * 100, 1)
 round(prop.table(table(arms.dt[exp == "Linker"]$L_region)) * 100, 1)
-```
-
-# Figure 2 D - Duplexes
-
-### Linkers
-
-```{r}
-atlas.hybrids.dt <- linker.dt[, total_count := .N, by = .(L_seqnames, R_seqnames)]
-atlas.hybrids.dt <- atlas.hybrids.dt[L_seqnames == R_seqnames]
-atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rRNA_45S" & R_seqnames == "rRNA_45S")]
-atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rDNA" & R_seqnames == "rDNA")]
-atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rRNA_5S" & R_seqnames == "rRNA_5S")]
-atlas.hybrids.dt <- atlas.hybrids.dt[!(L_seqnames == "rRNA5S" & R_seqnames == "rRNA5S")]
-atlas.hybrids.dt <- atlas.hybrids.dt[!grepl("tRNA", L_seqnames)]
-atlas.hybrids.dt <- atlas.hybrids.dt[!grepl("tRNA", R_seqnames)]
-
-linker.list <- split(atlas.hybrids.dt, by = c("L_seqnames", "R_seqnames"))
-linker.list <- linker.list[elementNROWS(linker.list) > 1]
-linker.clusters.list <- parallel::mclapply(linker.list, cluster_hybrids, percent_overlap = 0.5, mc.cores = 4)
-tic()
-linker.clusters.list <- lapply(linker.list, cluster_hybrids, percent_overlap = 0.5)
-toc()
-linker.clusters.dt <- rbindlist(linker.clusters.list, use.names = TRUE, fill = TRUE)
-```
-
-```{r}
-dt <- data.table(exp = c("Linker", "Direct"),
-                 counts = c(nrow(linker.clusters.dt[L_seqnames == R_seqnames][!L_seqnames %in% c("tRNA", "rDNA", "rRNA_5S")][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)]),
-                            nrow(nolinker.dt[L_seqnames == R_seqnames][grep("C", cluster), .N, by = .(cluster, L_seqnames, R_seqnames)])))
-
-p <- ggplot(dt, aes(x = exp, y = counts)) +
-  geom_col(width = 0.5) +
-  scale_fill_tableau() +
-  theme_minimal_grid() + theme(legend.position = "top") +
-  labs(x = "",
-       y = "Number of clusters",
-       fill = "")
-
-ggsave(p, filename = "linker_nolinker_cluster_counts.pdf", width = 5, height = 7)
-```
-
-# Figure 2 E - hybridisation energy
-
-```{r}
-linker.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/hiclip/linker/linker.clusters.mfe.tsv.gz")
-
-mfe.dt <- rbindlist(list(nolinker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mean_shuffled_mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Direct", mfe = "Shuffled")],
-                         nolinker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Direct", mfe = "Duplex")],
-                         linker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mean_shuffled_mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Linker", mfe = "Shuffled")],
-                         linker.dt[L_seqnames == R_seqnames][grep("^C", cluster)][, mean(mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Linker", mfe = "Duplex")]))
-
-setnames(mfe.dt, "V1", "energy")
-
-p <- ggplot(mfe.dt, aes(x = energy, colour = exp, linetype = mfe)) +
-  geom_density(size = 1) +
-  scale_colour_manual(values = ht_colours) +
-  theme_minimal_grid() + theme(legend.position = "top") +
-  labs(x = "Hybridisation energy",
-       y = "Density",
-       colour = "",
-       linetype = "")  
-
-ggsave(p, filename = file.path(plot.path, "linker_nolinker_mfe.pdf"), width = 7, height = 4)
-
-p
+round(prop.table(table(arms.dt[exp == "Direct"]$L_region)) * 100, 1)
 ```
 
 # Figure 2 D - Overlaps
 
 ```{r}
-linker.clusters <- collapse_clusters(linker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "wide")
-nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "wide")
+linker.clusters <- collapse_clusters(linker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][cluster_hybrid_count >= 2], mode = "median")
+nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][cluster_hybrid_count >= 2], mode = "median")
 
-linker.clusters <- primavera::reorient_hybrids(linker.clusters)
-nolinker.clusters <- primavera::reorient_hybrids(nolinker.clusters)
+# linker.clusters <- collapse_clusters(linker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "wide")
+# nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "wide")
+
+linker.clusters <- reorient_hybrids(linker.clusters)
+nolinker.clusters <- reorient_hybrids(nolinker.clusters)
 
 bedpe.colnames <- c("L_seqnames", "L_start", "L_end", "R_seqnames", "R_start", "R_end", "name", "count", "L_strand", "R_strand")
 
@@ -284,23 +259,34 @@ cmd <- paste("bedtools pairtopair -rdn -a", linker.bedpe, "-b", nolinker.bedpe, 
 system(cmd)
 bedpe.dt <- fread(ol, col.names = c(paste0(bedpe.colnames, ".x"), paste0(bedpe.colnames, ".y")))
 
-file.remove(linker.bedpe)
-file.remove(nolinker.bedpe)
-file.remove(ol)
+invisible(file.remove(linker.bedpe))
+invisible(file.remove(nolinker.bedpe))
+invisible(file.remove(ol))
 
-upset.input <- c("Linker" = nrow(linker.clusters) - nrow(bedpe.dt),
-               "Direct" = nrow(nolinker.clusters) - nrow(bedpe.dt),
-               "Linker&Direct" = nrow(bedpe.dt))
+table(duplicated(bedpe.dt$name.x))
+table(duplicated(bedpe.dt$name.y))
+
+stopifnot(sum(linker.clusters$name %in% bedpe.dt$name.x) == sum(nolinker.clusters$name %in% bedpe.dt$name.y))
+ol <- sum(linker.clusters$name %in% bedpe.dt$name.x)
+
+upset.input <- c("Linker" = nrow(linker.clusters) - ol,
+               "Direct" = nrow(nolinker.clusters) - ol,
+               "Linker&Direct" = ol)
 
 pdf(file.path(plot.path, "linker_nolinker_upset.pdf"), width = 7, height = 5)
 upset(fromExpression(upset.input), 
       order.by = "freq",
       mainbar.y.label = "Intersecting number of duplexes",
-      sets.x.label = "Total number of duplexes")s
+      sets.x.label = "Total number of duplexes")
 dev.off()
+
+upset(fromExpression(upset.input), 
+      order.by = "freq",
+      mainbar.y.label = "Intersecting number of duplexes",
+      sets.x.label = "Total number of duplexes")
 ```
 
-# # Figure 2 D - Inset - RNA abundance of overlapping genes
+## Figure 2 D - Inset - RNA abundance of overlapping genes
 
 ```{r}
 ol.genes <- unique(c(bedpe.dt$L_seqnames.x, bedpe.dt$L_seqnames.y, bedpe.dt$R_seqnames.x, bedpe.dt$R_seqnames.y))
@@ -317,11 +303,11 @@ counts.dt[, ensg := tstrsplit(tstrsplit(gene, ":")[[2]], "\\.")[[1]]]
 
 counts.dt <- merge(counts.dt, gene.counts.dt[, .(ensg, mean_count)], by = "ensg")
 
-p <- ggplot(counts.dt, aes(x = type, y = mean_count, fill = type)) +
+p <- ggplot(counts.dt, aes(x = type, y = mean_count)) +
   geom_boxplot(width = 0.5, outlier.shape = NA) +
   scale_y_log10() +
   annotation_logticks(sides = "l") +
-  scale_fill_brewer(palette = "Accent") +
+  # scale_fill_brewer(palette = "Accent") +
   coord_cartesian(ylim = c(1e-1, 1e3)) +
   # geom_label(data = gene.counts.dt[mean_count > 0, .N, by = .(stau)], aes(label = N, y = 0), vjust = -0.1) +
   labs(x = "",
@@ -329,35 +315,57 @@ p <- ggplot(counts.dt, aes(x = type, y = mean_count, fill = type)) +
        fill = "") +
   theme_minimal_grid() + theme(legend.position = "none")
 
-ggsave(p, filename = file.path(plot.path, "overlap_rnaabundance.pdf"), width = 5, height = 4)
+ggsave(p, filename = file.path(plot.path, "overlap_rnaabundance.pdf"), width = 4, height = 4)
 
 p
 ```
 
+# Figure 2 E - hybridisation energy
+
+```{r}
+mfe.dt <- rbindlist(list(nolinker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][grep("^C", cluster)][, mean(mean_shuffled_mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Direct", mfe = "Shuffled")],
+                         nolinker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][grep("^C", cluster)][, mean(mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Direct", mfe = "Duplex")],
+                         linker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][grep("^C", cluster)][, mean(mean_shuffled_mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Linker", mfe = "Shuffled")],
+                         linker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][grep("^C", cluster)][, mean(mfe), by = .(L_seqnames, cluster)][, `:=` (exp = "Linker", mfe = "Duplex")]))
+
+setnames(mfe.dt, "V1", "energy")
+
+p.E <- ggplot(mfe.dt, aes(x = energy, colour = exp, linetype = mfe)) +
+  geom_density(size = 1) +
+  scale_colour_manual(values = ht_colours) +
+  theme_minimal_grid() + theme(legend.position = "top") +
+  labs(x = "Hybridisation energy",
+       y = "Density",
+       colour = "",
+       linetype = "")  
+
+ggsave(p.E, filename = file.path(plot.path, "linker_nolinker_mfe.pdf"), width = 7, height = 4)
+
+p.E
+```
 
 # Figure 2 F - Duplex span
 
 ```{r}
-linker.clusters <- collapse_clusters(linker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "median")
-nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames == R_seqnames][cluster_hybrid_count >= 2], mode = "median")
+linker.clusters <- collapse_clusters(linker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][cluster_hybrid_count >= 2], mode = "median")
+nolinker.clusters <- collapse_clusters(nolinker.dt[L_seqnames == R_seqnames][!L_biotype %in% c("rRNA", "tRNA")][cluster_hybrid_count >= 2], mode = "median")
 
 nolinker.clusters[, loop := R_start - L_end - 1][, exp := "Linker"]
 linker.clusters[, loop := R_start - L_end - 1][, exp := "Direct"]
 
-intragenic.clusters.dt <- rbindlist(list(nolinker.clusters, linker.clusters))[L_seqnames == R_seqnames]
+intragenic.clusters.dt <- rbindlist(list(nolinker.clusters, linker.clusters))
 
-p <- ggplot(intragenic.clusters.dt, aes(x = loop, colour = exp)) +
+p.F <- ggplot(intragenic.clusters.dt, aes(x = loop, colour = exp)) +
   geom_density(size = 1) +
   scale_colour_manual(values = ht_colours) +
-  scale_x_log10(label = comma) + annotation_logticks() +
+  scale_x_log10(label = comma) + annotation_logticks(sides = "b") +
   theme_minimal_grid() + theme(legend.position = "top") +
   labs(x = "Duplex span",
        y = "Density",
        colour = "",
        linetype = "")  
 
-ggsave(p, filename = file.path(plot.path, "intragenic_linker_nolinker_duplex_span.pdf"), width = 5, height = 4)
+ggsave(p.F, filename = file.path(plot.path, "intragenic_linker_nolinker_duplex_span.pdf"), width = 7, height = 4)
 
-p
+p.F
 ```
-
