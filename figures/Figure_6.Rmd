@@ -15,7 +15,7 @@ output:
 ---
 
 ```{r, warning = FALSE}
-suppressPackageStartupMessages(library(primavera))
+suppressPackageStartupMessages(library(toscatools))
 suppressPackageStartupMessages(library(data.table))
 suppressPackageStartupMessages(library(ggplot2))
 suppressPackageStartupMessages(library(cowplot))
@@ -36,9 +36,8 @@ set.seed(42)
 
 ```{r}
 save_plots <- TRUE
-
-plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_6_20220225"
-plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_6_20220429"
+results.path <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions"
+plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_6"
 if(!dir.exists(plot.path)) dir.create(plot.path)
 
 ht_colours <- c("Linker" = "#8175aa", "Direct" = "#6fb899", "Short-range" = "#31a1b3") # Nuriel Stone
@@ -49,11 +48,15 @@ metabolism_colours = c(C = "#414451", B = "#60636a", A = "#a5acaf")
 # Load atlas
 
 ```{r}
-duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz")
+# duplexes.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz")
+# original.utr3.duplexes.dt <- duplexes.dt[L_seqnames == R_seqnames][L_region == "UTR3"][R_region == "UTR3"]
+# original.utr3.duplexes.dt <- original.utr3.duplexes.dt[!grep("^ID", cluster)]
+
+duplexes.dt <- fread(file.path(results.path, "atlas/merged.atlas.clusters.tsv.gz"))
 utr3.duplexes.dt <- duplexes.dt[L_seqnames == R_seqnames][L_region == "UTR3"][R_region == "UTR3"]
 utr3.duplexes.dt <- utr3.duplexes.dt[!grep("^ID", cluster)]
 
-paris.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/paris_atlas/paris.3utr.all.atlas_clusters.gc.annotated.mfe.tsv.gz")
+paris.dt <- fread(file.path(results.path, "paris/results_paris/atlas_clusters/all.atlas_clusters.gc.annotated.tsv.gz"))
 utr3.paris.dt <- paris.dt[L_seqnames == R_seqnames][L_region == "UTR3"][R_region == "UTR3"] # To check all are intra 3' UTR
 ```
 
@@ -72,10 +75,11 @@ For our downstream analysis, we keep 3' UTR intramolecular duplexes. This leaves
 ## Calculate loops and introns
 
 ```{r}
-# tic()
+tic()
 utr3.duplexes.dt[, ensg := sapply(strsplit(L_gene_id, "\\."), "[[", 1)]
 
-TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.txdb.sqlite")
+TxDb <- loadDb("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/gencode.v33.txdb.sqlite")
+# TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/revisions/camp/gencode.v33.txdb.sqlite")
 
 txlengths.dt <- data.table(transcriptLengths(TxDb, with.cds_len = TRUE,
                                              with.utr5_len = TRUE,
@@ -90,7 +94,9 @@ stopifnot(all(countOverlaps(L.gr, utr3.grl) != 0))
 stopifnot(all(countOverlaps(R.gr, utr3.grl) != 0))
 duplexes.grl <- split(c(L.gr, R.gr), c(L.gr, R.gr)$name)
 
-utr3.dt <- lapply(1:length(duplexes.grl), function(i) {
+utr3.dt <- mclapply(1:length(duplexes.grl), function(i) {
+  
+# utr3.dt <- lapply(1:length(duplexes.grl), function(i) {
   
   # message(i)
   x <- duplexes.grl[[i]]
@@ -111,7 +117,10 @@ utr3.dt <- lapply(1:length(duplexes.grl), function(i) {
     
     sel.ol <- unique(subjectHits(ol))
     sel.ol <- sel.ol[sapply(sel.ol, function(y) all(queryHits(ol[subjectHits(ol) == y]) == c(1, 2)))] # Keep only ones where both arms overlapped by same 3' UTR overlapped
-    stopifnot(length(sel.ol) != 0)
+    # stopifnot(length(sel.ol) != 0)
+    if(length(sel.ol) == 0) {
+      return(NA) # these are intra-genic UTR3-UTR3 but across different transcripts
+    }
     
     utr3 <- utr3.grl[sel.ol]
     
@@ -146,8 +155,8 @@ utr3.dt <- lapply(1:length(duplexes.grl), function(i) {
   utr3.dt[, utr3_intron := sum(width(g))]
   
   # Between arms   
-  L.ol <- which(countOverlaps(utr3, x[1]) > 0)
-  R.ol <- which(countOverlaps(utr3, x[2]) > 0)  
+  L.ol <- max(which(countOverlaps(utr3, x[1]) > 0)) # if intron in arm, select
+  R.ol <- min(which(countOverlaps(utr3, x[2]) > 0))
   
   if(L.ol == R.ol) {
     
@@ -213,9 +222,12 @@ utr3.dt <- lapply(1:length(duplexes.grl), function(i) {
   
   return(utr3.dt)
   
-})
+}, mc.cores = 4)
 
 stopifnot(all(elementNROWS(utr3.dt) == 1))
+
+table(unlist(lapply(utr3.dt, length)) == 10) # 1 is NA, i.e. across different 3' UTRs
+utr3.dt <- utr3.dt[unlist(lapply(utr3.dt, length)) == 10]
 
 utr3.dt <- rbindlist(utr3.dt)
 utr3.duplexes.dt <- merge(utr3.duplexes.dt, utr3.dt, by = c("name", "ensg"))
@@ -228,7 +240,7 @@ utr3.duplexes.dt[, `:=` (loop = R_start - L_end - 1 - intron,
                          R_rel_start = R_abs_start/utr3_width)]
 stopifnot(nrow(utr3.duplexes.dt[loop > utr3_width]) == 0)
 utr3.duplexes.dt[, circ_score := loop/utr3_width]
-# toc()
+toc()
 ```
 
 # RNA abundance
@@ -313,7 +325,11 @@ ratesInfo <- data.frame(
 ```{r}
 q <- quantile(gene.counts.dt[stau %in% c("STAU1", "PARIS")]$mean_count, probs = seq(0, 1, 0.05))
 gene.counts.dt[stau %in% "None" & mean_count > q[2], stau := "None\n(Expression\nMatched)"]
+gene.counts.dt[, .N, by = stau]
 
+```
+
+```{r}
 rates.dt <- as.data.table(ratesInfo)
 setnames(rates.dt, c("Syn", "Proc", "Deg"), c("Synthesis", "Processing", "Degradation"))
 setkey(rates.dt, "Gene")
@@ -325,7 +341,7 @@ rates.dt <- rates.dt[stau != "None"]
 
 rates.melted.dt <- melt.data.table(rates.dt[, .(stau, Synthesis, Processing, Degradation)], id.vars = "stau")
 rates.melted.dt$stau <- factor(rates.melted.dt$stau, levels = c("None", "None\n(Expression\nMatched)", "PARIS", "STAU1"))
-
+# 
 # wilcox.test(rates.dt[stau == "STAU1"]$Synthesis,
 #             rates.dt[stau == "PARIS"]$Synthesis)
 # 
@@ -362,7 +378,9 @@ wilcox.test(rates.dt[stau == "STAU1"]$Processing,
 
 wilcox.test(rates.dt[stau == "STAU1"]$Degradation,
             rates.dt[stau == "None\n(Expression\nMatched)"]$Degradation)
+```
 
+```{r}
 p <- ggplot(rates.melted.dt[value > 0][stau != "PARIS"], aes(x = stau, y = value)) +
   geom_violin(aes(fill = stau)) +
   geom_boxplot(width = 0.1, outlier.shape = NA) +
@@ -381,47 +399,60 @@ if(save_plots) ggsave(p, filename = file.path(plot.path, "rna_metabolism_express
 p
 ```
 
-
-## RNA localisation
+## Reproduce with original gene list
 
 ```{r}
-# loc.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/4suseq/GSE84722_ST3.txt.gz")
-# setkey(loc.dt, Gene)
-# loc.dt <- loc.dt[gene.counts.dt]
-# loc.dt <- loc.dt[!is.na(CytNuc)]
-# loc.dt$stau <- factor(loc.dt$stau, levels = c("None", "None\n(Expression\nMatched)", "PARIS", "STAU1"))
-# 
-# p <- ggplot(loc.dt, aes(x = stau, y = CytNuc)) +
-#   geom_violin(aes(fill = stau)) +
-#   geom_boxplot(width = 0.1, outlier.shape = NA) +
-#   coord_flip(ylim = c(-1, 1)) +
-#   geom_hline(yintercept = 0, linetype = "dashed") +
-#   scale_fill_manual(values = gt_colours) +
-#   # geom_label(data = metab.dt[, .N, by = stau], aes(label = N, y = -Inf), vjust = -0.1) +  
-#   labs(x = "",
-#        y = "log2 (Cyt/Nuc)",
-#        fill = "") +
-#   theme_minimal_grid() + theme(legend.position = "none")
-# 
-# if(save_plots) ggsave(p, filename = file.path(plot.path, "rna_localisation.pdf"), width = 5, height = 4)
-# p
+ys.dt <- as.data.table(readxl::read_xlsx(file.path(plot.path, "41586_2015_BFnature14280_MOESM50_ESM.xlsx"), skip = 1))
+ys.genes <- unique(ys.dt[Annotation == "utr3"]$seqnames)
+
+ys.rates.dt <- copy(rates.dt)
+ys.rates.dt[, orig := ifelse(ensg %in% ys.dt$seqnames, "STAU1\nSugimoto", "none")]
+ys.rates.dt[stau == "None\n(Expression\nMatched)", orig := "None\n(Expression\nMatched)"]
+ys.rates.dt <- ys.rates.dt[orig != "none"]
+
+ys.rates.melted.dt <- melt.data.table(ys.rates.dt[, .(orig, Synthesis, Processing, Degradation)], id.vars = "orig")
+ys.rates.melted.dt$orig <- factor(ys.rates.melted.dt$orig, levels = c("None\n(Expression\nMatched)", "STAU1\nSugimoto"))
+
+p <- ggplot(ys.rates.melted.dt[value > 0], aes(x = orig, y = value)) +
+  geom_violin(aes(fill = orig)) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  scale_y_log10(label = comma) +
+  annotation_logticks(sides = "l") +
+  scale_fill_tableau(palette = "Miller Stone") +
+  facet_wrap( ~ variable, scales = "free_y") +
+  # geom_label(data = rates.dt[, .N, by = .(stau)], aes(label = N, y = 0), vjust = -0.1) +
+  labs(x = "",
+       y = "Rate",
+       fill = "") +
+  theme_minimal_grid() + theme(legend.position = "none")
+
+if(save_plots) ggsave(p, filename = file.path(plot.path, "rna_metabolism_ys.pdf"), width = 8, height = 5)
+if(save_plots) ggsave(p, filename = file.path(plot.path, "rna_metabolism_ys.png"), width = 8, height = 5)
+
+p
 ```
 
-## RNA translation
+# RNA translation
 
 ```{r}
-# p <- ggplot(loc.dt, aes(x = stau, y = TrP)) +
-#   geom_violin(aes(fill = stau)) +
-#   geom_boxplot(width = 0.1, outlier.shape = NA) +
-#   coord_flip() +
-#   scale_fill_manual(values = gt_colours) +
-#   labs(x = "",
-#        y = "Translation potential",
-#        fill = "") +
-#   theme_minimal_grid() + theme(legend.position = "none")
-# 
-# if(save_plots) ggsave(p, filename = file.path(plot.path, "rna_translation.pdf"), width = 5, height = 4)
-# p
+translation.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/4suseq/GSE84722_ST3.txt.gz")
+setkey(translation.dt, Gene)
+translation.dt <- translation.dt[gene.counts.dt]
+translation.dt <- translation.dt[!is.na(CytNuc)]
+translation.dt$stau <- factor(translation.dt$stau, levels = c("None", "None\n(Expression\nMatched)", "PARIS", "STAU1"))
+
+p <- ggplot(translation.dt[stau != "None"], aes(x = stau, y = TrP)) +
+  geom_violin(aes(fill = stau)) +
+  geom_boxplot(width = 0.1, outlier.shape = NA) +
+  coord_flip() +
+  scale_fill_manual(values = gt_colours) +
+  labs(x = "",
+       y = "Translation potential",
+       fill = "") +
+  theme_minimal_grid() + theme(legend.position = "none")
+
+if(save_plots) ggsave(p, filename = file.path(plot.path, "rna_translation.pdf"), width = 5, height = 4)
+p
 ```
 # RNA metabolism heatmap
 
@@ -429,6 +460,7 @@ p
 mat.dt <- rates.dt[stau %in% c("STAU1"), .(ensg, Synthesis, Processing, Degradation)]
 mat.dt <- mat.dt[!is.na(Synthesis) | !is.na(Processing) | !is.na(Degradation)]
 mat <- as.matrix(log10(mat.dt[, -1]))
+# mat <- as.matrix(mat.dt[, -1])
 rownames(mat) <- mat.dt$ensg
 
 scaled.mat <- apply(mat, 2, scale)
@@ -441,15 +473,21 @@ p <- factoextra::fviz_nbclust(scaled.mat, FUNcluster = cluster::pam, method = "s
 p + theme_minimal_grid()
 ```
 
+
 ```{r}
 k.pam <- cluster::pam(scaled.mat, k = 3, metric = "euclidean", stand = TRUE)
 annot.df <- data.frame(k.pam$clustering)
+
 annot.df$cluster <- NA
 annot.df[annot.df$k.pam.clustering == which.max(k.pam$medoids[, "Degradation"]), ]$cluster <- "A"
 annot.df[annot.df$k.pam.clustering == which.min(k.pam$medoids[, "Degradation"]), ]$cluster <- "C"
 annot.df[is.na(annot.df$cluster), ]$cluster <- "B"
 annot.df$k.pam.clustering <- NULL
 
+table(annot.df$cluster)
+```
+
+```{r}
 stopifnot(all(rownames(annot.df) %in% rownames(scaled.mat))) # Ensure they are all there, before adjusting rows
 annot.order <- rownames(annot.df)[order(annot.df$cluster, decreasing = FALSE)]
 scaled.mat <- scaled.mat[match(annot.order, rownames(scaled.mat)), ]
@@ -457,7 +495,7 @@ scaled.mat <- scaled.mat[match(annot.order, rownames(scaled.mat)), ]
 if(save_plots) { 
   
   pheatmap(t(scaled.mat), 
-         cluster_cols = FALSE, show_colnames = FALSE, scale = "none",
+         cluster_cols = FALSE, method = "complete", show_colnames = FALSE, scale = "none",
          breaks = unique(c(seq(-b, -2.5, length.out = 10), 
                            seq(-2.5, 2.5, length.out = 100), 
                            seq(2.5, b, length.out = 10))), 
@@ -470,50 +508,138 @@ if(save_plots) {
          height = 2)
 
 }
+```
+
+```{r}
+trp <- translation.dt[match(rownames(scaled.mat), translation.dt$ensg)]$TrP
+scaled.mat <- cbind(scaled.mat, scale(trp))
+colnames(scaled.mat)[4] <- "Translation"
+
+if(save_plots) { 
+  
+  pheatmap(t(scaled.mat), 
+           cluster_cols = FALSE, show_colnames = FALSE, scale = "none",
+           breaks = unique(c(seq(-b, -2.5, length.out = 20),
+                             seq(-2.5, 2.5, length.out = 80),
+                             seq(2.5, b, length.out = 20))),
+           color = rev(colorRampPalette(brewer.pal(n = 11, name = "RdBu"))(120)),
+           cluster_rows = FALSE,
+           annotation_col = annot.df,
+           annotation_colors = list("cluster" = metabolism_colours),
+           gaps_row = 3,
+           filename = file.path(plot.path, "rna_metabolism_heatmap_with_translation.pdf"),
+           width = 10,
+           height = 2)
+
+}
 
 pheatmap(t(scaled.mat), 
          cluster_cols = FALSE, show_colnames = FALSE, scale = "none",
-         breaks = unique(c(seq(-b, -2.5, length.out = 10), 
-                           seq(-2.5, 2.5, length.out = 100), 
-                           seq(2.5, b, length.out = 10))), 
+         breaks = unique(c(seq(-b, -2.5, length.out = 20),
+                           seq(-2.5, 2.5, length.out = 80),
+                           seq(2.5, b, length.out = 20))),
          color = rev(colorRampPalette(brewer.pal(n = 11, name = "RdBu"))(120)),
          cluster_rows = FALSE,
          annotation_col = annot.df,
-         annotation_colors = list("cluster" = metabolism_colours))
-
-
-```
-## Summary violin plot
-
-```{r}
-# utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "A"], metabolism_cluster := "A"]
-# utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "B"], metabolism_cluster := "B"]
-# utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "C"], metabolism_cluster := "C"]
-# utr3.duplexes.dt <- utr3.duplexes.dt[!is.na(metabolism_cluster)]
-# utr3.duplexes.dt <- merge(utr3.duplexes.dt, mat.dt, by = "ensg")
-# 
-# fwrite(utr3.duplexes.dt, file.path(plot.path, "stau1.utr3.duplexes.metabolism.tsv"), sep = "\t")
+         annotation_colors = list("cluster" = metabolism_colours),
+         gaps_row = 3)
 ```
 
 ```{r}
-# summary.dt <- utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_gene_id, Synthesis, Processing, Degradation)]
-# setnames(summary.dt, "V1", "mean_circ_score")
-# summary.dt <- melt.data.table(summary.dt, id.vars = c("metabolism_cluster", "L_gene_id", "mean_circ_score"))
-# 
-# p <- ggplot(summary.dt, aes(x = metabolism_cluster, y = value)) +
-#   geom_violin(aes(fill = metabolism_cluster)) +
-#   geom_boxplot(width = 0.1, outlier.shape = NA) +
-#   scale_y_log10(label = comma) +
-#   annotation_logticks(sides = "l") +
-#   scale_fill_manual(values = metabolism_colours) +
-#   facet_wrap( ~ variable, ncol = 1, scales = "free_y") +
-#   labs(x = "",
-#        y = "Rate",
-#        fill = "") +
-#   theme_minimal_grid() + theme(legend.position = "none")
-# 
-# if(save_plots) ggsave(p, filename = file.path(plot.path, "rna_metabolism_heatmap_summary.pdf"), width = 3, height = 8)
-# p
+utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "A"], metabolism_cluster := "A"]
+utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "B"], metabolism_cluster := "B"]
+utr3.duplexes.dt[ensg %in% rownames(annot.df)[annot.df$cluster == "C"], metabolism_cluster := "C"]
+utr3.duplexes.dt <- utr3.duplexes.dt[!is.na(metabolism_cluster)]
+utr3.duplexes.dt <- merge(utr3.duplexes.dt, mat.dt, by = "ensg")
+```
+
+
+## Integrate with Lugowski data
+
+```{r}
+lugowski.files <- list.files("~/Dropbox (The Francis Crick)/comp_hiclip/revisions/lugowski_et_al", full.names = TRUE)
+lugowski.files <- grep("HEK.4SU.HL.[a-z]", lugowski.files, invert = TRUE, value = TRUE) # remove the exogenous as DRUID performed better with the same raw data
+lugowski.list <- lapply(seq_along(lugowski.files), function(i) {
+  
+  dt <- fread(lugowski.files[i], select = c(1, 2))
+  setnames(dt, c("HGNC", gsub(".csv.gz|GSE99517_", "", basename(lugowski.files[i]))))
+  stopifnot(all(!duplicated(dt$HGNC)))
+  return(dt)
+  
+})
+
+lugowski.dt <- Reduce(function(x, y) merge(x, y, by = "HGNC", all.x = TRUE), lugowski.list)
+```
+
+```{r}
+utr3.duplexes.dt[, HGNC := L_gene_name]
+metabolism.dt <- merge(lugowski.dt, unique(utr3.duplexes.dt[, .(HGNC, L_gene_id, Degradation)]), by = "HGNC")
+setnames(metabolism.dt, gsub("HEK\\.", "", names(metabolism.dt)))
+```
+
+### Correlation of rates
+
+```{r}
+lugowski.exps <- grep("one$|two$", colnames(metabolism.dt), value = TRUE)
+p.list <- lapply(lugowski.exps, function(exp) {
+  
+  c <- cor(log10(metabolism.dt$Degradation), log10(1/metabolism.dt[, ..exp]), use = "pairwise.complete.obs", method = "spearman")
+  p <- ggplot(metabolism.dt, aes(x = Degradation, y = 1/.data[[exp]])) +
+        geom_point(alpha = 0.5, size = 1) +
+        scale_x_log10() + scale_y_log10() +
+        theme_minimal_grid() +
+        annotate("text", x = Inf, y = Inf, hjust = 1, vjust = 1, colour = "steelblue4", label = paste0(round(c, 2)))
+  
+  return(p)
+  
+})
+
+ggsave(file.path(plot.path, "lugowski.pdf"), wrap_plots(p.list, ncol = 2), width = 5, height = 7)
+```
+
+### Degradation heatmap
+
+```{r}
+metabolism.mat <- as.matrix(metabolism.dt[, grep("one$|two$", names(metabolism.dt)), with = FALSE])
+rownames(metabolism.mat) <- tstrsplit(metabolism.dt$L_gene_id, "\\.")[[1]]
+
+# degredation.mat <- metabolism.mat[match(rownames(metabolism.mat), rownames(scaled.mat)), ]
+
+scaled.dt <- as.data.table(scaled.mat, keep.rownames = TRUE)
+metabolism.dt[, rn := tstrsplit(metabolism.dt$L_gene_id, "\\.")[[1]]]
+metabolism.dt[, L_gene_id := NULL]
+metabolism.dt[, HGNC := NULL]
+[, Degradation := NULL]
+scaled.metabolism.dt <- metabolism.dt[, lapply(.SD, function(x) scale(log10(x))), .SDcols = -"rn"][, rn := metabolism.dt$rn]
+
+all.scaled.dt <- merge(scaled.dt, scaled.metabolism.dt, by = "rn", all.x = TRUE)
+all.scaled.mat <- as.matrix(all.scaled.dt[, -1])
+rownames(all.scaled.mat) <- all.scaled.dt$rn
+all.scaled.mat <- all.scaled.mat[match(rownames(scaled.mat), rownames(all.scaled.mat)), ]
+
+degradation.mat <- all.scaled.mat[, grep("Synthesis|Processing|Translation", colnames(all.scaled.mat), invert = TRUE)]
+colnames(degradation.mat) <- gsub("X|\\.V1", "", colnames(degradation.mat))
+colnames(degradation.mat) <- gsub(".HL.", " rep", colnames(degradation.mat))
+colnames(degradation.mat) <- gsub("repDRUID.", "DRUID rep", colnames(degradation.mat))
+colnames(degradation.mat) <- gsub("one", "1", colnames(degradation.mat))
+colnames(degradation.mat) <- gsub("two", "2", colnames(degradation.mat))
+colnames(degradation.mat) <- gsub("Aman", "alpha-amantin", colnames(degradation.mat))
+colnames(degradation.mat) <- gsub("ActD", "actinomycin D", colnames(degradation.mat))
+
+pheatmap(degradation.mat, 
+         cluster_cols = FALSE, show_colnames = TRUE, scale = "none",
+         breaks = unique(c(seq(-b, -2.5, length.out = 20),
+                           seq(-2.5, 2.5, length.out = 80),
+                           seq(2.5, b, length.out = 20))),
+         color = rev(colorRampPalette(brewer.pal(n = 11, name = "RdBu"))(120)),
+         cluster_rows = FALSE, show_rownames = FALSE,
+         annotation_row = annot.df,
+         annotation_colors = list("cluster" = metabolism_colours),
+         gaps_col = c(1, 3, 5, 7),
+         gaps_row = cumsum(c(table(annot.df$cluster))),
+         filename = file.path(plot.path, "rna_degradation_heatmap_with_lugowski.pdf"),
+         width = 3,
+         height = 10)
 ```
 
 ## Duplex span
@@ -532,6 +658,7 @@ p <- ggplot(utr3.duplexes.dt[, mean(loop), by = .(metabolism_cluster, L_gene_id)
 if(save_plots) ggsave(p, filename = file.path(plot.path, "mean_duplex_span_density.pdf"), width = 8, height = 3)
 p
 ```
+
 ## 3' UTR length
 
 ```{r}
@@ -554,11 +681,6 @@ p
 ## Circularisation score
 
 ```{r}
-d <- dunn.test(x = utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_gene_id)]$V1,
-               g = utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_gene_id)]$metabolism_cluster,
-               method = "bh",
-               alpha = 0.01)
-
 p <- ggplot(utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_gene_id)], aes(x = metabolism_cluster, y = V1, fill = metabolism_cluster)) +
   geom_boxplot(width = 0.5, outlier.shape = NA) +
   coord_cartesian(ylim = c(0, 0.4)) +
@@ -571,6 +693,17 @@ p <- ggplot(utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_ge
 if(save_plots) ggsave(p, filename = file.path(plot.path, "mean_circ_score.pdf"), width = 4, height = 4)
 p
 ```
+
+```{r}
+d <- dunn.test(x = utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_gene_id)]$V1,
+               g = utr3.duplexes.dt[, mean(circ_score), by = .(metabolism_cluster, L_gene_id)]$metabolism_cluster,
+               method = "bh",
+               alpha = 0.01)
+
+d
+```
+
+
 ## Relative 3' UTR positions
 
 ```{r}
@@ -599,7 +732,7 @@ longest.duplexes.dt[rel_q %in% c("1-2", "2-3"), q_span := "2 thirds"]
 longest.duplexes.dt[rel_q %in% c("1-3"), q_span := "3 thirds"]
 
 p1 <- ggplot(longest.duplexes.dt, aes(x = q_span)) +
-  geom_bar(width = 0.75, fill = "black") +
+  geom_bar(width = 0.75, fill = "#4e79a7") +
   theme_minimal_grid() + theme(legend.position = "bottom") +
   labs(x = "",
        y = "Count",
@@ -618,34 +751,3 @@ if(save_plots) ggsave(plot_grid(p1, p2, ncol = 1, rel_heights = c(1, 2)), filena
 
 plot_grid(p1, p2, ncol = 1, rel_heights = c(1, 2))
 ```
-
-```{r}
-p2 + guides(fill = guide_legend(override.aes = list(shape = 18)))
-```
-
-## Circular score terciles and rates
-
-```{r}
-summary.dt[, circ_score_tercile := cut_interval(mean_circ_score, 2, labels = c("Low", "High"))]
-summary.dt[, circ_score_tercile := cut(mean_circ_score, breaks = c(0, 0.25, 0.5, Inf), include.lowest = TRUE)]
-
-summary.dt[, .N, by = circ_score_tercile]
-
-# p <- ggplot(summary.dt, aes(x = circ_score_tercile, y = value)) +
-#   geom_violin(aes(fill = circ_score_tercile)) +
-#   geom_boxplot(width = 0.1, outlier.shape = NA) +
-#   scale_y_log10(label = comma) +
-#   annotation_logticks(sides = "l") +
-#   scale_fill_brewer(palette = "Greens") +
-#   facet_wrap( ~ variable, nrow = 1, scales = "free_y") +
-#   labs(x = "",
-#        y = "Rate",
-#        fill = "") +
-#   theme_minimal_grid() + theme(legend.position = "none")
-
-
-
-p
-```
-
-

@@ -14,6 +14,10 @@ library(data.table)
 library(ggthemes)
 library(toscatools)
 
+results.path <- "/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/revisions"
+plot.path <- "~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_4"
+if(!dir.exists(plot.path)) dir.create(plot.path)
+
 # Based off clipplotr code
 
 # ARF1
@@ -25,7 +29,8 @@ region.gr <- GRanges(seqnames = "chr1",
 # Arcs
 # ==========
 
-stau1.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz")
+# stau1.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz")
+stau1.dt <- fread(file.path(results.path, "atlas/merged.atlas.clusters.tsv.gz"))
 
 sel.gene.dt <- stau1.dt[L_gene_name == "ARF1"]
 sel.gene.dt[, `:=` (L_start = L_genomic_start,
@@ -82,18 +87,18 @@ p2 <- ggplot(sel.expanded.gene.dt[grepl("^C", cluster)]) +
 # Peaks
 # ==========
 
-peaks.gr <- import.bed("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/stau1.10nt_10nt.peaks.bed.gz")
-peaks.gr <- subsetByOverlaps(peaks.gr, region.gr, ignore.strand = FALSE)
-auxiliary.dt <- as.data.table(peaks.gr)
-auxiliary.dt$centre <- with(auxiliary.dt, start + width/2)
-
-p.auxiliary <- ggplot(auxiliary.dt, aes(x = centre, width = width, y = factor(1))) +
-  geom_tile() +
-  scale_y_discrete(labels = "") +
-  xlim(start(region.gr), end(region.gr)) +
-  labs(y = "",
-       x = "") +
-  theme_minimal_grid() + theme(legend.position = "none")
+# peaks.gr <- import.bed("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/sept_2021/stau1.10nt_10nt.peaks.bed.gz")
+# peaks.gr <- subsetByOverlaps(peaks.gr, region.gr, ignore.strand = FALSE)
+# auxiliary.dt <- as.data.table(peaks.gr)
+# auxiliary.dt$centre <- with(auxiliary.dt, start + width/2)
+# 
+# p.auxiliary <- ggplot(auxiliary.dt, aes(x = centre, width = width, y = factor(1))) +
+#   geom_tile() +
+#   scale_y_discrete(labels = "") +
+#   xlim(start(region.gr), end(region.gr)) +
+#   labs(y = "",
+#        x = "") +
+#   theme_minimal_grid() + theme(legend.position = "none")
 
 # ==========
 # xlink tracks
@@ -112,7 +117,7 @@ SubsetBedgraph <- function(gr, selected.region.gr) {
   
 }
 
-xlinks.gr <- import.bed("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/stau1.xl.bed.gz")
+xlinks.gr <- import.bed(file.path(results.path, "results_nornase/xlinks/stau1.xl.bed.gz"))
 seqlevelsStyle(xlinks.gr) <- "UCSC"
 xlinks.gr <- SubsetBedgraph(gr = xlinks.gr, selected.region.gr = region.gr)
 xlinks.dt <- as.data.table(xlinks.gr)[, sample := "STAU1"]
@@ -133,10 +138,12 @@ p.iclip <- ggplot(xlinks.dt) +
 # Annotation
 # ==========
 
-TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.txdb.sqlite")
+# TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.txdb.sqlite")
+TxDb <- loadDb("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/gencode.v33.txdb.sqlite")
 seqlevelsStyle(TxDb) <- "UCSC"
 
-gtf <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.annotation.gtf.gz")
+# gtf <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.annotation.gtf.gz")
+gtf <- import.gff2("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/gencode.v33.annotation.gtf.gz")
 seqlevelsStyle(gtf) <- "UCSC"
 genes.gr <- gtf[gtf$type == "gene"]
 
@@ -227,8 +234,10 @@ p.annot <- ggplot() +
 # ==========
 
 ggsave(p2 / p1 / p.iclip / p.annot + plot_layout(heights = c(10, 3, 2, 1)), 
-       filename = "~/Dropbox (The Francis Crick)/comp_hiclip/plots/arf1_arc.pdf", 
+       filename = file.path(plot.path, "arf1_arc.pdf"), 
        width = 297, height = 210, units = "mm")
+
+
 
 # ==============================
 
@@ -236,75 +245,90 @@ ggsave(p2 / p1 / p.iclip / p.annot + plot_layout(heights = c(10, 3, 2, 1)),
 # Contact map
 # ==========
 
-library(primavera)
+# hybrids.dt <- sfread(file.path(results.path, "atlas/merged.atlas.clusters.tsv.gz"))
+# sel.gene.dt <- stau1.dt[L_gene_name == "ARF1"]
+# sel.gene.dt <- sel.gene.dt[rep(seq(1, nrow(sel.gene.dt)), sel.gene.dt$count)]
 
-hybrids.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.tsv.gz")
-sel.gene.dt <- stau1.dt[L_gene_name == "ARF1"]
-sel.gene.dt <- sel.gene.dt[rep(seq(1, nrow(sel.gene.dt)), sel.gene.dt$count)]
-
-fai.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.fa.fai", select = 1:2, col.names = c("gene", "length"))
+fai.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/GRCh38.gencode_v33.fa.fai", select = 1:2, col.names = c("gene", "length"))
 genome.size <- as.integer(fai.dt[grep("^ARF1", gene)]$length)
-mat <- get_contact_map(hybrid.dt = sel.gene.dt, genome.size = genome.size)
-
-binned.mat <- bin_matrix(mat, bin.size = 25)
-rm(mat)
-
-binned.dt <- data.table(reshape2::melt(binned.mat))
-binned.dt <- binned.dt[value != 0]
-
-p1 <- ggplot(binned.dt, aes(x = Var1, y = Var2, fill = log10(value))) +
-  geom_tile() +
-  geom_abline(slope = 1, intercept = 0, colour = "red", linetype = "dashed") +
-  scale_fill_viridis_c(na.value = "white") +
-  theme_minimal_grid() + theme(legend.position = "top") +
-  # coord_equal(xlim = c(0, utr3.width), ylim = c(0, utr3.width)) +
-  labs(title = "ARF1", x = "STAU2", y = "STAU1", fill = expression(log[10]~counts)) +
-  coord_equal()
-
-p1
+# mat <- get_contact_map(hybrid.dt = sel.gene.dt, genome.size = genome.size)
+# 
+# binned.mat <- bin_matrix(mat, bin.size = 25)
+# rm(mat)
+# 
+# binned.dt <- data.table(reshape2::melt(binned.mat))
+# binned.dt <- binned.dt[value != 0]
+# 
+# p1 <- ggplot(binned.dt, aes(x = Var1, y = Var2, fill = log10(value))) +
+#   geom_tile() +
+#   geom_abline(slope = 1, intercept = 0, colour = "red", linetype = "dashed") +
+#   scale_fill_viridis_c(na.value = "white") +
+#   theme_minimal_grid() + theme(legend.position = "top") +
+#   # coord_equal(xlim = c(0, utr3.width), ylim = c(0, utr3.width)) +
+#   labs(title = "ARF1", x = "STAU2", y = "STAU1", fill = expression(log[10]~counts)) +
+#   coord_equal()
+# 
+# p1
 
 # ==========
 # Split approach
 # ==========
-library(primavera)
 
-linker.dt <- rbindlist(list(
-  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lph.hybrids.dedup.tsv.gz")[, sample := "stau1_high"],
-  fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lpl.hybrids.dedup.tsv.gz")[, sample := "stau1_low"]),
-  use.names = TRUE)
+# linker.dt <- rbindlist(list(
+#   fread(file.path(results.path, "/results_linker/lph.hybrids.dedup.tsv.gz")[, sample := "stau1_high"],
+#   fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_linker/lpl.hybrids.dedup.tsv.gz")[, sample := "stau1_low"]),
+#   use.names = TRUE)
+# 
+# # Add calculations
+# linker.dt[, `:=` (L_end = L_start + L_width - 1,
+#                   R_end = R_start + R_width - 1)]
+# linker.dt[, type := ifelse(L_seqnames == R_seqnames, "intragenic", "intergenic")]
+# linker.dt[, orientation := "linker"]
+# 
+# genes.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz")
+regions.gr <- import.gff2("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/ref/icount_mini_utr3/regions.gtf.gz")
+# 
+# linker.dt <- convert_coordinates(hybrids.dt = linker.dt, genes.gr = genes.gr)
+# linker.dt <- annotate_hybrids(hybrids.dt = linker.dt, regions.gr = regions.gr)
+# 
+# # No linker
+# nolinker.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nolinker/atlas/all.hybrids.tsv.gz")
+# nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
+# 
+# hybrids.dt <- rbindlist(list(nolinker.dt, linker.dt),
+#                         use.names = TRUE,
+#                         fill = TRUE)
+# hybrids.dt[, exp := ifelse(orientation == "linker", "Linker", "Direct")]
+# hybrids.dt[sample == "stau1_high", sample := "High RNase"]
+# hybrids.dt[sample == "stau1_low", sample := "Low RNase"]
+# 
+# hybrids.dt[, type := ifelse(type == "intragenic", "intra-transcript", "inter-transcript")]
 
-# Add calculations
-linker.dt[, `:=` (L_end = L_start + L_width - 1,
-                  R_end = R_start + R_width - 1)]
-linker.dt[, type := ifelse(L_seqnames == R_seqnames, "intragenic", "intergenic")]
-linker.dt[, orientation := "linker"]
 
-genes.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.tx.gtf.gz")
-regions.gr <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/regions.gtf.gz")
+linker.dt <- fread(file.path(results.path, "results_linker/all.atlas.clustered.tsv.gz"))
+nolinker.dt <- fread(file.path(results.path, "results_nolinker/atlas/all.atlas.clustered.tsv.gz"))
+nolinker.dt[, `:=` (cluster_hybrid_count = NULL,
+                    cluster_hybrid_count.x = NULL,
+                    sample = tstrsplit(sample, "\\.")[[1]])]
+setnames(nolinker.dt, "cluster_hybrid_count.y", "cluster_hybrid_count")
 
-linker.dt <- convert_coordinates(hybrids.dt = linker.dt, genes.gr = genes.gr)
-linker.dt <- annotate_hybrids(hybrids.dt = linker.dt, regions.gr = regions.gr)
-
-# No linker
-nolinker.dt <- fread("/Volumes/lab-luscomben/home/shared/projects/ira-nobby/comp_hiclip/results_nolinker/atlas/all.hybrids.tsv.gz")
-nolinker.dt[, sample := tstrsplit(sample, "\\.")[[1]]]
-
-hybrids.dt <- rbindlist(list(nolinker.dt, linker.dt),
-                        use.names = TRUE,
+hybrids.dt <- rbindlist(list(linker.dt, nolinker.dt),
+                        use.names = TRUE, 
                         fill = TRUE)
+
+# Adjust parameter names for plots
 hybrids.dt[, exp := ifelse(orientation == "linker", "Linker", "Direct")]
+hybrids.dt[, type := ifelse(type == "intragenic", "intra-transcript", "inter-transcript")]
 hybrids.dt[sample == "stau1_high", sample := "High RNase"]
 hybrids.dt[sample == "stau1_low", sample := "Low RNase"]
-
-hybrids.dt[, type := ifelse(type == "intragenic", "intra-transcript", "inter-transcript")]
 
 # ARF1 Map
 
 arf1.dt <- hybrids.dt[type == "intra-transcript"][L_gene_name == "ARF1"]
 arf1.utr3.size <- width(regions.gr[regions.gr$gene_name == "ARF1" & regions.gr$type == "UTR3"])
 
-fai.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.fa.fai", select = 1:2, col.names = c("gene", "length"))
-genome.size <- as.integer(fai.dt[grep("^ARF1", gene)]$length)
+# fai.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/ref/GRCh38.gencode_v33.fa.fai", select = 1:2, col.names = c("gene", "length"))
+# genome.size <- as.integer(fai.dt[grep("^ARF1", gene)]$length)
 
 # hiCLIP
 mat <- get_contact_map(hybrid.dt = arf1.dt, genome.size = genome.size)
@@ -313,7 +337,7 @@ rm(mat)
 hiclip.dt <- binned.dt[value != 0]
 
 # Derived Short range
-hybrids.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.tsv.gz")
+hybrids.dt <- fread(file.path(results.path, "atlas/merged.atlas.clusters.tsv.gz"))
 sel.gene.dt <- stau1.dt[L_gene_name == "ARF1"][grepl("^ID", cluster)]
 sel.gene.dt <- sel.gene.dt[rep(seq(1, nrow(sel.gene.dt)), sel.gene.dt$count)]
 
@@ -347,7 +371,7 @@ p1 <- ggplot(map.dt, aes(x = Var1, y = Var2, fill = log10(value))) +
        fill = expression(log[10]~counts)) +
   theme_minimal_grid() + theme(legend.position = "top")
 
-ggsave("~/Dropbox (The Francis Crick)/comp_hiclip/plots/figure_3/arf1_map.pdf",
+ggsave(file.path(plot.path, "arf1_map.pdf"),
        p1,
        width = 150, 
        height = 150,
@@ -365,7 +389,7 @@ region.gr <- GRanges(seqnames = "chr17",
 # Arcs
 # ==========
 
-stau1.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/stau1_atlas/merged_atlas.clusters.collapsed_plus_nonhybrids.tsv.gz")
+stau1.dt <- fread(file.path(results.path, "atlas/merged.atlas.clusters.tsv.gz"))
 
 sel.gene.dt <- stau1.dt[L_gene_name == "SRSF1"]
 sel.gene.dt[, `:=` (L_start = L_genomic_start,
@@ -430,9 +454,11 @@ p4 <- ggplot(sel.expanded.gene.dt[grepl("C003", cluster)]) +
   theme(axis.line.y = element_blank(), axis.text.y = element_blank(), axis.title.y = element_blank(), axis.ticks.y = element_blank(),
         legend.position = "top")
 
-paris.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/paris_atlas/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz")
+paris.dt <- fread(file.path(results.path, "paris/results_paris/atlas_clusters/all.atlas_clusters.gc.annotated.tsv.gz"))
+# paris.dt <- fread(file.path(results.path, "paris/results_paris/atlas/all.atlas.clustered.tsv.gz"))
+# paris.dt <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/paris_atlas/paris.all.atlas_clusters.gc.annotated.mfe.tsv.gz")
 
-sel.gene.dt <- paris.dt[L_gene_name == "SRSF1"]
+sel.gene.dt <- paris.dt[L_gene_name == R_gene_name][L_gene_name == "SRSF1"]
 sel.gene.dt[, `:=` (L_start = L_genomic_start,
                     L_end = L_genomic_end,
                     R_start = R_genomic_start,
@@ -501,7 +527,7 @@ SubsetBedgraph <- function(gr, selected.region.gr) {
   
 }
 
-xlinks.gr <- import.bed("~/Dropbox (The Francis Crick)/comp_hiclip/short_range/stau1.xl.bed.gz")
+xlinks.gr <- import.bed(file.path(results.path, "results_nornase/xlinks/stau1.xl.bed.gz"))
 seqlevelsStyle(xlinks.gr) <- "UCSC"
 xlinks.gr <- SubsetBedgraph(gr = xlinks.gr, selected.region.gr = region.gr)
 xlinks.dt <- as.data.table(xlinks.gr)[, sample := "STAU1"]
@@ -522,15 +548,15 @@ p.iclip <- ggplot(xlinks.dt) +
 # Annotation
 # ==========
 
-TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.txdb.sqlite")
-seqlevelsStyle(TxDb) <- "UCSC"
+# TxDb <- loadDb("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.txdb.sqlite")
+# seqlevelsStyle(TxDb) <- "UCSC"
+# 
+# gtf <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.annotation.gtf.gz")
+# seqlevelsStyle(gtf) <- "UCSC"
+# genes.gr <- gtf[gtf$type == "gene"]
 
-gtf <- import.gff2("~/Dropbox (The Francis Crick)/comp_hiclip/ref/gencode.v33.annotation.gtf.gz")
-seqlevelsStyle(gtf) <- "UCSC"
-genes.gr <- gtf[gtf$type == "gene"]
-
-rosetta.dt <- as.data.table(mcols(genes.gr))[, .(gene_id, gene_name)]
-setkey(rosetta.dt, gene_id)
+# rosetta.dt <- as.data.table(mcols(genes.gr))[, .(gene_id, gene_name)]
+# setkey(rosetta.dt, gene_id)
 
 # Get transcripts that overlap region and order for plotting
 sel.tx_genes <- transcriptsByOverlaps(TxDb, region.gr, columns = c("gene_id", "tx_name"))
@@ -616,5 +642,5 @@ p.annot <- ggplot() +
 # ==========
 
 ggsave(p1 / p2 / p.iclip / p.annot + plot_layout(heights = c(4, 4, 3, 0.5)), 
-       filename = "~/Dropbox (The Francis Crick)/comp_hiclip/plots/srsf1_arc.pdf", 
+       filename = file.path(plot.path, "srsf1_arc.pdf"), 
        width = 297, height = 210, units = "mm")
