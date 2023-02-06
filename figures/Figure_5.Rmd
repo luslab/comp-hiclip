@@ -460,6 +460,14 @@ ricseq_forgi.dt <- fread(paste0(ricseq.dir,"/ricseq.atlas.clusters.utr3.forgi.ts
 # paris.hybrids.dt <- fread(paste0(data.dir, "/paris_atlas/all.atlas_clusters.gc.annotated.tsv.gz"))
 ```
 
+# Load duplex span data
+
+```{r}
+stau1.span.df <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_5/hiclip.utr3.dt.tsv.gz")
+paris.span.df <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_5/paris.utr3.dt.tsv.gz")
+ricseq.span.df <- fread("~/Dropbox (The Francis Crick)/comp_hiclip/revisions/plots/figure_5/ricseq.utr3.dt.tsv.gz")
+```
+
 
 ```{r}
 nrow(ricseq.dt)
@@ -499,9 +507,6 @@ stau1.dt <- left_join(stau1.dt, dplyr::select(stau1.samples.df, id, sample_set),
 ```
 
 
-```{r}
-colnames(stau1.dt)
-```
 
 ***
 > STAU1 hiCLIP cluster counts
@@ -684,8 +689,12 @@ ricseq.mfe.dt <- ricseq.mfe.dt %>%
 
 ricseq.utr3.df <- ricseq.mfe.dt %>%
   dplyr::filter(L_gene_id == R_gene_id & L_region == "UTR3" & R_region == "UTR3") %>%
-  mutate(Experiment = "ricseq", sample_set = "RIC-seq")
+  mutate(Experiment = "RIC-seq", sample_set = "RIC-seq")
+```
 
+
+
+```{r}
 # Filter structure annotation files for the 3'UTR-3'UTR intra-transcript clusters
 utr3_stau1_forgi.df <- semi_join(stau1_forgi.dt, stau1.utr3.df, by = c("id" = "name"))
 utr3_stau1_forgi.df$Experiment <- "STAU1"
@@ -693,21 +702,84 @@ utr3_paris_forgi.df <- semi_join(paris_forgi.dt, paris.utr3.df, by = c("id" = "n
 utr3_paris_forgi.df$Experiment <- "PARIS"
 utr3_ricseq_forgi.df <- semi_join(ricseq_forgi.dt, ricseq.utr3.df, by = c("id" = "name"))
 utr3_ricseq_forgi.df$Experiment <- "RIC-seq"
+```
 
-# Append datasets
+
+## Use the duplex spans to filter the correct 3' UTR intragenic
+
+```{r}
+stau1.span.df <- dplyr::select(stau1.span.df, colnames(paris.span.df))
+
+stau1.span.df$Experiment <- "STAU1"
+paris.span.df$Experiment <- "PARIS"
+ricseq.span.df$Experiment <- "RIC-seq"
+
+all.spans.df <- rbind(stau1.span.df, paris.span.df, ricseq.span.df)
+```
+
+```{r}
+head(all.spans.df)
+```
+
+
+```{r}
+nrow(all.spans.df)
+
+# remove loops smaller than 1
+all.spans.df <- dplyr::filter(all.spans.df, corrected_span > 0)
+
+nrow(all.spans.df)
+
+```
+
+
+```{r}
+# Append original datasets
 utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df, ricseq.utr3.df)
 ```
 
 
 ```{r}
-nrow(stau1.utr3.df)
-nrow(paris.utr3.df)
-nrow(ricseq.utr3.df)
+derived.df <- dplyr::filter(utr3_clusters.df, sample_set == "stau1_derived")
 ```
 
-Clusters remaining in the STAU1 data: `{r} nrow(stau1.utr3.df)`
-Clusters remaining in the PARIS data: `{r} nrow(paris.utr3.df)`
-Clusters remaining in the RIC-seq data: `{r} nrow(ricseq.utr3.df)`
+
+```{r}
+# Filter so corrected span >1
+nrow(utr3_clusters.df)
+filtered.utr3_clusters.df <- semi_join(utr3_clusters.df, all.spans.df, by = c("Experiment", "name"))
+nrow(filtered.utr3_clusters.df)
+```
+
+```{r}
+utr3.df <- rbind(filtered.utr3_clusters.df, derived.df)
+nrow(utr3.df)
+```
+
+
+
+
+Update numbers of interactions:
+
+
+```{r}
+utr3_clusters.df %>%
+  group_by(Experiment) %>%
+  summarise(counts = n())
+```
+
+
+
+
+```{r}
+utr3_clusters.df <- left_join(utr3.df, dplyr::select(all.spans.df,name, Experiment, corrected_span), by = c("Experiment", "name"))
+```
+
+```{r}
+colnames(utr3_clusters.df)
+```
+
+
 
 Need to adjust the genomic and transcriptomic coordinates to focus on the stem of the structure (for clustered duplexes only because for the short-range duplexes already done for Fig 3)
 
@@ -744,6 +816,12 @@ stopifnot(nrow(utr3_clusters.df) == nrow(rbind(data.table(exp.utr3.df), data.tab
 
 ```{r}
 utr3_clusters.df <- rbind(data.table(exp.utr3.df), data.table(predicted_stau1.utr3.df), fill = TRUE)
+```
+
+
+
+```{r}
+utr3_clusters.df
 ```
 
 # Fig 5 B: Overlap with PARIS for 3'UTR intra-transcript duplexes
@@ -847,18 +925,28 @@ dev.off()
 # Fig 5 B: Hybrid spans
 
 ```{r}
-utr3_clusters.df <- utr3_clusters.df %>%
-  mutate(Experiment = str_replace(Experiment, "ricseq", "RIC-seq"))
-
+# genomic distance
 utr3_clusters.df <- utr3_clusters.df %>%
   rowwise() %>%
   mutate(duplex_span = case_when(L_genomic_strand == "+" ~ R_genomic_duplex_start - L_genomic_duplex_end + 1 - 2,
                                   L_genomic_strand == "-" ~ L_genomic_duplex_start - R_genomic_duplex_end + 1 - 2)) %>%
   ungroup()
+```
 
+
+```{r}
+# corrected duplex span
+utr3_clusters.df <- utr3_clusters.df %>%
+  mutate(corrected_span = case_when(detection_type == "Derived" ~ as.numeric(duplex_span),
+                                    TRUE ~ as.numeric(corrected_span)))
+
+```
+
+
+```{r}
 span_median <- utr3_clusters.df %>%
     group_by(Experiment, detection_type) %>%
-    dplyr::summarize(Median = median(duplex_span, na.rm=TRUE))
+    dplyr::summarize(Median = median(corrected_span, na.rm=TRUE))
 span_median
 
 # span_mean <- utr3_clusters.df %>%
@@ -874,9 +962,9 @@ Define span groups:
 utr3_clusters.df$Experiment <- factor(utr3_clusters.df$Experiment, levels = c("STAU1", "PARIS", "RIC-seq"))
 utr3_clusters.df <- utr3_clusters.df %>%
   dplyr::mutate(span_group = case_when(sample_set == "stau1_derived" ~ "derived short range",
-                                       !sample_set == "stau1_derived" & duplex_span <= 100 & duplex_span >= 25 ~ "medium range",
-                                       !sample_set == "stau1_derived" & duplex_span < 25 ~ "short range",
-                                       !sample_set == "stau1_derived" & duplex_span > 100 ~ "long range"))
+                                       !sample_set == "stau1_derived" & corrected_span <= 100 & corrected_span >= 25 ~ "medium range",
+                                       !sample_set == "stau1_derived" & corrected_span < 25 ~ "short range",
+                                       !sample_set == "stau1_derived" & corrected_span > 100 ~ "long range"))
 
 ```
 
@@ -888,7 +976,7 @@ We can fit a 2-component Gaussian mixture model to the bimodal STAU1 distributio
 # Extract data for gauss mixture model
 
 set.seed(42)
-mixmdl <- normalmixEM(log10(utr3_clusters.df[utr3_clusters.df$Experiment == "STAU1" & utr3_clusters.df$detection_type == "Proximity ligation" & utr3_clusters.df$duplex_span > 0 ,]$duplex_span), k = 2)
+mixmdl <- normalmixEM(log10(utr3_clusters.df[utr3_clusters.df$Experiment == "STAU1" & utr3_clusters.df$detection_type == "Proximity ligation" & utr3_clusters.df$corrected_span > 0 ,]$corrected_span), k = 2)
 
 mix.gg <- ggplot() +
   geom_histogram(data = data.frame(x = mixmdl$x), aes(x, ..density..), bins = 100, fill = "grey75") +
@@ -905,7 +993,7 @@ mix.gg <- ggplot() +
 
 mix.gg
 
-# ggsave(paste0(plots.dir, "/duplex_span_gauss_mixture.pdf"), mix.gg, dpi = 300, width = 4, height = 4)
+ggsave(paste0(plots.dir, "/duplex_span_gauss_mixture.pdf"), mix.gg, dpi = 300, width = 4, height = 4)
 ```
 This gives us two distributions with mean duplex spans of `r round(10^mixmdl$mu, 3)[1]` and `r round(10^mixmdl$mu, 3)[2]` and lambdas of `r round(mixmdl$lambda, 3)[1]` and `r round(mixmdl$lambda, 3)[2]` respectively.
 
@@ -937,7 +1025,7 @@ utr3_clusters.df <- utr3_clusters.df %>%
 condition_colours <- c("Derived" = "#2fa1b2", "PARIS" = "#f28e2d", "STAU1" = "#507aa8", "RIC-seq" = "#7851a9")
 utr3_clusters.df$condition <- factor(utr3_clusters.df$condition, levels = c("STAU1", "PARIS","RIC-seq", "Derived"))
 
-duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = condition, group = condition)) + 
+duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = corrected_span, color = condition, group = condition)) + 
   geom_density(bw = 0.1) +
   scale_linetype_manual(values=c("dotted", "solid")) +
   scale_x_log10() + annotation_logticks(sides = "b") +
@@ -951,7 +1039,7 @@ duplex_span.gg <- ggplot(utr3_clusters.df, aes(x = duplex_span, color = conditio
   facet_grid(rows = vars(factor(detection_type, levels = c("Proximity ligation", "Derived"))), scales = "free_y")
 
 duplex_span.gg
-# ggsave(paste0(plots.dir, "/duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 6.5, height = 4)
+ggsave(paste0(plots.dir, "/duplex_span.pdf"), duplex_span.gg, dpi = 300, width = 6.5, height = 4)
 ```
 
 # Fig 5 C: Stem lengths
@@ -963,12 +1051,27 @@ Compare the number of paired residues within each duplex
 utr3_stau1_forgi.df <- get_basepairs_count(utr3_stau1_forgi.df)
 utr3_paris_forgi.df <- get_basepairs_count(utr3_paris_forgi.df)
 utr3_ricseq_forgi.df <- get_basepairs_count(utr3_ricseq_forgi.df)
+```
 
+```{r}
+nrow(utr3_clusters.df)
+```
+
+
+```{r}
 utr3_forgi.df <- rbind(utr3_stau1_forgi.df, utr3_paris_forgi.df, utr3_ricseq_forgi.df)
+
+
+# MUST also filter to only corrected 3'UTRs!
+
+utr3_forgi.df <- semi_join(utr3_forgi.df, utr3_clusters.df, by = c("Experiment", c("id" = "name")))
 
 utr3_bp.df <- utr3_forgi.df %>%
   distinct(Experiment, id, total_paired)
+```
 
+
+```{r}
 utr3_clusters.df <- left_join(utr3_clusters.df, utr3_bp.df, by = c("Experiment", c("name" = "id")))
 ```
 
@@ -993,7 +1096,7 @@ total_paired.gg <- ggplot(utr3_clusters.df,
   geom_label(data = span_counts, aes(label=counts, y = -1.5), label.padding = unit(0.25, "lines"),
             position=position_dodge(width=1.0), inherit.aes = TRUE,  fill = "white", size = 3)
 total_paired.gg 
-# ggsave(paste0(plots.dir, "/total_paired.pdf"), total_paired.gg, dpi = 300, width = 5, height = 6)
+ggsave(paste0(plots.dir, "/total_paired.pdf"), total_paired.gg, dpi = 300, width = 5, height = 6)
 ```
 
 ```{r}
@@ -1093,7 +1196,7 @@ mfe.dens.gg <- ggplot(utr3_clusters_mfe.df, aes(x = MFE, linetype = Sample, colo
   xlim(-2.5, 0)
 
 mfe.dens.gg
-# ggsave(paste0(plots.dir, "/hybridisation_energy.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
+ggsave(paste0(plots.dir, "/hybridisation_energy.pdf"), mfe.dens.gg, dpi = 300, width = 5.2, height = 4)
 
 ```
 
@@ -1155,7 +1258,7 @@ paired_metric.gg <- ggplot(utr3_clusters.df, aes(x=paired_percentage, color = co
 
 paired_metric.gg
 
-# ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5, height = 4)
+ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, width = 5.5, height = 4)
 ```
 
 
@@ -1232,7 +1335,7 @@ bulges.gg <- ggplot(dplyr::filter(utr3_clusters.df, Experiment != "RIC-seq"),
   ylim(-1.5, 16) +
   facet_grid(cols = vars(factor(span_group, levels = c("long range", "medium range", "short range", "derived short range"))))
 bulges.gg
-# ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 5, height = 6)
+ggsave(paste0(plots.dir, "/bulge_count.pdf"), bulges.gg, dpi = 300, width = 5, height = 5)
 ```
 
 # Fig 5 G: Symmetry classification
@@ -1319,7 +1422,7 @@ symmetry_bar.gg = ggplot() +
     theme_minimal_grid()
 
 symmetry_bar.gg
-# ggsave(paste0(plots.dir, "/symmetry.pdf"), symmetry_bar.gg, dpi = 300, width = 7, height = 6)
+ggsave(paste0(plots.dir, "/symmetry.pdf"), symmetry_bar.gg, dpi = 300, width = 7, height = 6)
 
 ```
 
@@ -1383,19 +1486,8 @@ symmetry_bar.gg = ggplot() +
     theme_minimal_grid()
 
 symmetry_bar.gg
-# ggsave(paste0(plots.dir, "/symmetry_bulges.pdf"), symmetry_bar.gg, dpi = 300, width = 7, height = 6)
+ggsave(paste0(plots.dir, "/symmetry_bulges.pdf"), symmetry_bar.gg, dpi = 300, width = 7, height = 6)
 ```
-
-# Some duplexes have very long spans
-
-
-```{r}
-long.df <- symmetry.df %>%
-  dplyr::filter(duplex_span > 100000)
-
-head(long.df,13)
-```
-
 
 # Fig 5 E: Base-pair composition: AU bp content
 
@@ -1432,7 +1524,8 @@ au_pairs.gg <- ggplot(paired_res.df, aes(x = AT_pair_percentage, color = conditi
   facet_grid(rows = vars(span_group))
 
 au_pairs.gg
-# ggsave(paste0(plots.dir, "/au_pairs.pdf"), au_pairs.gg, dpi = 300, width = 4, height = 4)
+ggsave(paste0(plots.dir, "/au_pairs.pdf"), au_pairs.gg, dpi = 300, width = 5.5, height = 4)
+
 ```
 
 
@@ -1501,7 +1594,7 @@ max_stem.gg <- ggplot(dplyr::filter(asym.df, Experiment != "RIC-seq"),
   ylim(-1.5, 16) +
   facet_grid(cols = vars(factor(span_group, levels = c("long range", "medium range", "short range", "derived short range"))))
 max_stem.gg
-ggsave(paste0(plots.dir, "/maximal_stem_segment.pdf"), max_stem.gg, dpi = 300, width = 5, height = 6)
+ggsave(paste0(plots.dir, "/maximal_stem_segment.pdf"), max_stem.gg, dpi = 300, width = 5, height = 5)
 
 ```
 
@@ -1532,7 +1625,7 @@ sym_stem.gg <- ggplot(dplyr::filter(asym_2.df, Experiment != "RIC-seq"),
   ylab("Symmetric bulge percentage\nin asymmetric duplexes") +
   facet_grid(cols = vars(factor(span_group, levels = c("long range", "medium range", "short range", "derived short range"))))
 
-ggsave(paste0(plots.dir, "/percentage_symmetrical_bulges.pdf"), sym_stem.gg, dpi = 300, width = 5, height = 6)
+ggsave(paste0(plots.dir, "/percentage_symmetrical_bulges.pdf"), sym_stem.gg, dpi = 300, width = 5, height = 5)
 ```
 
 
