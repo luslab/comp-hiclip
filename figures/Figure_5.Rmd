@@ -437,15 +437,8 @@ arm.lengths.df %>%
 stau1.dt <- fread(paste0(stau1.dir, "/merged.atlas.clusters.tsv.gz"))
 stau1.mfe.dt <- fread(paste0(stau1.dir, "/merged.atlas.clusters.tsv.gz"))
 stau1_forgi.dt <- fread(paste0(stau1.dir, "/merged.atlas.clusters.forgi.tsv.gz"))
+stau1.hybrids.df <- fread(paste0(stau1.dir, "/merged.atlas.clustered.tsv.gz"))
 
-# stau1.hybrids.df <- fread(paste0(stau1.dir, "/merged.atlas.clustered.tsv.gz"))
-
-short_range.mfe.dt <- fread(paste0(derived.dir, "/short_range_duplexes.mfe.tsv.gz"))
-short_range.forgi.dt <- fread(paste0(derived.dir, "/short_range_duplexes.forgi.tsv.gz"))
-```
-
-
-```{r message=FALSE}
 # PARIS
 paris.dt <- fread(paste0(paris.dir,"/all.atlas_clusters.gc.annotated.tsv.gz"))
 paris.mfe.dt <- fread(paste0(paris.dir,"/paris.atlas.clusters.utr3.mfe.tsv.gz")) # only intragenic 3'UTR
@@ -505,7 +498,6 @@ stau1.samples.df <- stau1.cluster.hybrids_summary.df %>%
 # fwrite(stau1.cluster.hybrids_summary.df, paste0(data.dir, "/stau1.cluster.hybrids_summary.tsv.gz", sep = "\t"))
 stau1.dt <- left_join(stau1.dt, dplyr::select(stau1.samples.df, id, sample_set), by = c("name" = "id"))
 ```
-
 
 
 ***
@@ -671,9 +663,6 @@ stau1.utr3.df <- intra_stau1.dt %>%
   dplyr::filter(L_region == "UTR3" & R_region == "UTR3") %>%
   mutate(Experiment = "STAU1")
 
-nrow(stau1.utr3.df)
-nrow(stau1.utr3.df %>% dplyr::filter(sample_set == "stau1_derived"))
-
 paris.mfe.dt <- paris.mfe.dt %>%
   mutate(type = case_when(L_gene_id == R_gene_id ~ "Intra-transcript",
                           TRUE ~ "Inter-transcript"))
@@ -692,6 +681,11 @@ ricseq.utr3.df <- ricseq.mfe.dt %>%
   mutate(Experiment = "RIC-seq", sample_set = "RIC-seq")
 ```
 
+
+```{r}
+nrow(stau1.utr3.df)
+nrow(stau1.utr3.df %>% dplyr::filter(sample_set == "stau1_derived"))
+```
 
 
 ```{r}
@@ -718,11 +712,6 @@ all.spans.df <- rbind(stau1.span.df, paris.span.df, ricseq.span.df)
 ```
 
 ```{r}
-head(all.spans.df)
-```
-
-
-```{r}
 nrow(all.spans.df)
 
 # remove loops smaller than 1
@@ -736,11 +725,7 @@ nrow(all.spans.df)
 ```{r}
 # Append original datasets
 utr3_clusters.df <- rbind(stau1.utr3.df, paris.utr3.df, ricseq.utr3.df)
-```
-
-
-```{r}
-derived.df <- dplyr::filter(utr3_clusters.df, sample_set == "stau1_derived")
+derived.df <- dplyr::filter(stau1.utr3.df, sample_set == "stau1_derived")
 ```
 
 
@@ -752,17 +737,16 @@ nrow(filtered.utr3_clusters.df)
 ```
 
 ```{r}
-utr3.df <- rbind(filtered.utr3_clusters.df, derived.df)
+utr3.df <- distinct(rbind(filtered.utr3_clusters.df, derived.df))
 nrow(utr3.df)
 ```
-
-
 
 
 Update numbers of interactions:
 
 
 ```{r}
+# bfore filtering
 utr3_clusters.df %>%
   group_by(Experiment) %>%
   summarise(counts = n())
@@ -779,6 +763,12 @@ utr3_clusters.df <- left_join(utr3.df, dplyr::select(all.spans.df,name, Experime
 colnames(utr3_clusters.df)
 ```
 
+
+```{r}
+utr3_clusters.df %>%
+  group_by(Experiment) %>%
+  summarise(counts = n())
+```
 
 
 Need to adjust the genomic and transcriptomic coordinates to focus on the stem of the structure (for clustered duplexes only because for the short-range duplexes already done for Fig 3)
@@ -818,11 +808,6 @@ stopifnot(nrow(utr3_clusters.df) == nrow(rbind(data.table(exp.utr3.df), data.tab
 utr3_clusters.df <- rbind(data.table(exp.utr3.df), data.table(predicted_stau1.utr3.df), fill = TRUE)
 ```
 
-
-
-```{r}
-utr3_clusters.df
-```
 
 # Fig 5 B: Overlap with PARIS for 3'UTR intra-transcript duplexes
 
@@ -931,28 +916,16 @@ utr3_clusters.df <- utr3_clusters.df %>%
   mutate(duplex_span = case_when(L_genomic_strand == "+" ~ R_genomic_duplex_start - L_genomic_duplex_end + 1 - 2,
                                   L_genomic_strand == "-" ~ L_genomic_duplex_start - R_genomic_duplex_end + 1 - 2)) %>%
   ungroup()
-```
 
-
-```{r}
 # corrected duplex span
 utr3_clusters.df <- utr3_clusters.df %>%
   mutate(corrected_span = case_when(detection_type == "Derived" ~ as.numeric(duplex_span),
                                     TRUE ~ as.numeric(corrected_span)))
 
-```
-
-
-```{r}
 span_median <- utr3_clusters.df %>%
     group_by(Experiment, detection_type) %>%
     dplyr::summarize(Median = median(corrected_span, na.rm=TRUE))
 span_median
-
-# span_mean <- utr3_clusters.df %>%
-#     group_by(Experiment, detection_type) %>%
-#     dplyr::summarize(Mean = mean(duplex_span, na.rm=TRUE))
-# span_mean
 ```
 
 
@@ -1051,27 +1024,15 @@ Compare the number of paired residues within each duplex
 utr3_stau1_forgi.df <- get_basepairs_count(utr3_stau1_forgi.df)
 utr3_paris_forgi.df <- get_basepairs_count(utr3_paris_forgi.df)
 utr3_ricseq_forgi.df <- get_basepairs_count(utr3_ricseq_forgi.df)
-```
 
-```{r}
-nrow(utr3_clusters.df)
-```
-
-
-```{r}
 utr3_forgi.df <- rbind(utr3_stau1_forgi.df, utr3_paris_forgi.df, utr3_ricseq_forgi.df)
-
-
 # MUST also filter to only corrected 3'UTRs!
 
 utr3_forgi.df <- semi_join(utr3_forgi.df, utr3_clusters.df, by = c("Experiment", c("id" = "name")))
 
 utr3_bp.df <- utr3_forgi.df %>%
   distinct(Experiment, id, total_paired)
-```
 
-
-```{r}
 utr3_clusters.df <- left_join(utr3_clusters.df, utr3_bp.df, by = c("Experiment", c("name" = "id")))
 ```
 
@@ -1263,6 +1224,13 @@ ggsave(paste0(plots.dir, "/paired_metric.pdf"), paired_metric.gg, dpi = 300, wid
 
 
 ```{r}
+utr3_clusters.df %>%
+    group_by(Experiment) %>%
+    dplyr::summarize(Median = median(paired_percentage, na.rm = TRUE))
+```
+
+
+```{r}
 stau1.paired_ratio.ls <- dplyr::filter(utr3_clusters.df, Experiment == "STAU1"  & !str_detect(cluster, "ID"))$paired_percentage
 paris.paired_ratio.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "PARIS")$paired_percentage
 ricseq.paired_ratio.mfe.ls <- dplyr::filter(utr3_clusters.df, Experiment == "RIC-seq")$paired_percentage
@@ -1273,6 +1241,11 @@ wilcox.test(stau1.paired_ratio.ls, paris.paired_ratio.mfe.ls)$p.value
 # vs RIC-seq
 wilcox.test(stau1.paired_ratio.ls, ricseq.paired_ratio.mfe.ls)$p.value
 
+```
+
+
+```{r}
+wilcox.test(stau1.paired_ratio.ls, ricseq.paired_ratio.mfe.ls)
 ```
 
 ```{r}
@@ -1310,10 +1283,7 @@ ricseq.bulge.ls <- dplyr::filter(utr3_clusters.df, Experiment == "RIC-seq")$bulg
 
 median(stau1.bulge.ls)
 median(paris.bulge.ls)
-# mean(stau1.bulge.ls)
-# mean(paris.bulge.ls)
 median(ricseq.bulge.ls)
-# mean(ricseq.bulge.ls)
 # wilcox.test(stau1.bulge.ls, paris.bulge.ls, alternative = "two.sided")
 ```
 
